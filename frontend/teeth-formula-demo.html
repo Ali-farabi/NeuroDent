@@ -1,0 +1,1285 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Зубная формула — NeuroDent</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f8f6f1;
+        --surface: #ffffff;
+        --surface2: #f2efe8;
+        --border: #e2ddd4;
+        --border2: #c8c2b6;
+        --text: #1c1916;
+        --muted: #7a746a;
+        --hint: #b0aa9f;
+        --primary: #2e5bff;
+        --primary-bg: #eef2ff;
+        --danger: #dc2626;
+        --danger-bg: #fef2f2;
+        --success: #059669;
+        --success-bg: #ecfdf5;
+        --warning: #d97706;
+        --warning-bg: #fffbeb;
+        --gray: #9ca3af;
+        --gray-bg: #f3f4f6;
+        --tooth-normal: #fdf8f0;
+        --tooth-stroke: #a8926a;
+        --gum: #f0c8c8;
+        --gum-dark: #e8a8a8;
+        --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+        --shadow-md:
+          0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: "DM Sans", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 24px 16px;
+      }
+
+      .page {
+        width: 100%;
+        max-width: 1100px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .header-left {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .title {
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--text);
+        letter-spacing: -0.3px;
+      }
+
+      .subtitle {
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .header-badges {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 500;
+        border: 1px solid transparent;
+      }
+
+      .badge-blue {
+        background: var(--primary-bg);
+        color: var(--primary);
+        border-color: #c7d4ff;
+      }
+      .badge-red {
+        background: var(--danger-bg);
+        color: var(--danger);
+        border-color: #fecaca;
+      }
+      .badge-green {
+        background: var(--success-bg);
+        color: var(--success);
+        border-color: #a7f3d0;
+      }
+      .badge-gray {
+        background: var(--gray-bg);
+        color: #4b5563;
+        border-color: var(--border);
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--border);
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .card-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .card-body {
+        padding: 16px 18px;
+      }
+
+      .controls {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .filter-group {
+        display: inline-flex;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 3px;
+        gap: 2px;
+      }
+
+      .filter-btn {
+        padding: 4px 12px;
+        font-size: 11px;
+        font-weight: 500;
+        font-family: "DM Sans", sans-serif;
+        border-radius: 999px;
+        border: none;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        transition: all 0.15s ease;
+        white-space: nowrap;
+      }
+
+      .filter-btn:hover {
+        color: var(--text);
+      }
+      .filter-btn.active {
+        background: var(--surface);
+        color: var(--text);
+        box-shadow: var(--shadow);
+      }
+
+      .bite-group {
+        display: inline-flex;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 3px;
+        gap: 2px;
+      }
+
+      .bite-btn {
+        padding: 4px 12px;
+        font-size: 11px;
+        font-weight: 500;
+        font-family: "DM Sans", sans-serif;
+        border-radius: 999px;
+        border: none;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+
+      .bite-btn:hover {
+        color: var(--text);
+      }
+      .bite-btn.active {
+        background: var(--warning-bg);
+        color: var(--warning);
+        box-shadow: var(--shadow);
+      }
+      .bite-btn[data-bite="permanent"].active {
+        background: var(--primary-bg);
+        color: var(--primary);
+      }
+
+      .export-btn {
+        padding: 6px 14px;
+        font-size: 11px;
+        font-weight: 500;
+        font-family: "DM Sans", sans-serif;
+        border-radius: 8px;
+        border: 1px solid var(--border2);
+        background: var(--surface);
+        color: var(--text);
+        cursor: pointer;
+        transition: all 0.15s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin-left: auto;
+      }
+
+      .export-btn:hover {
+        background: var(--surface2);
+      }
+
+      .clear-btn {
+        padding: 6px 14px;
+        font-size: 11px;
+        font-weight: 500;
+        font-family: "DM Sans", sans-serif;
+        border-radius: 8px;
+        border: 1px solid #fecaca;
+        background: var(--danger-bg);
+        color: var(--danger);
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+
+      .clear-btn:hover {
+        background: #fee2e2;
+      }
+
+      .formula-wrap {
+        overflow-x: auto;
+        padding: 8px 0;
+      }
+
+      .formula-wrap::-webkit-scrollbar {
+        height: 4px;
+      }
+      .formula-wrap::-webkit-scrollbar-track {
+        background: var(--surface2);
+        border-radius: 2px;
+      }
+      .formula-wrap::-webkit-scrollbar-thumb {
+        background: var(--border2);
+        border-radius: 2px;
+      }
+
+      #dfSvg {
+        display: block;
+        width: 100%;
+        min-width: 900px;
+      }
+
+      .status-bar {
+        padding: 10px 18px;
+        border-top: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--muted);
+        font-family: "DM Mono", monospace;
+        background: var(--surface2);
+        min-height: 36px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--border2);
+        flex-shrink: 0;
+        transition: background 0.2s;
+      }
+
+      .status-dot.active {
+        background: var(--success);
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        padding: 12px 18px;
+        border-top: 1px solid var(--border);
+      }
+
+      .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .legend-swatch {
+        width: 20px;
+        height: 12px;
+        border-radius: 3px;
+        border: 1px solid transparent;
+      }
+
+      .legend-count {
+        font-family: "DM Mono", monospace;
+        font-size: 10px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 1px 5px;
+        color: var(--muted);
+        min-width: 18px;
+        text-align: center;
+      }
+
+      .stats-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 10px;
+      }
+
+      .stat-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .stat-label {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .stat-value {
+        font-size: 22px;
+        font-weight: 600;
+        color: var(--text);
+        font-family: "DM Mono", monospace;
+      }
+      .stat-value.red {
+        color: var(--danger);
+      }
+      .stat-value.blue {
+        color: var(--primary);
+      }
+      .stat-value.green {
+        color: var(--success);
+      }
+      .stat-value.gray {
+        color: var(--gray);
+      }
+
+      .tooltip-box {
+        position: fixed;
+        background: var(--surface);
+        border: 1px solid var(--border2);
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 11px;
+        color: var(--text);
+        pointer-events: none;
+        white-space: nowrap;
+        display: none;
+        z-index: 9999;
+        box-shadow: var(--shadow-md);
+        font-family: "DM Sans", sans-serif;
+      }
+
+      .tooltip-num {
+        font-weight: 600;
+        font-family: "DM Mono", monospace;
+        margin-right: 4px;
+      }
+
+      .tooltip-status {
+      }
+      .tooltip-surf {
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      @media (max-width: 640px) {
+        .card-header {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .export-btn {
+          margin-left: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="header">
+        <div class="header-left">
+          <div class="title">Зубная формула</div>
+          <div class="subtitle">
+            Интерактивная схема · кликните на зуб для смены статуса
+          </div>
+        </div>
+        <div class="header-badges">
+          <span class="badge badge-gray" id="badgeTotal">32 зуба</span>
+          <span class="badge badge-red" id="badgeCaries" style="display: none"
+            >0 кариес</span
+          >
+          <span class="badge badge-blue" id="badgeFilling" style="display: none"
+            >0 пломба</span
+          >
+          <span class="badge badge-gray" id="badgeRemoved" style="display: none"
+            >0 удалён</span
+          >
+        </div>
+      </div>
+
+      <div class="stats-row" id="statsRow">
+        <div class="stat-card">
+          <div class="stat-label">Норма</div>
+          <div class="stat-value" id="statNormal">32</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Кариес</div>
+          <div class="stat-value red" id="statCaries">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Пломба</div>
+          <div class="stat-value blue" id="statFilling">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Здоров</div>
+          <div class="stat-value green" id="statHealthy">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Удалён</div>
+          <div class="stat-value gray" id="statRemoved">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Отсутствует</div>
+          <div class="stat-value gray" id="statMissing">0</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M12 2C8 2 4 6 4 10c0 4 2 7 4 9h8c2-2 4-5 4-9 0-4-4-8-8-8z"
+              />
+            </svg>
+            Схема зубов
+          </div>
+          <div class="controls">
+            <div class="filter-group">
+              <button class="filter-btn active" data-filter="all">
+                Полость рта
+              </button>
+              <button class="filter-btn" data-filter="upper">Верхняя</button>
+              <button class="filter-btn" data-filter="lower">Нижняя</button>
+            </div>
+            <div class="bite-group">
+              <button class="bite-btn active" data-bite="permanent">
+                Постоянный
+              </button>
+              <button class="bite-btn" data-bite="milk">Молочный</button>
+            </div>
+            <button class="clear-btn" id="clearBtn">Очистить</button>
+            <button class="export-btn" id="exportBtn">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Экспорт JSON
+            </button>
+          </div>
+        </div>
+
+        <div class="formula-wrap">
+          <svg
+            id="dfSvg"
+            viewBox="0 0 1080 360"
+            preserveAspectRatio="xMidYMid meet"
+          ></svg>
+        </div>
+
+        <div class="status-bar">
+          <div class="status-dot" id="statusDot"></div>
+          <span id="statusText"
+            >Готово — кликните на зуб чтобы изменить статус</span
+          >
+        </div>
+
+        <div class="legend">
+          <div class="legend-item">
+            <span
+              class="legend-swatch"
+              style="background: #fdf8f0; border-color: #a8926a"
+            ></span>
+            Норма <span class="legend-count" id="lcNormal">32</span>
+          </div>
+          <div class="legend-item">
+            <span
+              class="legend-swatch"
+              style="background: #fee2e2; border-color: #dc2626"
+            ></span>
+            Кариес <span class="legend-count" id="lcCaries">0</span>
+          </div>
+          <div class="legend-item">
+            <span
+              class="legend-swatch"
+              style="background: #dbeafe; border-color: #2563eb"
+            ></span>
+            Пломба <span class="legend-count" id="lcFilling">0</span>
+          </div>
+          <div class="legend-item">
+            <span
+              class="legend-swatch"
+              style="background: #dcfce7; border-color: #059669"
+            ></span>
+            Здоров <span class="legend-count" id="lcHealthy">0</span>
+          </div>
+          <div class="legend-item">
+            <span
+              class="legend-swatch"
+              style="
+                background: #f3f4f6;
+                border-color: #9ca3af;
+                border-style: dashed;
+              "
+            ></span>
+            Удалён <span class="legend-count" id="lcRemoved">0</span>
+          </div>
+          <div class="legend-item">
+            <span
+              class="legend-swatch"
+              style="
+                background: transparent;
+                border-color: #d1d5db;
+                border-style: dashed;
+              "
+            ></span>
+            Отсутствует <span class="legend-count" id="lcMissing">0</span>
+          </div>
+          <div
+            class="legend-item"
+            style="
+              margin-left: auto;
+              color: var(--hint);
+              font-size: 10px;
+              font-family: &quot;DM Mono&quot;, monospace;
+            "
+          >
+            клик = смена статуса · сектор = поверхность
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tooltip-box" id="tooltip"></div>
+
+    <script>
+      (function () {
+        const NS = "http://www.w3.org/2000/svg";
+        const upper = [
+          18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28,
+        ];
+        const lower = [
+          48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38,
+        ];
+        const all = [...upper, ...lower];
+        const states = {};
+        const STATUS = [
+          "normal",
+          "caries",
+          "filling",
+          "healthy",
+          "removed",
+          "missing",
+        ];
+        const LABELS = {
+          normal: "Норма",
+          caries: "Кариес",
+          filling: "Пломба",
+          healthy: "Здоров",
+          removed: "Удалён",
+          missing: "Отсутствует",
+        };
+
+        const C = {
+          normal: {
+            fill: "#FDF8F0",
+            stroke: "#A8926A",
+            gum: "#F0C8C8",
+            root: "#D4B896",
+            num: "#5C4A30",
+          },
+          caries: {
+            fill: "#FEE2E2",
+            stroke: "#DC2626",
+            gum: "#FECACA",
+            root: "#FCA5A5",
+            num: "#991B1B",
+          },
+          filling: {
+            fill: "#DBEAFE",
+            stroke: "#2563EB",
+            gum: "#BFDBFE",
+            root: "#93C5FD",
+            num: "#1E40AF",
+          },
+          healthy: {
+            fill: "#DCFCE7",
+            stroke: "#059669",
+            gum: "#A7F3D0",
+            root: "#6EE7B7",
+            num: "#065F46",
+          },
+          removed: {
+            fill: "#F3F4F6",
+            stroke: "#9CA3AF",
+            gum: "#E5E7EB",
+            root: "#D1D5DB",
+            num: "#9CA3AF",
+          },
+          missing: {
+            fill: "transparent",
+            stroke: "#D1D5DB",
+            gum: "#F3F4F6",
+            root: "#E5E7EB",
+            num: "#D1D5DB",
+          },
+        };
+
+        function svgEl(tag, a) {
+          const e = document.createElementNS(NS, tag);
+          if (a) for (const [k, v] of Object.entries(a)) e.setAttribute(k, v);
+          return e;
+        }
+
+        const CW = 56,
+          SX = 60;
+        const UY = 30,
+          LY = 215;
+        const TW = 36,
+          TH = 68,
+          RH = 28;
+        const SURF_YU = 158,
+          SURF_YL = 178;
+        const SR = 11,
+          Sr = 4.5;
+
+        function toothBody(x, y, w, h, isUpper) {
+          const hw = w / 2,
+            cx = x + hw;
+          if (isUpper) {
+            return `M${x + 4} ${y + h} C${x} ${y + h * 0.7} ${x - 2} ${y + h * 0.35} ${cx - hw * 0.4} ${y + h * 0.12}
+    C${cx - hw * 0.1} ${y} ${cx + hw * 0.1} ${y} ${cx + hw * 0.5} ${y + h * 0.1}
+    C${x + w + 2} ${y + h * 0.35} ${x + w} ${y + h * 0.7} ${x + w - 4} ${y + h} Z`;
+          } else {
+            return `M${x + 4} ${y} C${x} ${y + h * 0.3} ${x - 2} ${y + h * 0.65} ${cx - hw * 0.4} ${y + h * 0.88}
+    C${cx - hw * 0.1} ${y + h} ${cx + hw * 0.1} ${y + h} ${cx + hw * 0.5} ${y + h * 0.9}
+    C${x + w + 2} ${y + h * 0.65} ${x + w} ${y + h * 0.3} ${x + w - 4} ${y} Z`;
+          }
+        }
+
+        function isMolar(n) {
+          return (
+            (n >= 14 && n <= 18) ||
+            (n >= 24 && n <= 28) ||
+            (n >= 34 && n <= 38) ||
+            (n >= 44 && n <= 48)
+          );
+        }
+        function isCanine(n) {
+          return n === 13 || n === 23 || n === 33 || n === 43;
+        }
+
+        function drawRoot(g, cx, baseY, n, isUpper, col) {
+          const rg = svgEl("g", { class: "df-roots" });
+          const dir = isUpper ? -1 : 1;
+          const ry = baseY;
+          const sh = {
+            stroke: col,
+            "stroke-width": "1.3",
+            "stroke-linecap": "round",
+            fill: "none",
+          };
+
+          if (isMolar(n)) {
+            const offsets = [-10, 0, 10];
+            const lengths = [RH, RH * 0.82, RH];
+            offsets.forEach((o, i) => {
+              const rx = cx + o,
+                len = lengths[i];
+              const p = svgEl("path", {
+                ...sh,
+                d: `M${rx} ${ry} C${rx + o * 0.3} ${ry + len * 0.4 * dir} ${rx + o * 0.2} ${ry + len * 0.8 * dir} ${rx} ${ry + len * dir}`,
+              });
+              rg.appendChild(p);
+            });
+          } else if (isCanine(n)) {
+            const p = svgEl("path", {
+              ...sh,
+              d: `M${cx} ${ry} C${cx} ${ry + RH * 0.5 * dir} ${cx} ${ry + RH * 1.1 * dir} ${cx} ${ry + RH * 1.2 * dir}`,
+            });
+            rg.appendChild(p);
+          } else {
+            const offsets = [-6, 6];
+            offsets.forEach((o) => {
+              const p = svgEl("path", {
+                ...sh,
+                d: `M${cx + o * 0.3} ${ry} C${cx + o * 0.5} ${ry + RH * 0.4 * dir} ${cx + o * 0.7} ${ry + RH * 0.8 * dir} ${cx + o} ${ry + RH * dir}`,
+              });
+              rg.appendChild(p);
+            });
+          }
+          g.appendChild(rg);
+          return rg;
+        }
+
+        function sectorPath(cx, cy, R, r, a1, a2) {
+          const rad = Math.PI / 180;
+          const x1 = cx + R * Math.cos(a1 * rad),
+            y1 = cy + R * Math.sin(a1 * rad);
+          const x2 = cx + R * Math.cos(a2 * rad),
+            y2 = cy + R * Math.sin(a2 * rad);
+          const x3 = cx + r * Math.cos(a2 * rad),
+            y3 = cy + r * Math.sin(a2 * rad);
+          const x4 = cx + r * Math.cos(a1 * rad),
+            y4 = cy + r * Math.sin(a1 * rad);
+          const lg = a2 - a1 > 180 ? 1 : 0;
+          return `M${x1} ${y1} A${R} ${R} 0 ${lg} 1 ${x2} ${y2} L${x3} ${y3} A${r} ${r} 0 ${lg} 0 ${x4} ${y4} Z`;
+        }
+
+        function buildTooth(n, idx, isUpper) {
+          const cx = SX + idx * CW + CW / 2;
+          const tx = cx - TW / 2;
+          const ty = isUpper ? UY + RH : LY;
+          const gY = isUpper ? ty - 6 : ty + TH - 6;
+          const gH = 14;
+          const surfY = isUpper ? SURF_YU : SURF_YL;
+          const rootBase = isUpper ? ty : ty + TH;
+
+          states[n] = {
+            status: "normal",
+            surfaces: new Set(),
+            bite: "permanent",
+          };
+          const g = svgEl("g", {
+            "data-n": String(n),
+            "data-jaw": isUpper ? "upper" : "lower",
+            class: "df-tooth",
+          });
+
+          const gum = svgEl("ellipse", {
+            cx,
+            cy: isUpper ? gY : gY + gH,
+            rx: TW * 0.62,
+            ry: gH * 0.6,
+            fill: C.normal.gum,
+            class: "df-gum",
+          });
+          g.appendChild(gum);
+
+          const rootsG = drawRoot(g, cx, rootBase, n, isUpper, C.normal.root);
+
+          const body = svgEl("path", {
+            d: toothBody(tx, ty, TW, TH, isUpper),
+            fill: C.normal.fill,
+            stroke: C.normal.stroke,
+            "stroke-width": "1.2",
+            class: "df-body",
+          });
+          g.appendChild(body);
+
+          const cross = svgEl("g", { class: "df-cross", display: "none" });
+          cross.appendChild(
+            svgEl("line", {
+              x1: tx + 5,
+              y1: ty + 10,
+              x2: tx + TW - 5,
+              y2: ty + TH - 10,
+              stroke: "#9CA3AF",
+              "stroke-width": "1.5",
+              "stroke-linecap": "round",
+            }),
+          );
+          cross.appendChild(
+            svgEl("line", {
+              x1: tx + TW - 5,
+              y1: ty + 10,
+              x2: tx + 5,
+              y2: ty + TH - 10,
+              stroke: "#9CA3AF",
+              "stroke-width": "1.5",
+              "stroke-linecap": "round",
+            }),
+          );
+          g.appendChild(cross);
+
+          const nt = svgEl("text", {
+            x: cx,
+            y: ty + (isUpper ? TH * 0.5 : TH * 0.52),
+            "text-anchor": "middle",
+            "font-size": "7.5",
+            "font-weight": "600",
+            "font-family": "DM Mono, monospace",
+            fill: C.normal.num,
+            "pointer-events": "none",
+            class: "df-num",
+          });
+          nt.textContent = n;
+          g.appendChild(nt);
+
+          const periY = isUpper ? UY - 8 : LY + TH + RH + 10;
+          const peri = svgEl("circle", {
+            cx,
+            cy: periY,
+            r: 4.5,
+            fill: "none",
+            stroke: "#D1C4A8",
+            "stroke-width": "0.8",
+            class: "df-peri",
+          });
+          g.appendChild(peri);
+
+          const periDot = svgEl("circle", {
+            cx,
+            cy: periY,
+            r: 1.5,
+            fill: "#D1C4A8",
+            class: "df-peri-dot",
+          });
+          g.appendChild(periDot);
+
+          const sG = svgEl("g", { class: "df-surf", "data-n": String(n) });
+          const bg = svgEl("circle", {
+            cx,
+            cy: surfY,
+            r: SR,
+            fill: "#FAFAF8",
+            stroke: "#D1C4A8",
+            "stroke-width": "0.7",
+          });
+          sG.appendChild(bg);
+
+          const secs = [
+            { k: "O", a1: -90, a2: 90 },
+            { k: "V", a1: -90 + 144, a2: -90 + 216 },
+            { k: "M", a1: -90 + 216, a2: -90 + 288 },
+            { k: "D", a1: -90 + 72, a2: -90 + 144 },
+            { k: "L", a1: -90 + 288, a2: -90 + 360 },
+          ];
+
+          secs.forEach((s) => {
+            const sp = svgEl("path", {
+              d: sectorPath(cx, surfY, SR, Sr, s.a1, s.a2),
+              fill: "transparent",
+              stroke: "#E2DDD4",
+              "stroke-width": "0.5",
+              class: "df-sector",
+              "data-n": String(n),
+              "data-s": s.k,
+              cursor: "pointer",
+            });
+            sG.appendChild(sp);
+            const ma = (((s.a1 + s.a2) / 2) * Math.PI) / 180;
+            const lr = (SR + Sr) / 2 + 0.5;
+            const lt = svgEl("text", {
+              x: cx + lr * Math.cos(ma),
+              y: surfY + lr * Math.sin(ma) + 1.5,
+              "text-anchor": "middle",
+              "font-size": "4",
+              "font-family": "DM Mono,monospace",
+              fill: "#B0AA9F",
+              "pointer-events": "none",
+            });
+            lt.textContent = s.k;
+            sG.appendChild(lt);
+          });
+
+          const center = svgEl("circle", {
+            cx,
+            cy: surfY,
+            r: Sr,
+            fill: "none",
+            stroke: "#D1C4A8",
+            "stroke-width": "0.5",
+            "pointer-events": "none",
+          });
+          sG.appendChild(center);
+
+          [0, 72, 144, 216, 288].forEach((a) => {
+            const r2 = (a * Math.PI) / 180;
+            sG.appendChild(
+              svgEl("line", {
+                x1: cx + Sr * Math.cos(r2),
+                y1: surfY + Sr * Math.sin(r2),
+                x2: cx + SR * Math.cos(r2),
+                y2: surfY + SR * Math.sin(r2),
+                stroke: "#D1C4A8",
+                "stroke-width": "0.5",
+                "pointer-events": "none",
+              }),
+            );
+          });
+
+          g.appendChild(sG);
+
+          const hitY = isUpper ? UY - 12 : LY - 4;
+          const hitH = TH + RH + 20;
+          const hit = svgEl("rect", {
+            x: tx - 4,
+            y: hitY,
+            width: TW + 8,
+            height: hitH,
+            fill: "transparent",
+            cursor: "pointer",
+            "data-n": String(n),
+            "data-jaw": isUpper ? "upper" : "lower",
+            class: "df-hit",
+          });
+          g.appendChild(hit);
+
+          return g;
+        }
+
+        const svg = document.getElementById("dfSvg");
+
+        function sep(y) {
+          const l = svgEl("line", {
+            x1: SX - 20,
+            y1: y,
+            x2: SX + 16 * CW,
+            y2: y,
+            stroke: "#E2DDD4",
+            "stroke-width": "0.5",
+            "stroke-dasharray": "3 3",
+          });
+          svg.appendChild(l);
+        }
+
+        const bg = svgEl("rect", {
+          x: 0,
+          y: 0,
+          width: 1080,
+          height: 360,
+          fill: "#F8F6F1",
+          rx: 14,
+        });
+        svg.appendChild(bg);
+
+        const midBg = svgEl("rect", {
+          x: SX - 10,
+          y: 145,
+          width: 16 * CW + 20,
+          height: 50,
+          fill: "#FFFFFF",
+          rx: 6,
+          stroke: "#E2DDD4",
+          "stroke-width": "0.5",
+        });
+        svg.appendChild(midBg);
+
+        upper.forEach((n, i) => svg.appendChild(buildTooth(n, i, true)));
+        lower.forEach((n, i) => svg.appendChild(buildTooth(n, i, false)));
+
+        sep(143);
+        sep(193);
+
+        upper.forEach((n, i) => {
+          const cx = SX + i * CW + CW / 2;
+          const lbl = svgEl("text", {
+            x: cx,
+            y: 136,
+            "text-anchor": "middle",
+            "font-size": "6",
+            "font-family": "DM Mono,monospace",
+            fill: "#B0AA9F",
+          });
+          lbl.textContent = n;
+          svg.appendChild(lbl);
+        });
+        lower.forEach((n, i) => {
+          const cx = SX + i * CW + CW / 2;
+          const lbl = svgEl("text", {
+            x: cx,
+            y: 200,
+            "text-anchor": "middle",
+            "font-size": "6",
+            "font-family": "DM Mono,monospace",
+            fill: "#B0AA9F",
+          });
+          lbl.textContent = n;
+          svg.appendChild(lbl);
+        });
+
+        function updateTooth(n) {
+          const g = svg.querySelector(`.df-tooth[data-n="${n}"]`);
+          if (!g) return;
+          const st = states[n].status;
+          const c = C[st];
+          g.querySelector(".df-body").setAttribute("fill", c.fill);
+          g.querySelector(".df-body").setAttribute("stroke", c.stroke);
+          g.querySelector(".df-gum").setAttribute("fill", c.gum);
+          g.querySelector(".df-num").setAttribute("fill", c.num);
+          g.querySelectorAll(".df-roots path").forEach((p) =>
+            p.setAttribute("stroke", c.root),
+          );
+          g.querySelector(".df-cross").setAttribute(
+            "display",
+            st === "removed" ? "" : "none",
+          );
+          const b = g.querySelector(".df-body");
+          if (st === "missing") {
+            b.setAttribute("fill", "transparent");
+            b.setAttribute("stroke-dasharray", "3 2");
+          } else b.setAttribute("stroke-dasharray", "none");
+          g.querySelector(".df-peri").setAttribute(
+            "stroke",
+            st === "normal" ? "#D1C4A8" : c.stroke,
+          );
+          g.querySelector(".df-peri-dot").setAttribute(
+            "fill",
+            st === "normal" ? "#D1C4A8" : c.stroke,
+          );
+          if (states[n].bite === "milk") {
+            g.querySelectorAll(".df-body,.df-gum").forEach((el) => {
+              el.style.opacity = "0.75";
+              el.style.filter = "sepia(0.3)";
+            });
+          } else {
+            g.querySelectorAll(".df-body,.df-gum").forEach((el) => {
+              el.style.opacity = "";
+              el.style.filter = "";
+            });
+          }
+        }
+
+        function updateStats() {
+          const cnt = {
+            normal: 0,
+            caries: 0,
+            filling: 0,
+            healthy: 0,
+            removed: 0,
+            missing: 0,
+          };
+          all.forEach((n) => cnt[states[n].status]++);
+          document.getElementById("statNormal").textContent = cnt.normal;
+          document.getElementById("statCaries").textContent = cnt.caries;
+          document.getElementById("statFilling").textContent = cnt.filling;
+          document.getElementById("statHealthy").textContent = cnt.healthy;
+          document.getElementById("statRemoved").textContent = cnt.removed;
+          document.getElementById("statMissing").textContent = cnt.missing;
+          [
+            "Normal",
+            "Caries",
+            "Filling",
+            "Healthy",
+            "Removed",
+            "Missing",
+          ].forEach((k) => {
+            document.getElementById("lc" + k).textContent =
+              cnt[k.toLowerCase()];
+          });
+          const bc = document.getElementById("badgeCaries");
+          const bf = document.getElementById("badgeFilling");
+          const br = document.getElementById("badgeRemoved");
+          bc.style.display = cnt.caries > 0 ? "" : "none";
+          bc.textContent = cnt.caries + " кариес";
+          bf.style.display = cnt.filling > 0 ? "" : "none";
+          bf.textContent = cnt.filling + " пломба";
+          br.style.display = cnt.removed > 0 ? "" : "none";
+          br.textContent = cnt.removed + " удалён";
+          document.getElementById("badgeTotal").textContent =
+            32 - cnt.missing + " зубов";
+        }
+
+        const tip = document.getElementById("tooltip");
+        const statusDot = document.getElementById("statusDot");
+        const statusText = document.getElementById("statusText");
+
+        function setStatus(msg, active) {
+          statusText.textContent = msg;
+          statusDot.classList.toggle("active", !!active);
+        }
+
+        svg.addEventListener("click", (e) => {
+          const sec = e.target.closest(".df-sector");
+          if (sec) {
+            const n = parseInt(sec.dataset.n),
+              s = sec.dataset.s;
+            const set = states[n].surfaces;
+            if (set.has(s)) {
+              set.delete(s);
+              sec.setAttribute("fill", "transparent");
+              sec.setAttribute("stroke", "#E2DDD4");
+            } else {
+              set.add(s);
+              sec.setAttribute("fill", "rgba(220,38,38,0.2)");
+              sec.setAttribute("stroke", "#DC2626");
+              if (states[n].status === "normal") {
+                states[n].status = "caries";
+                updateTooth(n);
+                updateStats();
+              }
+            }
+            setStatus(
+              `Зуб ${n} · поверхность ${s} ${set.has(s) ? "отмечена" : "снята"}`,
+              true,
+            );
+            return;
+          }
+          const hit = e.target.closest(".df-hit");
+          if (hit) {
+            const n = parseInt(hit.dataset.n);
+            const cur = states[n].status;
+            const idx = STATUS.indexOf(cur);
+            const next = STATUS[(idx + 1) % STATUS.length];
+            states[n].status = next;
+            if (next === "normal") {
+              states[n].surfaces.clear();
+              svg.querySelectorAll(`.df-sector[data-n="${n}"]`).forEach((s) => {
+                s.setAttribute("fill", "transparent");
+                s.setAttribute("stroke", "#E2DDD4");
+              });
+            }
+            updateTooth(n);
+            updateStats();
+            setStatus(`Зуб ${n} → ${LABELS[next]}`, true);
+            setTimeout(() => setStatus("Готово", false), 2000);
+          }
+        });
+
+        svg.addEventListener("pointermove", (e) => {
+          const hit = e.target.closest(".df-hit");
+          if (!hit) {
+            tip.style.display = "none";
+            return;
+          }
+          const n = parseInt(hit.dataset.n);
+          const st = states[n];
+          const surfs = [...st.surfaces].join(", ") || "—";
+          tip.innerHTML = `<span class="tooltip-num">${n}</span><span class="tooltip-status">${LABELS[st.status]}</span><br><span class="tooltip-surf">Поверхности: ${surfs}</span>`;
+          tip.style.display = "block";
+          tip.style.left = e.clientX + 14 + "px";
+          tip.style.top = e.clientY - 10 + "px";
+        });
+
+        svg.addEventListener(
+          "pointerleave",
+          () => (tip.style.display = "none"),
+        );
+
+        document.querySelectorAll(".filter-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            document
+              .querySelectorAll(".filter-btn")
+              .forEach((b) => b.classList.remove("active"));
+            btn.classList.add("active");
+            const f = btn.dataset.filter;
+            svg.querySelectorAll(".df-tooth").forEach((g) => {
+              const j = g.dataset.jaw;
+              g.style.display = f === "all" || f === j ? "" : "none";
+            });
+          });
+        });
+
+        document.querySelectorAll(".bite-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            document
+              .querySelectorAll(".bite-btn")
+              .forEach((b) => b.classList.remove("active"));
+            btn.classList.add("active");
+            const bite = btn.dataset.bite;
+            all.forEach((n) => {
+              states[n].bite = bite;
+              updateTooth(n);
+            });
+            setStatus(
+              bite === "milk" ? "Молочный прикус" : "Постоянный прикус",
+              false,
+            );
+          });
+        });
+
+        document.getElementById("clearBtn").addEventListener("click", () => {
+          all.forEach((n) => {
+            states[n] = {
+              status: "normal",
+              surfaces: new Set(),
+              bite: states[n].bite,
+            };
+            svg.querySelectorAll(`.df-sector[data-n="${n}"]`).forEach((s) => {
+              s.setAttribute("fill", "transparent");
+              s.setAttribute("stroke", "#E2DDD4");
+            });
+            updateTooth(n);
+          });
+          updateStats();
+          setStatus("Формула очищена", false);
+        });
+
+        document.getElementById("exportBtn").addEventListener("click", () => {
+          const res = {};
+          all.forEach((n) => {
+            res[n] = {
+              status: states[n].status,
+              surfaces: [...states[n].surfaces],
+            };
+          });
+          const j = JSON.stringify(res, null, 2);
+          const a = document.createElement("a");
+          a.href =
+            "data:application/json;charset=utf-8," + encodeURIComponent(j);
+          a.download = "tooth_formula.json";
+          a.click();
+          setStatus("JSON экспортирован", true);
+          setTimeout(() => setStatus("Готово", false), 2000);
+        });
+
+        updateStats();
+      })();
+    </script>
+  </body>
+</html>
