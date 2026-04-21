@@ -216,13 +216,13 @@ const initialDb = {
     },
     {
       id: "a9",
-      doctorId: "d4",
-      date: TODAY,
+      doctorId: "d3",
+      date: shiftDate(TODAY, -5),
       time: "08:30",
       duration: 30,
       patientId: "p3",
-      status: "scheduled",
-      visitId: null,
+      status: "completed",
+      visitId: "v4",
     },
     {
       id: "a10",
@@ -236,13 +236,13 @@ const initialDb = {
     },
     {
       id: "a11",
-      doctorId: "d6",
-      date: TODAY,
+      doctorId: "d1",
+      date: shiftDate(TODAY, -2),
       time: "09:00",
       duration: 45,
       patientId: "p2",
       status: "completed",
-      visitId: null,
+      visitId: "v3",
     },
     {
       id: "a4",
@@ -314,7 +314,7 @@ const initialDb = {
     {
       id: "v3",
       appointmentId: "a11",
-      doctorId: "d6",
+      doctorId: "d1",
       patientId: "p2",
       startedAt: `${shiftDate(TODAY, -2)}T11:00:00`,
       finishedAt: `${shiftDate(TODAY, -2)}T11:30:00`,
@@ -340,7 +340,7 @@ const initialDb = {
     {
       id: "v4",
       appointmentId: "a9",
-      doctorId: "d4",
+      doctorId: "d3",
       patientId: "p3",
       startedAt: `${shiftDate(TODAY, -5)}T08:30:00`,
       finishedAt: `${shiftDate(TODAY, -5)}T09:15:00`,
