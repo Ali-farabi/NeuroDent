@@ -4,6 +4,7 @@ function delay(ms = 600) {
 
 const clone = (data) => JSON.parse(JSON.stringify(data));
 const TODAY = new Date().toISOString().slice(0, 10);
+const DB_VERSION = "3"; // increment to force localStorage reset
 
 function shiftDate(isoDate, days) {
   const d = new Date(`${isoDate}T00:00:00`);
@@ -18,13 +19,26 @@ function genId(prefix = "id") {
 function getDb() {
   if (typeof localStorage === "undefined") return clone(initialDb);
   const saved = localStorage.getItem("neurodent_db");
-  const data = saved ? JSON.parse(saved) : clone(initialDb);
+  if (!saved) {
+    const fresh = clone(initialDb);
+    fresh._version = DB_VERSION;
+    localStorage.setItem("neurodent_db", JSON.stringify(fresh));
+    return fresh;
+  }
+  const data = JSON.parse(saved);
+  if (data._version !== DB_VERSION) {
+    const fresh = clone(initialDb);
+    fresh._version = DB_VERSION;
+    localStorage.setItem("neurodent_db", JSON.stringify(fresh));
+    return fresh;
+  }
   if (!Array.isArray(data.users)) data.users = clone(initialDb.users);
   return data;
 }
 
 function saveDb(db) {
   if (typeof localStorage !== "undefined") {
+    db._version = DB_VERSION;
     localStorage.setItem("neurodent_db", JSON.stringify(db));
   }
 }
@@ -51,17 +65,30 @@ const initialDb = {
     { id: "p10", name: "Дина Марат", phone: "87082223344", birthDate: "1997-06-25", createdAt: "2024-04-18" },
   ],
   appointments: [
-    { id: "a1", doctorId: "d1", date: TODAY, time: "09:30", duration: 30, patientId: "p1", status: "scheduled", visitId: null },
-    { id: "a2", doctorId: "d1", date: TODAY, time: "10:00", duration: 60, patientId: "p2", status: "arrived", visitId: null },
-    { id: "a3", doctorId: "d2", date: TODAY, time: "11:30", duration: 45, patientId: "p3", status: "scheduled", visitId: null },
-    { id: "a5", doctorId: "d2", date: shiftDate(TODAY, -3), time: "09:00", duration: 30, patientId: "p1", status: "completed", visitId: "v2" },
-    { id: "a6", doctorId: "d3", date: TODAY, time: "10:30", duration: 90, patientId: "p2", status: "arrived", visitId: null },
-    { id: "a7", doctorId: "d1", date: TODAY, time: "14:00", duration: 45, patientId: "p3", status: "scheduled", visitId: null },
-    { id: "a8", doctorId: "d3", date: TODAY, time: "13:00", duration: 60, patientId: "p1", status: "cancelled", visitId: null },
-    { id: "a9", doctorId: "d3", date: shiftDate(TODAY, -5), time: "08:30", duration: 30, patientId: "p3", status: "completed", visitId: "v4" },
-    { id: "a10", doctorId: "d5", date: TODAY, time: "12:00", duration: 60, patientId: "p1", status: "arrived", visitId: null },
+    // d1 Сейтқали — Терапевт
+    { id: "a1",  doctorId: "d1", date: TODAY, time: "09:00", duration: 30, patientId: "p1", status: "completed",  visitId: null },
+    { id: "a2",  doctorId: "d1", date: TODAY, time: "10:00", duration: 60, patientId: "p2", status: "arrived",    visitId: null },
+    { id: "a7",  doctorId: "d1", date: TODAY, time: "14:00", duration: 45, patientId: "p3", status: "scheduled",  visitId: null },
+    // d2 Жұмабаев — Хирург
+    { id: "a3",  doctorId: "d2", date: TODAY, time: "09:00", duration: 45, patientId: "p4", status: "completed",  visitId: null },
+    { id: "a3b", doctorId: "d2", date: TODAY, time: "11:30", duration: 45, patientId: "p3", status: "scheduled",  visitId: null },
+    // d3 Нұрланова — Ортодонт
+    { id: "a6",  doctorId: "d3", date: TODAY, time: "10:30", duration: 90, patientId: "p2", status: "arrived",    visitId: null },
+    { id: "a8",  doctorId: "d3", date: TODAY, time: "13:00", duration: 30, patientId: "p1", status: "cancelled",  visitId: null },
+    // d4 Қасымов — Пародонтолог
+    { id: "a4b", doctorId: "d4", date: TODAY, time: "09:30", duration: 60, patientId: "p7", status: "completed",  visitId: null },
+    { id: "a4c", doctorId: "d4", date: TODAY, time: "12:00", duration: 30, patientId: "p8", status: "scheduled",  visitId: null },
+    // d5 Бекова — Эндодонт
+    { id: "a10", doctorId: "d5", date: TODAY, time: "09:00", duration: 45, patientId: "p5", status: "completed",  visitId: null },
+    { id: "a10b",doctorId: "d5", date: TODAY, time: "11:00", duration: 60, patientId: "p6", status: "arrived",    visitId: null },
+    // d6 Әбілов — Ортопед
+    { id: "a6b", doctorId: "d6", date: TODAY, time: "10:00", duration: 60, patientId: "p9", status: "arrived",    visitId: null },
+    { id: "a6c", doctorId: "d6", date: TODAY, time: "14:30", duration: 30, patientId: "p10",status: "scheduled",  visitId: null },
+    // Өткен күндер (history)
+    { id: "a5",  doctorId: "d2", date: shiftDate(TODAY, -3), time: "09:00", duration: 30, patientId: "p1", status: "completed", visitId: "v2" },
+    { id: "a9",  doctorId: "d3", date: shiftDate(TODAY, -5), time: "08:30", duration: 30, patientId: "p3", status: "completed", visitId: "v4" },
     { id: "a11", doctorId: "d1", date: shiftDate(TODAY, -2), time: "09:00", duration: 45, patientId: "p2", status: "completed", visitId: "v3" },
-    { id: "a4", doctorId: "d1", date: shiftDate(TODAY, -1), time: "15:00", duration: 30, patientId: "p3", status: "completed", visitId: "v1" },
+    { id: "a4",  doctorId: "d1", date: shiftDate(TODAY, -1), time: "15:00", duration: 30, patientId: "p3", status: "completed", visitId: "v1" },
   ],
   visits: [
     {
@@ -273,6 +300,42 @@ export async function getSchedule(doctorId, date) {
       .sort((a, b) => a.time.localeCompare(b.time))
       .map((a) => ({ ...a, patientName: db.patients.find((x) => x.id === a.patientId)?.name || "Неизвестно" }))
   );
+}
+
+export async function updateAppointmentStatus(apptId, newStatus) {
+  await delay(350);
+  const db = getDb();
+  const valid = ["scheduled", "arrived", "completed", "cancelled"];
+  if (!valid.includes(newStatus)) throw new Error("Неверный статус");
+  const appt = db.appointments.find((a) => a.id === apptId);
+  if (!appt) throw new Error("Запись не найдена");
+  appt.status = newStatus;
+  saveDb(db);
+  return clone({ ...appt, patientName: db.patients.find((x) => x.id === appt.patientId)?.name || "Неизвестно" });
+}
+
+export async function getVisitsByPatient(patientId) {
+  await delay(400);
+  const db = getDb();
+  const appts = db.appointments.filter((a) => a.patientId === patientId && a.visitId);
+  return clone(
+    appts.map((a) => {
+      const v = db.visits.find((x) => x.id === a.visitId);
+      const doc = db.doctors.find((d) => d.id === a.doctorId);
+      return v ? { ...v, date: a.date, time: a.time, doctorName: doc?.name || "—", specialty: doc?.specialty || "" } : null;
+    }).filter(Boolean).sort((a, b) => b.date.localeCompare(a.date))
+  );
+}
+
+export async function getActiveAppointmentByPatient(patientId) {
+  await delay(300);
+  const db = getDb();
+  const appt = db.appointments.find(
+    (a) => a.patientId === patientId && a.date === TODAY && ["scheduled", "arrived"].includes(a.status)
+  );
+  if (!appt) return null;
+  const doc = db.doctors.find((d) => d.id === appt.doctorId);
+  return clone({ ...appt, patientName: db.patients.find((x) => x.id === appt.patientId)?.name || "—", doctorName: doc?.name || "—" });
 }
 
 export async function createAppointment(data) {
