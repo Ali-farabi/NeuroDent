@@ -180,7 +180,35 @@ export async function getPatientById(id) {
   const db = getDb();
   const p = db.patients.find((x) => x.id === id);
   if (!p) throw new Error("Пациент не найден");
-  return clone(p);
+
+  const patientVisits = db.visits.filter((v) => v.patientId === id);
+  const patientAppointments = db.appointments.filter((a) => a.patientId === id);
+
+  const treatments = patientVisits.map((v) => {
+    const doctor = db.doctors.find((d) => d.id === v.doctorId);
+    const appt = db.appointments.find((a) => a.id === v.appointmentId);
+    return {
+      procedure: v.diagnosis || "Лечение",
+      diagnosis: v.complaint || "Без диагноза",
+      doctor: doctor ? doctor.name : "Неизвестный врач",
+      date: appt ? appt.date : "Неизвестная дата",
+      cost: "15 000",
+      aiSummary: v.notes || "AI резюме не сформировано.",
+    };
+  });
+
+  const formattedVisits = patientAppointments.map((a) => {
+    const doctor = db.doctors.find((d) => d.id === a.doctorId);
+    return {
+      date: a.date,
+      time: a.time,
+      type: "Прием специалиста",
+      doctor: doctor ? doctor.name : "Неизвестный врач",
+      status: a.status === "completed" ? "Завершен" : "Запланирован",
+    };
+  });
+
+  return clone({ ...p, treatments, visits: formattedVisits });
 }
 
 export async function createPatient(data) {
@@ -338,60 +366,6 @@ export async function getActiveAppointmentByPatient(patientId) {
   return clone({ ...appt, patientName: db.patients.find((x) => x.id === appt.patientId)?.name || "—", doctorName: doc?.name || "—" });
 }
 
-export async function createAppointment(data) {
-  await delay(500);
-  const db = getDb();
-  const appt = {
-    id: genId("a"),
-    doctorId: String(data?.doctorId || ""),
-    patientId: String(data?.patientId || ""),
-    date: String(data?.date || ""),
-    time: String(data?.time || ""),
-    duration: Number(data?.duration) || 30,
-    status: "scheduled",
-    visitId: null,
-  };
-  if (!appt.doctorId) throw new Error("Выберите врача");
-  if (!appt.patientId) throw new Error("Выберите пациента");
-  if (!appt.date) throw new Error("Выберите дату");
-  if (!appt.time) throw new Error("Выберите время");
-  db.appointments.push(appt);
-  saveDb(db);
-  return clone({ ...appt, patientName: db.patients.find((x) => x.id === appt.patientId)?.name || "Неизвестно" });
-}
-
-// REPORT
-export async function getDayReport(date) {
-  await delay(700);
-  const db = getDb();
-  if (!date) throw new Error("Выберите дату");
-  const payments = db.payments
-    .filter((p) => p.date === date)
-    .map((p) => ({ ...p, patientName: db.patients.find((x) => x.id === p.patientId)?.name || "Неизвестно" }));
-  const totalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
-  const visitsCompleted = db.appointments.filter((a) => a.date === date && a.status === "completed").length;
-  const aiSignals = { cariesByType: { surface: 0, medium: 0, deep: 0, complicated: 0 }, teethByCount: {} };
-  db.appointments.filter((a) => a.date === date && a.visitId).forEach((appt) => {
-    const v = db.visits.find((x) => x.id === appt.visitId);
-    if (!v) return;
-    if (v.cariesType && aiSignals.cariesByType[v.cariesType] !== undefined) aiSignals.cariesByType[v.cariesType]++;
-    if (v.toothNumber) aiSignals.teethByCount[v.toothNumber] = (aiSignals.teethByCount[v.toothNumber] || 0) + 1;
-  });
-  return clone({ date, payments, totalAmount, visitsCompleted, aiSignals });
-}
-
-// VISITS
-export async function getActiveAppointmentByPatient(patientId) {
-  await delay(350);
-  const db = getDb();
-  const id = String(patientId || "");
-  if (!id) return null;
-  const candidates = db.appointments
-    .filter((a) => a.patientId === id && a.status !== "cancelled" && a.status !== "completed")
-    .sort((a, b) => a.time.localeCompare(b.time));
-  return candidates[0] ? clone(candidates[0]) : null;
-}
-
 export async function finishVisit(appointmentId, visitData) {
   await delay(800);
   const db = getDb();
@@ -434,7 +408,6 @@ export async function finishVisit(appointmentId, visitData) {
   }
   appt.status = "completed";
 
-  // Auto-deduct from inventory
   const materials = visitData?.materials;
   if (Array.isArray(materials) && db.inventory) {
     for (const m of materials) {
@@ -445,9 +418,7 @@ export async function finishVisit(appointmentId, visitData) {
       const item =
         db.inventory.find((i) => code && i.name.toLowerCase().includes(code)) ||
         db.inventory.find((i) => name && i.name.toLowerCase().includes(name));
-      if (item && item.quantity > 0) {
-        item.quantity = Math.max(0, item.quantity - qty);
-      }
+      if (item && item.quantity > 0) item.quantity = Math.max(0, item.quantity - qty);
     }
   }
 
@@ -455,25 +426,46 @@ export async function finishVisit(appointmentId, visitData) {
   return clone(db.visits.find((v) => v.id === appt.visitId));
 }
 
-export async function getVisitsByPatient(patientId) {
+export async function createAppointment(data) {
   await delay(500);
   const db = getDb();
-  if (!patientId) throw new Error("Пациент не выбран");
-  return clone(
-    db.visits
-      .filter((v) => v.patientId === patientId)
-      .sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""))
-      .map((v) => ({
-        id: v.id,
-        startedAt: v.startedAt,
-        finishedAt: v.finishedAt,
-        diagnosis: v.diagnosis || v.protocol?.diagnosisText || "",
-        diagnosisCode: v.diagnosisCode || "",
-        cariesType: v.cariesType || "",
-        toothNumber: v.toothNumber || "",
-        isFinal: !!v.isFinal,
-      }))
-  );
+  const appt = {
+    id: genId("a"),
+    doctorId: String(data?.doctorId || ""),
+    patientId: String(data?.patientId || ""),
+    date: String(data?.date || ""),
+    time: String(data?.time || ""),
+    duration: Number(data?.duration) || 30,
+    status: "scheduled",
+    visitId: null,
+  };
+  if (!appt.doctorId) throw new Error("Выберите врача");
+  if (!appt.patientId) throw new Error("Выберите пациента");
+  if (!appt.date) throw new Error("Выберите дату");
+  if (!appt.time) throw new Error("Выберите время");
+  db.appointments.push(appt);
+  saveDb(db);
+  return clone({ ...appt, patientName: db.patients.find((x) => x.id === appt.patientId)?.name || "Неизвестно" });
+}
+
+// REPORT
+export async function getDayReport(date) {
+  await delay(700);
+  const db = getDb();
+  if (!date) throw new Error("Выберите дату");
+  const payments = db.payments
+    .filter((p) => p.date === date)
+    .map((p) => ({ ...p, patientName: db.patients.find((x) => x.id === p.patientId)?.name || "Неизвестно" }));
+  const totalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+  const visitsCompleted = db.appointments.filter((a) => a.date === date && a.status === "completed").length;
+  const aiSignals = { cariesByType: { surface: 0, medium: 0, deep: 0, complicated: 0 }, teethByCount: {} };
+  db.appointments.filter((a) => a.date === date && a.visitId).forEach((appt) => {
+    const v = db.visits.find((x) => x.id === appt.visitId);
+    if (!v) return;
+    if (v.cariesType && aiSignals.cariesByType[v.cariesType] !== undefined) aiSignals.cariesByType[v.cariesType]++;
+    if (v.toothNumber) aiSignals.teethByCount[v.toothNumber] = (aiSignals.teethByCount[v.toothNumber] || 0) + 1;
+  });
+  return clone({ date, payments, totalAmount, visitsCompleted, aiSignals });
 }
 
 // USERS
