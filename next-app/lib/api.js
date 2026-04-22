@@ -317,6 +317,102 @@ export async function getDayReport(date) {
   return clone({ date, payments, totalAmount, visitsCompleted, aiSignals });
 }
 
+// VISITS
+export async function getActiveAppointmentByPatient(patientId) {
+  await delay(350);
+  const db = getDb();
+  const id = String(patientId || "");
+  if (!id) return null;
+  const candidates = db.appointments
+    .filter((a) => a.patientId === id && a.status !== "cancelled" && a.status !== "completed")
+    .sort((a, b) => a.time.localeCompare(b.time));
+  return candidates[0] ? clone(candidates[0]) : null;
+}
+
+export async function finishVisit(appointmentId, visitData) {
+  await delay(800);
+  const db = getDb();
+  const appt = db.appointments.find((a) => a.id === appointmentId);
+  if (!appt) throw new Error("Запись не найдена");
+  if (!appt.visitId) {
+    const visit = {
+      id: genId("v"),
+      appointmentId: appt.id,
+      doctorId: appt.doctorId,
+      patientId: appt.patientId,
+      startedAt: `${appt.date}T${appt.time}:00`,
+      finishedAt: new Date().toISOString(),
+      complaint: String(visitData?.complaint || "").trim(),
+      diagnosis: String(visitData?.diagnosis || "").trim(),
+      notes: String(visitData?.notes || "").trim(),
+      isFinal: true,
+      diagnosisCode: String(visitData?.diagnosisCode || ""),
+      cariesType: String(visitData?.cariesType || ""),
+      toothNumber: String(visitData?.toothNumber || ""),
+      protocol: visitData?.protocol || {},
+      materials: visitData?.materials || [],
+    };
+    db.visits.push(visit);
+    appt.visitId = visit.id;
+  } else {
+    const visit = db.visits.find((v) => v.id === appt.visitId);
+    if (!visit) throw new Error("Визит не найден");
+    if (visit.isFinal) throw new Error("Визит уже завершён");
+    visit.complaint = String(visitData?.complaint || "").trim();
+    visit.diagnosis = String(visitData?.diagnosis || "").trim();
+    visit.notes = String(visitData?.notes || "").trim();
+    visit.isFinal = true;
+    visit.finishedAt = new Date().toISOString();
+    if (visitData?.diagnosisCode) visit.diagnosisCode = String(visitData.diagnosisCode);
+    if (visitData?.cariesType) visit.cariesType = String(visitData.cariesType);
+    if (visitData?.toothNumber) visit.toothNumber = String(visitData.toothNumber);
+    if (visitData?.protocol) visit.protocol = visitData.protocol;
+    if (visitData?.materials) visit.materials = visitData.materials;
+  }
+  appt.status = "completed";
+
+  // Auto-deduct from inventory
+  const materials = visitData?.materials;
+  if (Array.isArray(materials) && db.inventory) {
+    for (const m of materials) {
+      const qty = Number(m.qty) || 0;
+      if (!qty) continue;
+      const code = String(m.code || "").toLowerCase();
+      const name = String(m.name || "").toLowerCase();
+      const item =
+        db.inventory.find((i) => code && i.name.toLowerCase().includes(code)) ||
+        db.inventory.find((i) => name && i.name.toLowerCase().includes(name));
+      if (item && item.quantity > 0) {
+        item.quantity = Math.max(0, item.quantity - qty);
+      }
+    }
+  }
+
+  saveDb(db);
+  return clone(db.visits.find((v) => v.id === appt.visitId));
+}
+
+export async function getVisitsByPatient(patientId) {
+  await delay(500);
+  const db = getDb();
+  if (!patientId) throw new Error("Пациент не выбран");
+  return clone(
+    db.visits
+      .filter((v) => v.patientId === patientId)
+      .sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""))
+      .map((v) => ({
+        id: v.id,
+        startedAt: v.startedAt,
+        finishedAt: v.finishedAt,
+        diagnosis: v.diagnosis || v.protocol?.diagnosisText || "",
+        diagnosisCode: v.diagnosisCode || "",
+        cariesType: v.cariesType || "",
+        toothNumber: v.toothNumber || "",
+        isFinal: !!v.isFinal,
+      }))
+  );
+}
+
 // USERS
 export async function getUsers(query = "") {
   await delay(350);
