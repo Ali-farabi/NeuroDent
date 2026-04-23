@@ -3,6 +3,7 @@ import {
   createPatient,
   updatePatient,
   getPatientById,
+  getPatientProtocol,
 } from "../../core/api.js";
 import { getState, setState } from "../../core/state.js";
 import { openModal, closeModal } from "../../ui/modal.js";
@@ -27,25 +28,35 @@ export function mountPatientsPage() {
     // Add logic for patient personal cabinet
     const downloadBtn = document.getElementById("downloadAiProtocolBtn");
     if (downloadBtn) {
-      downloadBtn.addEventListener("click", () => {
+      downloadBtn.addEventListener("click", async () => {
+        const patientId = user?.patientId || user?.id || "p1";
         downloadBtn.innerHTML = '<div class="spinner" style="width: 12px; height: 12px; border-width: 2px; border-color: var(--primary); border-right-color: transparent;"></div> Скачивание...';
-        setTimeout(() => {
+        downloadBtn.disabled = true;
+        try {
+          const protocolText = await getPatientProtocol(patientId);
+          const blob = new Blob([protocolText], { type: "text/plain;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `AI_Protocol_${patientId}.txt`;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(url);
+
           downloadBtn.innerHTML = '✅ Сохранено';
           downloadBtn.style.color = 'var(--success)';
           downloadBtn.style.borderColor = 'var(--success)';
-          
-          // Имитация скачивания
-          const link = document.createElement('a');
-          link.href = 'data:text/plain;charset=utf-8,Тестовый AI протокол';
-          link.download = 'AI_Protocol_Damir.pdf';
-          link.click();
-          
+        } catch (err) {
+          alert(err?.message || "Не удалось скачать AI-протокол");
+        } finally {
+          downloadBtn.disabled = false;
           setTimeout(() => {
             downloadBtn.innerHTML = '📄 Скачать AI-Протокол (eGov)';
             downloadBtn.style.color = 'var(--primary)';
             downloadBtn.style.borderColor = 'var(--primary)';
           }, 3000);
-        }, 1500);
+        }
       });
     }
     return;
