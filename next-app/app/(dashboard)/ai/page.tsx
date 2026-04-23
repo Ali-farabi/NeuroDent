@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useState, useEffect, useRef, Suspense, useCallback } from "react";
+import { useState, useEffect, useRef, Suspense, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   searchPatients,
@@ -548,6 +548,15 @@ function AiCorePage({ patientId }: { patientId: string }) {
 
   const showToast = useCallback((msg: string) => setToast(msg), []);
 
+  const patientAge = useMemo(() => {
+    if (!patientData?.birthDate) return null;
+    const birth = new Date(patientData.birthDate);
+    const now = new Date();
+    let age = now.getFullYear() - birth.getFullYear();
+    if (now.getMonth() < birth.getMonth() || (now.getMonth() === birth.getMonth() && now.getDate() < birth.getDate())) age--;
+    return age;
+  }, [patientData]);
+
   function startRecording() {
     transcriptRef.current = "";
     setIsRecording(true);
@@ -761,17 +770,21 @@ function AiCorePage({ patientId }: { patientId: string }) {
           <div className="flex justify-between items-end flex-wrap gap-4">
             <div>
               <div className="text-base font-bold text-gray-900 mb-0.5">{patientData.name}</div>
-              <div className="text-xs text-gray-500">Взрослый &bull; {patientData.phone}</div>
+              <div className="text-xs text-gray-500">
+                {patientAge != null ? `${patientAge} лет` : "Взрослый"} &bull; {patientData.phone}
+              </div>
             </div>
             <div className="flex gap-2 items-center flex-wrap">
               <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
                 <Bot size={12} /> Риск: Низкий
               </span>
-              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 flex items-center gap-1">
-                <AlertTriangle size={12} /> Жалоба: боль в 1.6
-              </span>
+              {complaints.trim() && (
+                <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 flex items-center gap-1">
+                  <AlertTriangle size={12} /> {complaints.length > 35 ? complaints.slice(0, 35) + "…" : complaints}
+                </span>
+              )}
               <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-600 border border-sky-200 flex items-center gap-1">
-                <Info size={12} /> МКБ-10: K02.1
+                <Info size={12} /> МКБ-10: {diagnosisCode || "—"}
               </span>
             </div>
           </div>
@@ -782,7 +795,14 @@ function AiCorePage({ patientId }: { patientId: string }) {
               <Sparkles size={12} /> AI-Summary пациента
             </div>
             <div className="text-[13px] text-gray-700 leading-relaxed">
-              Аллергий нет. Последний визит 6 месяцев назад (чистка). В прошлом лечился пульпит зуба 46. Возможна чувствительность эмали.
+              {(() => {
+                const p = patientData as Patient & { allergies?: string };
+                const allergyText = p.allergies ? `⚠ Аллергия: ${p.allergies}.` : "Аллергий нет.";
+                const visitText = visits.length > 0
+                  ? `Визитов: ${visits.length}. Последний: ${visits[0].diagnosis || visits[0].diagnosisCode || "без диагноза"} (зуб ${visits[0].toothNumber || "—"}).`
+                  : "Завершённых визитов нет.";
+                return `${allergyText} ${visitText}`;
+              })()}
             </div>
           </div>
 
@@ -1182,7 +1202,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
               </div>
               <div className="mb-4">
                 <label className="text-xs font-semibold block mb-2">Пароль от хранилища ключей:</label>
-                <input type="password" className="w-full px-3 py-2 border border-gray-200 bg-white text-sm rounded-lg" placeholder="Введите пароль..." defaultValue="123456" />
+                <input type="password" className="w-full px-3 py-2 border border-gray-200 bg-white text-sm rounded-lg" placeholder="Введите пароль..." />
               </div>
               <button
                 className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition"

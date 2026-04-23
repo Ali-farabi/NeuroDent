@@ -110,7 +110,7 @@ function PatientForm({ mode, patient, onSave, onCancel }) {
       </Field>
       <Field label="Дата рождения">
         <input type="date" value={form.birthDate} onChange={e => setForm(f => ({ ...f, birthDate: e.target.value }))}
-          style={inputStyle} />
+          max={new Date().toISOString().split("T")[0]} style={inputStyle} />
       </Field>
 
       {error && (
@@ -172,15 +172,16 @@ function PatientCard({ patient }) {
             </div>
           ))}
 
-          {!isDoctor ? (
+          <div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4, fontWeight: 500 }}>Аллергии</div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: patient.allergies ? "var(--danger)" : "var(--text)" }}>
+              {patient.allergies || "Не указано"}
+            </div>
+          </div>
+          {!isDoctor && (
             <div>
               <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4, fontWeight: 500 }}>Бонусные баллы</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--primary)" }}>175</div>
-            </div>
-          ) : (
-            <div>
-              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4, fontWeight: 500 }}>Статус</div>
-              <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>Аллергий нет</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--primary)" }}>{patient.bonusPoints ?? 0}</div>
             </div>
           )}
         </div>
@@ -380,7 +381,7 @@ function PatientListInner() {
     timerRef.current = setTimeout(() => load(search), 250);
   }, [search]);
 
-  const canCreate = user?.role !== "doctor";
+  const canCreate = ["owner", "admin"].includes(user?.role);
   const canAI     = ["owner", "doctor", "assistant"].includes(user?.role);
 
   async function handleSave(form) {
