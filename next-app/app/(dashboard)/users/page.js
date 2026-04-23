@@ -166,6 +166,16 @@ export default function UsersPage() {
 
   return (
     <div style={{ padding: 0, display: "grid", gap: 0 }}>
+      <style>{`
+        .usr-row { display: flex; align-items: center; gap: 12px; padding: 14px 20px; transition: background 0.1s; }
+        .usr-status { font-size: 12px; font-weight: 500; flex-shrink: 0; min-width: 72px; }
+        .usr-edit { padding: 5px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 12px; font-weight: 500; cursor: pointer; flex-shrink: 0; }
+        @media (max-width: 560px) {
+          .usr-row { gap: 8px; padding: 12px 14px; flex-wrap: wrap; }
+          .usr-status { display: none; }
+          .usr-edit { padding: 4px 10px; font-size: 11px; }
+        }
+      `}</style>
 
       {/* Toolbar */}
       <div style={{
@@ -204,12 +214,8 @@ export default function UsersPage() {
           const rc = ROLE_COLORS[u.role] || ROLE_COLORS.admin;
           return (
             <div key={u.id}
-              style={{
-                display: "flex", alignItems: "center", gap: 12,
-                padding: "14px 20px",
-                borderBottom: i < users.length - 1 ? "1px solid var(--border)" : "none",
-                transition: "background 0.1s",
-              }}
+              className="usr-row"
+              style={{ borderBottom: i < users.length - 1 ? "1px solid var(--border)" : "none" }}
               onMouseEnter={e => e.currentTarget.style.background = "var(--hover)"}
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}
             >
@@ -225,8 +231,8 @@ export default function UsersPage() {
 
               {/* Name + contacts */}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{u.name}</div>
-                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{u.name}</div>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {u.phone}{u.email ? ` · ${u.email}` : ""}
                 </div>
               </div>
@@ -240,21 +246,12 @@ export default function UsersPage() {
               </span>
 
               {/* Status */}
-              <span style={{
-                fontSize: 12, fontWeight: 500, flexShrink: 0, minWidth: 72,
-                color: u.isActive !== false ? "var(--success)" : "var(--muted)",
-              }}>
+              <span className="usr-status" style={{ color: u.isActive !== false ? "var(--success)" : "var(--muted)" }}>
                 {u.isActive !== false ? "Активен" : "Неактивен"}
               </span>
 
               {/* Edit button */}
-              <button
-                onClick={() => setModal({ mode: "edit", user: u })}
-                style={{
-                  padding: "5px 14px", borderRadius: "var(--radius-sm)", flexShrink: 0,
-                  border: "1px solid var(--border)", background: "var(--surface)",
-                  color: "var(--text)", fontSize: 12, fontWeight: 500, cursor: "pointer",
-                }}>
+              <button className="usr-edit" onClick={() => setModal({ mode: "edit", user: u })}>
                 Изменить
               </button>
             </div>

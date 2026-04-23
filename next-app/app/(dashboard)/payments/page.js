@@ -72,6 +72,7 @@ function KassaTab() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line
     setLoading(true);
     getPaymentsByDate(date).then(setPayments).finally(() => setLoading(false));
   }, [date]);
@@ -124,15 +125,23 @@ function KassaTab() {
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-        <StatCard label="Күндік кіріс" value={fmt(totalCash + totalCard)} accent="#2563eb"
-          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>} />
-        <StatCard label="Қолма-қол" value={fmt(totalCash)} accent="#16a34a"
-          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>} />
-        <StatCard label="Карта" value={fmt(totalCard)} accent="#0ea5e9"
-          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>} />
-        <StatCard label="Транзакциялар" value={payments.length} accent="#f59e0b"
-          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>} />
+      <div className="pay-stats">
+        <div className="pay-stat-card">
+          <StatCard label="Күндік кіріс" value={fmt(totalCash + totalCard)} accent="#2563eb"
+            icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>} />
+        </div>
+        <div className="pay-stat-card">
+          <StatCard label="Қолма-қол" value={fmt(totalCash)} accent="#16a34a"
+            icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>} />
+        </div>
+        <div className="pay-stat-card">
+          <StatCard label="Карта" value={fmt(totalCard)} accent="#0ea5e9"
+            icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>} />
+        </div>
+        <div className="pay-stat-card">
+          <StatCard label="Транзакциялар" value={payments.length} accent="#f59e0b"
+            icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>} />
+        </div>
       </div>
 
       {/* Date filter */}
@@ -141,7 +150,7 @@ function KassaTab() {
         <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inputStyle, width: "auto" }} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr min(340px, 100%)", gap: 20, alignItems: "start" }}>
+      <div className="pay-kassa-grid">
         {/* Transactions */}
         <div style={cardStyle}>
           <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -157,6 +166,7 @@ function KassaTab() {
               <div style={{ color: "var(--muted)", fontSize: 13 }}>Бұл күнде төлемдер жоқ</div>
             </div>
           ) : (
+            <div className="pay-table-wrap">
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
@@ -196,6 +206,7 @@ function KassaTab() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 
@@ -600,7 +611,28 @@ export default function PaymentsPage() {
   const [tab, setTab] = useState("kassa");
 
   return (
-    <div style={{ padding: 24, display: "grid", gap: 20, maxWidth: 1400 }}>
+    <div className="pay-outer" style={{ padding: 24, display: "grid", gap: 20, maxWidth: 1400 }}>
+      <style>{`
+        .pay-kassa-grid { display: grid; grid-template-columns: 1fr 340px; gap: 20px; align-items: start; }
+        .pay-stats { display: flex; flex-wrap: wrap; gap: 12px; }
+        .pay-stat-card { flex: 1; min-width: 130px; }
+        .pay-tabs { display: flex; gap: 2; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px; width: fit-content; box-shadow: var(--shadow-sm); overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+        .pay-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        @media (max-width: 700px) {
+          .pay-kassa-grid { grid-template-columns: 1fr !important; }
+          .pay-stat-card { min-width: calc(50% - 6px); flex: none; }
+        }
+        @media (max-width: 540px) {
+          .pay-stats { gap: 8px; }
+          .pay-stat-card { min-width: calc(50% - 4px); }
+        }
+        @media (max-width: 420px) {
+          .pay-stat-card { min-width: 100%; }
+        }
+        @media (max-width: 600px) {
+          .pay-outer { padding: 12px !important; gap: 14px !important; }
+        }
+      `}</style>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <div style={{
@@ -618,11 +650,7 @@ export default function PaymentsPage() {
       </div>
 
       {/* Tabs */}
-      <div style={{
-        display: "flex", gap: 2, background: "var(--surface)",
-        border: "1px solid var(--border)", borderRadius: "var(--radius)",
-        padding: 4, width: "fit-content", boxShadow: "var(--shadow-sm)",
-      }}>
+      <div className="pay-tabs">
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             style={{

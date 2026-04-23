@@ -573,13 +573,25 @@ function AiCorePage({ patientId }) {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="inline-flex items-center flex-wrap gap-1 p-1 bg-white rounded-full border border-gray-200">
+      {/* Tabs — горизонтал scroll мобайлда */}
+      <div style={{
+        display: "flex", flexWrap: "nowrap", gap: 4, overflowX: "auto",
+        background: "var(--surface)", border: "1px solid var(--border)",
+        borderRadius: 99, padding: 4, scrollbarWidth: "none",
+        msOverflowStyle: "none",
+      }}>
         {tabs.map((t) => (
           <button
             key={t.key}
             type="button"
-            className={`px-3.5 py-1.5 text-xs font-medium rounded-full border-none cursor-pointer transition ${activeTab === t.key ? "bg-blue-600 text-white" : "bg-transparent text-gray-500 hover:bg-gray-100"} ${t.key === "add" ? "font-bold" : ""}`}
+            style={{
+              padding: "6px 14px", borderRadius: 99, border: "none",
+              background: activeTab === t.key ? "var(--primary)" : "transparent",
+              color: activeTab === t.key ? "#fff" : "var(--muted)",
+              fontWeight: activeTab === t.key ? 600 : 400,
+              fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
+              transition: "all 0.15s",
+            }}
             onClick={() => setActiveTab(t.key)}
           >
             {t.label}
