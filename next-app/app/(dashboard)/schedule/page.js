@@ -7,6 +7,7 @@ import {
   updateAppointmentStatus, getPatientById, getVisitsByPatient,
 } from "@/lib/api";
 import { useAuth } from "@/lib/AuthContext";
+import { Bot, Stethoscope, Phone, CalendarDays, MessageCircle, Sparkles, ClipboardList, Bell, UserRound, X } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const TODAY    = new Date().toISOString().slice(0, 10);
@@ -137,9 +138,9 @@ function ApptDetailModal({ appt, doctors, role, onClose, onStatusChanged, onOpen
   }
 
   const STATUS_BTN = {
-    arrived:   { label: "Пришёл ✓",   style: { background: "#f59e0b", color: "#fff", border: "none" } },
-    completed: { label: "Завершить ✓", style: { background: "#22c55e", color: "#fff", border: "none" } },
-    cancelled: { label: "Отменить ✗",  style: { background: "#ef4444", color: "#fff", border: "none" } },
+    arrived:   { label: "Пришёл",   style: { background: "#f59e0b", color: "#fff", border: "none" } },
+    completed: { label: "Завершить", style: { background: "#22c55e", color: "#fff", border: "none" } },
+    cancelled: { label: "Отменить",  style: { background: "#ef4444", color: "#fff", border: "none" } },
   };
 
   return (
@@ -184,8 +185,8 @@ function ApptDetailModal({ appt, doctors, role, onClose, onStatusChanged, onOpen
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {/* AI button — doctor/assistant/owner */}
             {["doctor","assistant","owner"].includes(role) && (
-              <button onClick={() => { onOpenAi(appt.patientId); onClose(); }} style={{ ...btnPrimary, width: "100%", padding: "11px 0", fontSize: 14 }}>
-                🤖 Открыть Core AI Layer
+              <button onClick={() => { onOpenAi(appt.patientId); onClose(); }} style={{ ...btnPrimary, width: "100%", padding: "11px 0", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                <Bot size={16} /> Открыть Core AI Layer
               </button>
             )}
 
@@ -266,7 +267,7 @@ function CalendarGrid({ doctors, appointments, onApptClick }) {
   const TIME_W   = 64;
 
   if (!doctors.length) {
-    return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 14 }}>👨‍⚕️ Врачей не найдено</div>;
+    return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 14, gap: 6 }}><Stethoscope size={18} /> Врачей не найдено</div>;
   }
 
   return (
@@ -541,15 +542,15 @@ function CrmTab({ patients }) {
           </div>
           {selected && (
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => { const n=(selected.phone||"").replace(/\D/g,"").replace(/^8/,"7"); window.location.href=`tel:+${n}`; }} style={{ ...btnOutline, fontSize: 12, padding: "6px 12px" }}>📞 Позвонить</button>
-              <button style={{ ...btnOutline, fontSize: 12, padding: "6px 12px" }}>📅 Записать</button>
+              <button onClick={() => { const n=(selected.phone||"").replace(/\D/g,"").replace(/^8/,"7"); window.location.href=`tel:+${n}`; }} style={{ ...btnOutline, fontSize: 12, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 4 }}><Phone size={13} /> Позвонить</button>
+              <button style={{ ...btnOutline, fontSize: 12, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 4 }}><CalendarDays size={13} /> Записать</button>
             </div>
           )}
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "18px 22px", display: "flex", flexDirection: "column", gap: 10 }}>
           {!selected ? (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, color: "var(--muted)" }}>
-              <div style={{ fontSize: 40 }}>💬</div>
+              <div style={{ fontSize: 40, display: "flex" }}><MessageCircle size={40} /></div>
               <div style={{ fontSize: 14 }}>Выберите диалог слева</div>
             </div>
           ) : chatMsgs.map((m, i) => (
@@ -566,9 +567,9 @@ function CrmTab({ patients }) {
           <div style={{ borderTop: "1px solid var(--border)", background: "var(--surface)", padding: "10px 16px", flexShrink: 0 }}>
             <div style={{ display: "flex", gap: 6, marginBottom: 9 }}>
               {[
-                { label: "✨ AI-Ответ",    text: "Добрый день! Да, конечно. У доктора есть окошко на 14:30. Записать вас?", primary: true },
-                { label: "📋 Прайс",       text: "Добрый день! Актуальный прайс на услуги клиники прикреплён.", primary: false },
-                { label: "🔔 Напоминание", text: "Напоминаем о вашем приёме завтра. Ждём вас!", primary: false },
+                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Sparkles size={11} /> AI-Ответ</span>,    text: "Добрый день! Да, конечно. У доктора есть окошко на 14:30. Записать вас?", primary: true },
+                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><ClipboardList size={11} /> Прайс</span>,       text: "Добрый день! Актуальный прайс на услуги клиники прикреплён.", primary: false },
+                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Bell size={11} /> Напоминание</span>, text: "Напоминаем о вашем приёме завтра. Ждём вас!", primary: false },
               ].map(b => (
                 <button key={b.label} onClick={() => setMsg(b.text)} style={{ fontSize: 11, padding: "5px 11px", borderRadius: 7, cursor: "pointer", fontWeight: 600, border: b.primary?"1px solid var(--primary)":"1px solid var(--border)", background: b.primary?"rgba(59,130,246,0.09)":"var(--surface-2)", color: b.primary?"var(--primary)":"var(--muted)" }}>{b.label}</button>
               ))}
@@ -587,7 +588,7 @@ function CrmTab({ patients }) {
       <div style={{ width: 240, flexShrink: 0, borderLeft: "1px solid var(--border)", background: "var(--surface)", display: "flex", flexDirection: "column" }}>
         {!selected ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--muted)", padding: 24, textAlign: "center", gap: 10 }}>
-            <div style={{ fontSize: 40 }}>👤</div>
+            <div style={{ fontSize: 40, display: "flex" }}><UserRound size={40} /></div>
             <div style={{ fontSize: 12, lineHeight: 1.6 }}>Выберите пациента, чтобы увидеть карточку</div>
           </div>
         ) : loadingCard ? (
@@ -622,9 +623,9 @@ function CrmTab({ patients }) {
             {/* Actions */}
             <div style={{ display: "grid", gap: 8 }}>
               {[
-                { label: "📞 Позвонить",        fn: () => { const n=(selected.phone||"").replace(/\D/g,"").replace(/^8/,"7"); window.location.href=`tel:+${n}`; } },
-                { label: "📅 Записать на приём", fn: () => {} },
-                { label: "📋 Карточка пациента", fn: () => {} },
+                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Phone size={13} /> Позвонить</span>,        fn: () => { const n=(selected.phone||"").replace(/\D/g,"").replace(/^8/,"7"); window.location.href=`tel:+${n}`; } },
+                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><CalendarDays size={13} /> Записать на приём</span>, fn: () => {} },
+                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><ClipboardList size={13} /> Карточка пациента</span>, fn: () => {} },
               ].map(b => (
                 <button key={b.label} onClick={b.fn} style={{ ...btnOutline, width: "100%", fontSize: 12, padding: "8px 0" }}>{b.label}</button>
               ))}
@@ -648,8 +649,8 @@ export default function SchedulePage() {
   }, []);
 
   const TABS = [
-    { id: "calendar", label: "📅 Умный календарь" },
-    { id: "crm",      label: "💬 WhatsApp & Звонки", badge: 3 },
+    { id: "calendar", label: <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><CalendarDays size={15} /> Умный календарь</span> },
+    { id: "crm",      label: <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><MessageCircle size={15} /> WhatsApp & Звонки</span>, badge: 3 },
   ];
 
   return (

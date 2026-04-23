@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Bot, Mic, CheckCircle2, AlertTriangle, Info, Sparkles, Upload, FileText, Key, Check, MicVocal } from "lucide-react";
 import {
   searchPatients,
   getPatientById,
@@ -139,7 +140,7 @@ function PatientSelectPage() {
 
       {/* Hero */}
       <div className="flex items-start gap-5 p-6 bg-white border border-gray-200 shadow-sm">
-        <div className="text-5xl leading-none shrink-0 opacity-90">🦷</div>
+        <div className="text-5xl leading-none shrink-0 opacity-90"><img src="/images/teeth/Whitetooth.png" alt="" className="w-12 h-12 object-contain" /></div>
         <div className="min-w-0">
           <h2 className="text-xl font-extrabold text-gray-900 tracking-tight mb-2">Выберите пациента для приема</h2>
           <p className="text-sm text-gray-500 leading-relaxed">Чтобы AI-ассистент начал слушать и писать протокол, выберите пациента из базы.</p>
@@ -413,7 +414,7 @@ function AiCorePage({ patientId }) {
           if (e.results[i].isFinal) { transcriptRef.current += t + " "; setComplaints(transcriptRef.current.trim()); }
           else interim = t;
         }
-        if (interim) setAiStatus(`🎤 ${interim}`);
+        if (interim) setAiStatus(interim);
       };
       r.onerror = (e) => setAiStatus(`Ошибка: ${e.error}`);
       r.onend = () => { if (isRecording) try { r.start(); } catch {} };
@@ -427,7 +428,7 @@ function AiCorePage({ patientId }) {
     if (recogRef.current) { recogRef.current.stop(); recogRef.current = null; }
     const text = transcriptRef.current.trim();
     if (text.length < 5) { setAiStatus("Слушаю..."); return; }
-    setAiStatus("✅ Запись сохранена");
+    setAiStatus("Запись сохранена");
     if (!complaints.trim()) setComplaints(text);
     const low = text.toLowerCase();
     if (low.includes("глубок")) setCariesType("deep");
@@ -610,14 +611,14 @@ function AiCorePage({ patientId }) {
             </div>
             <div className="flex gap-2 items-center flex-wrap">
               <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">Риск: Низкий</span>
-              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200">⚠️ Жалоба: боль в 1.6</span>
-              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-600 border border-sky-200">ℹ️ МКБ-10: K02.1</span>
+              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 flex items-center gap-1"><AlertTriangle size={12} /> Жалоба: боль в 1.6</span>
+              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-600 border border-sky-200 flex items-center gap-1"><Info size={12} /> МКБ-10: K02.1</span>
             </div>
           </div>
 
           {/* AI Summary */}
           <div className="w-full bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-            <div className="text-[11px] font-bold text-blue-600 uppercase mb-2">✨ AI-Summary пациента</div>
+            <div className="text-[11px] font-bold text-blue-600 uppercase mb-2 flex items-center gap-1"><Sparkles size={12} /> AI-Summary пациента</div>
             <div className="text-[13px] text-gray-700 leading-relaxed">Аллергий нет. Последний визит 6 месяцев назад (чистка). В прошлом лечился пульпит зуба 46. Возможна чувствительность эмали.</div>
           </div>
 
@@ -670,7 +671,7 @@ function AiCorePage({ patientId }) {
                 </div>
               ))}
               <div className="ml-auto">
-                <button type="button" className="px-2.5 py-1 text-[11px] border border-gray-200 rounded-md bg-white text-gray-700 hover:bg-gray-50 hover:border-blue-500 hover:text-blue-600 transition cursor-pointer" onClick={exportToothFormula}>📤 JSON</button>
+                <button type="button" className="px-2.5 py-1 text-[11px] border border-gray-200 rounded-md bg-white text-gray-700 hover:bg-gray-50 hover:border-blue-500 hover:text-blue-600 transition cursor-pointer flex items-center gap-1" onClick={exportToothFormula}><Upload size={11} /> JSON</button>
               </div>
             </div>
             <div className="text-[11px] text-gray-400 text-right mt-1">
@@ -738,7 +739,7 @@ function AiCorePage({ patientId }) {
 
                 <div className="flex flex-col gap-2 mt-2">
                   {visitFinished ? (
-                    <div className="text-center py-4 bg-green-50 rounded-lg text-green-600 font-semibold">✅ Прием завершен и материалы списаны</div>
+                    <div className="text-center py-4 bg-green-50 rounded-lg text-green-600 font-semibold flex items-center justify-center gap-2"><CheckCircle2 size={18} /> Прием завершен и материалы списаны</div>
                   ) : (
                     <button className="w-full py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50 flex items-center justify-center gap-2" disabled={finishing} onClick={handleFinishVisit}>
                       {finishing ? (
@@ -750,12 +751,12 @@ function AiCorePage({ patientId }) {
                     <button className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition" onClick={() => {
                       setModal({ title: "Экспорт в PDF", phase: "loading" });
                       setTimeout(() => setModal((p) => p ? { ...p, phase: "done" } : null), 1800);
-                    }}>📄 Экспорт PDF</button>
+                    }}> <FileText size={14} /> Экспорт PDF</button>
                     <button
                       className={`px-3 py-2 text-sm font-medium rounded-lg transition ${egovSigned ? "bg-green-50 border border-green-300 text-green-600 cursor-default" : "text-gray-700 bg-white border border-gray-200 hover:bg-gray-50"}`}
                       onClick={egovSigned ? undefined : () => setModal({ title: "Подписание через eGov (ЭЦП)", phase: "select" })}
                     >
-                      {egovSigned ? "✅ Подписано ЭЦП" : "🔑 Подпись eGov"}
+                      {egovSigned ? <span className="flex items-center gap-1"><CheckCircle2 size={14} /> Подписано ЭЦП</span> : <span className="flex items-center gap-1"><Key size={14} /> Подпись eGov</span>}
                     </button>
                   </div>
                 </div>
@@ -895,7 +896,7 @@ function AiCorePage({ patientId }) {
           )}
           {modal.title.includes("PDF") && modal.phase === "done" && (
             <div className="text-center p-5">
-              <div className="text-4xl mb-4">✅</div>
+              <div className="text-4xl mb-4 flex justify-center"><CheckCircle2 size={48} className="text-green-500" /></div>
               <div className="text-base font-semibold mb-3">PDF успешно сформирован</div>
               <div className="text-[13px] text-gray-400 mb-6">Документ автоматически сохранен в карту пациента и скачан.</div>
               <button className="w-full px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition" onClick={() => setModal(null)}>Закрыть</button>
@@ -906,7 +907,7 @@ function AiCorePage({ patientId }) {
               <div className="text-[13px] text-gray-500 mb-2">Документ для подписи сформирован на основе AI-протокола:</div>
               <div className="text-[13px] text-gray-500 mb-3"><b>МКБ-10:</b> {diagnosisCode || "—"} &bull; <b>Тип кариеса:</b> {cariesType || "—"} &bull; <b>Зуб:</b> {selectedTooth || "—"}</div>
               <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer bg-gray-50 mb-5 hover:border-blue-500 hover:bg-blue-50/30 transition" onClick={() => setModal((p) => p ? { ...p, phase: "password" } : null)}>
-                <div className="text-2xl mb-2">🔑</div>
+                <div className="text-2xl mb-2 flex justify-center"><Key size={32} className="text-blue-600" /></div>
                 <div className="font-semibold text-sm text-blue-600">Выбрать файл ЭЦП</div>
                 <div className="text-[11px] text-gray-400 mt-1">.p12 или .cer</div>
               </div>
@@ -916,7 +917,7 @@ function AiCorePage({ patientId }) {
             <div className="p-2.5">
               <div className="text-[13px] text-gray-500 mb-3"><b>МКБ-10:</b> {diagnosisCode || "—"} &bull; <b>Тип кариеса:</b> {cariesType || "—"} &bull; <b>Зуб:</b> {selectedTooth || "—"}</div>
               <div className="border border-green-300 rounded-lg p-4 text-center mb-4 bg-green-50/50">
-                <span className="text-green-600 mr-2">✔️</span>
+                <span className="text-green-600 mr-2 flex items-center"><Check size={16} /></span>
                 <span className="font-semibold text-[13px]">GOSTKNCA_xxxxxxxx.p12 выбран</span>
               </div>
               <div className="mb-4">
@@ -941,7 +942,7 @@ function AiCorePage({ patientId }) {
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-5 right-5 bg-white border border-gray-200 shadow-xl px-4 py-3.5 rounded-xl z-[9999] flex items-center gap-3 text-[13px] animate-[fadeIn_0.2s_ease]">
-          <span className="text-xl">🎤</span>
+          <span className="text-xl"><MicVocal size={22} /></span>
           <div>
             <div className="font-semibold">{toast}</div>
           </div>
