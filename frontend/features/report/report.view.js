@@ -12,7 +12,7 @@ function escapeHtml(str) {
 export function renderReportPage({ date }) {
   return `
     <div class="report-container report-page-gaps-zero" style="max-width: 100%; margin: 0 auto;">
-      
+
       <!-- 1 бокс: заголовок + дата + Обновить -->
       <div class="report-header-box">
         <div style="display: flex; justify-content: space-between; align-items: flex-end;">
@@ -59,15 +59,15 @@ export function renderReportPage({ date }) {
       <div id="reportSummary" class="report-summary-wrap"></div>
 
       <div class="report-panels-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));">
-        
+
         <!-- Контроль врачей (Рейтинг) -->
         <div class="report-panel" style="background: var(--surface); border: 1px solid var(--border); padding: 20px; box-shadow: var(--shadow-sm);">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
              <h2 style="font-size: 16px; font-weight: 700; margin: 0;">Контроль врачей</h2>
              <span class="badge" style="background: var(--surface-2); color: var(--text);">Топ по выручке</span>
           </div>
-          
-          <div class="stack" style="gap: 16px;">
+
+          <div id="reportDoctorRanking" class="stack" style="gap: 16px;">
             <!-- Доктор 1 -->
             <div>
               <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
@@ -125,18 +125,18 @@ export function renderReportPage({ date }) {
           </div>
         </div>
 
-        <!-- Выручка по специальностям (Фейковый чарт) -->
+        <!-- Выручка по специальностям -->
         <div class="report-panel" style="background: var(--surface); border: 1px solid var(--border); padding: 20px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column;">
           <h2 style="font-size: 16px; font-weight: 700; margin: 0 0 20px 0;">Выручка по направлениям</h2>
-          
-          <!-- Имитация круговой диаграммы с помощью CSS -->
-          <div style="display: flex; align-items: center; gap: 32px; flex: 1;">
+
+          <!-- Диаграмма строится по данным backend -->
+          <div id="reportSpecialtyRevenue" style="display: flex; align-items: center; gap: 32px; flex: 1;">
             <div style="position: relative; width: 140px; height: 140px; border-radius: 50%; background: conic-gradient(var(--primary) 0% 50%, #10b981 50% 80%, #f59e0b 80% 100%); display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 25px var(--surface);">
                <div style="text-align: center;">
                  <div style="font-weight: 800; font-size: 16px; color: var(--text);">350K ₸</div>
                </div>
             </div>
-            
+
             <div class="stack" style="gap: 12px; flex: 1;">
               <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
                 <div style="display: flex; align-items: center; gap: 8px;">
@@ -194,15 +194,14 @@ export function renderError(message) {
 }
 
 export function renderSummary({ totalAmount, visitsCompleted, aiSignals }) {
-  // Фейковые данные для красивого отображения (в реальном проекте берутся из API)
   const avgCheck = visitsCompleted ? Math.round(totalAmount / visitsCompleted) : 0;
   const deepCariesCount = aiSignals?.cariesByType?.deep || 0;
   const deepStatus =
     deepCariesCount > 0 ? "Есть случаи" : "Нет случаев";
-  
+
   return `
     <div class="report-summary-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
-      
+
       <!-- Выручка -->
       <div class="report-summary-card" style="background: var(--surface); border: 1px solid var(--border); padding: 20px; box-shadow: var(--shadow-sm);">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
@@ -239,6 +238,89 @@ export function renderSummary({ totalAmount, visitsCompleted, aiSignals }) {
         <div style="font-size: 28px; font-weight: 800; color: var(--text);">${deepCariesCount}</div>
       </div>
 
+    </div>
+  `;
+}
+
+export function renderDoctorRanking(list = []) {
+  if (!list.length) {
+    return `<div style="font-size: 13px; color: var(--muted);">Нет данных по врачам за выбранную дату</div>`;
+  }
+
+  const maxRevenue = Math.max(...list.map((item) => Number(item.revenue || 0)), 1);
+
+  return list
+    .map((item, index) => {
+      const revenue = Number(item.revenue || 0);
+      const width = Math.max(6, Math.round((revenue / maxRevenue) * 100));
+      const compliance =
+        item.protocolCompliance === null || item.protocolCompliance === undefined
+          ? "нет визитов"
+          : `${Number(item.protocolCompliance)}%`;
+      const avgCheck = Number(item.avgCheck || 0);
+
+      return `
+        <div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <div style="width: 24px; height: 24px; background: ${index === 0 ? "var(--primary-100)" : "var(--surface-2)"}; color: ${index === 0 ? "var(--primary-700)" : "var(--muted)"}; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;">${index + 1}</div>
+              <span style="font-weight: 600; font-size: 14px;">${escapeHtml(item.doctorName)} (${escapeHtml(item.specialty)})</span>
+            </div>
+            <span style="font-weight: 700; font-size: 14px;">${revenue.toLocaleString()} ₸</span>
+          </div>
+          <div style="height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden;">
+            <div style="height: 100%; width: ${width}%; background: ${index === 0 ? "var(--primary)" : "#3b82f6"}; border-radius: 3px;"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 11px; color: var(--muted);">
+            <span>Соблюдение протоколов: ${escapeHtml(compliance)}</span>
+            <span style="color: var(--success);">Средний чек: ${avgCheck ? `${avgCheck.toLocaleString()} ₸` : "—"}</span>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+export function renderSpecialtyRevenue(list = []) {
+  if (!list.length) {
+    return `<div style="font-size: 13px; color: var(--muted);">Нет оплат по направлениям за выбранную дату</div>`;
+  }
+
+  const colors = ["var(--primary)", "#10b981", "#f59e0b", "#3b82f6", "#ef4444"];
+  const total = list.reduce((sum, item) => sum + Number(item.revenue || 0), 0);
+  let cursor = 0;
+  const gradient = list
+    .map((item, index) => {
+      const percent = total ? (Number(item.revenue || 0) / total) * 100 : 0;
+      const start = cursor;
+      cursor += percent;
+      return `${colors[index % colors.length]} ${start}% ${cursor}%`;
+    })
+    .join(", ");
+
+  return `
+    <div style="position: relative; width: 140px; height: 140px; border-radius: 50%; background: conic-gradient(${gradient}); display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 25px var(--surface);">
+       <div style="text-align: center;">
+         <div style="font-weight: 800; font-size: 16px; color: var(--text);">${Math.round(total / 1000)}K ₸</div>
+       </div>
+    </div>
+
+    <div class="stack" style="gap: 12px; flex: 1;">
+      ${list
+        .map((item, index) => {
+          const revenue = Number(item.revenue || 0);
+          const percent = total ? Math.round((revenue / total) * 100) : 0;
+          return `
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="width: 10px; height: 10px; background: ${colors[index % colors.length]}; border-radius: 2px;"></div>
+                <span>${escapeHtml(item.specialty)}</span>
+              </div>
+              <span style="font-weight: 600;">${percent}%</span>
+            </div>
+          `;
+        })
+        .join("")}
     </div>
   `;
 }

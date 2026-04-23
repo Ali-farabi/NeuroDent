@@ -4,7 +4,9 @@ import {
   searchPatients,
   getInventoryItems,
   addInventoryItem,
-  updateInventoryQuantity
+  updateInventoryQuantity,
+  exportPaymentsCsv,
+  getDebtors
 } from "../../core/api.js";
 import { getState, setState } from "../../core/state.js";
 import { openModal, closeModal } from "../../ui/modal.js";
@@ -50,27 +52,32 @@ export async function mountPaymentsPage() {
   // Excel Export Logic
   const exportExcelBtn = document.getElementById("exportExcelBtn");
   if (exportExcelBtn) {
-    exportExcelBtn.addEventListener("click", () => {
+    exportExcelBtn.addEventListener("click", async () => {
       exportExcelBtn.innerHTML = '<div class="spinner" style="width: 14px; height: 14px; border-color: var(--primary); border-right-color: transparent;"></div> Экспорт...';
-      setTimeout(() => {
-        exportExcelBtn.innerHTML = '<span>✅</span> Скачано';
-        exportExcelBtn.style.color = 'var(--success)';
-        
-        // Создаем фейковый CSV файл и скачиваем
-        const csvContent = "data:text/csv;charset=utf-8,Дата,Пациент,Сумма,Метод\n2023-10-10,Ерлан Муратов,150000,cash\n2023-10-11,Аружан,25000,card";
-        const encodedUri = encodeURI(csvContent);
+      exportExcelBtn.disabled = true;
+      try {
+        const csvContent = await exportPaymentsCsv(dateInput.value);
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", "payments_export.csv");
+        link.href = url;
+        link.download = `payments_${dateInput.value}.csv`;
         document.body.appendChild(link);
         link.click();
         link.remove();
-        
+        URL.revokeObjectURL(url);
+
+        exportExcelBtn.innerHTML = '<span>✅</span> Скачано';
+        exportExcelBtn.style.color = 'var(--success)';
+      } catch (err) {
+        alert(err?.message || "Не удалось экспортировать платежи");
+      } finally {
+        exportExcelBtn.disabled = false;
         setTimeout(() => {
           exportExcelBtn.innerHTML = '<span>📊</span> Экспорт в Excel';
           exportExcelBtn.style.color = '';
         }, 3000);
-      }, 1000);
+      }
     });
   }
 
@@ -78,29 +85,17 @@ export async function mountPaymentsPage() {
   async function loadDebtors(query = "") {
     const debtorsContainer = document.getElementById("debtorsTableContainer");
     if (!debtorsContainer) return;
-    
+
     try {
       debtorsContainer.innerHTML = renderLoading("Поиск должников...");
-      
-      // Имитация логики: берем всех пациентов и притворяемся, что у некоторых есть долг,
-      // если их ID четный или что-то вроде того, чтобы показать динамику из БД.
-      // В реальном проекте мы бы проверяли (стоимость визитов - оплачено).
-      let allPatients = await searchPatients(query);
-      
-      const debtors = allPatients
-        .filter((p, i) => i % 2 === 0) // Имитация: каждый второй имеет долг
-        .map(p => ({
-          patientName: p.name,
-          phone: p.phone,
-          debt: 15000 * (p.name.length % 3 + 1), // Случайная сумма долга
-          date: p.createdAt
-        }));
+
+      const debtors = await getDebtors(query);
 
       if (!debtors.length) {
          debtorsContainer.innerHTML = `<div class="payments-empty"><div class="state-icon">✅</div><div class="state-text" style="margin-top:0;">Должников не найдено</div></div>`;
          return;
       }
-      
+
       debtorsContainer.innerHTML = renderDebtorsTable(debtors);
     } catch (err) {
       debtorsContainer.innerHTML = renderError("Не удалось загрузить список должников");
@@ -177,7 +172,7 @@ export async function mountPaymentsPage() {
       });
       amountInput.value = "";
       await loadPayments(dateInput.value);
-      
+
       // Show print receipt button
       const printBtn = document.getElementById("printReceiptBtn");
       if (printBtn) {
@@ -238,9 +233,9 @@ export async function mountPaymentsPage() {
       invStateBox.innerHTML = renderLoading("Загрузка склада...");
       invTableBox.innerHTML = "";
       const allItems = await getInventoryItems();
-      
+
       const q = query.trim().toLowerCase();
-      const list = allItems.filter(item => 
+      const list = allItems.filter(item =>
         !q || item.name.toLowerCase().includes(q) || item.category.toLowerCase().includes(q)
       );
 
@@ -248,7 +243,7 @@ export async function mountPaymentsPage() {
         invStateBox.innerHTML = `<div class="payments-empty"><div class="state-icon">📦</div><div class="state-text" style="margin-top:0;">Материалы не найдены</div></div>`;
         return;
       }
-      
+
       invStateBox.innerHTML = "";
       invTableBox.innerHTML = renderInventoryTable(list);
     } catch (err) {
@@ -305,7 +300,7 @@ export async function mountPaymentsPage() {
   invTableBox.addEventListener("click", async (e) => {
     const btnPlus = e.target.closest(".inventory-plus");
     const btnMinus = e.target.closest(".inventory-minus");
-    
+
     if (btnPlus) {
       const id = btnPlus.dataset.id;
       btnPlus.disabled = true;

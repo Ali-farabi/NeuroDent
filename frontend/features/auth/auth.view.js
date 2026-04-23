@@ -4,7 +4,7 @@ export function renderAuthPage() {
       <div class="auth-left">
         <div class="auth-topbar">
           <div class="auth-brand" style="display: flex; align-items: center; gap: 8px;">
-<img src="./assets/images/Medimetricslogotype.png" alt="Neurodent" style="width: 36px; height: 36px;">
+<img src="./assets/images/Medimetricslogotype.png" alt="Neurodent" style="width: 40px; height: 36px;">
             <span style="font-size: 24px; font-weight: 800;">Neurodent</span>
           </div>
         </div>

@@ -5,6 +5,8 @@ import {
   renderLoading,
   renderError,
   renderSummary,
+  renderDoctorRanking,
+  renderSpecialtyRevenue,
   renderEmptyPayments,
   renderPaymentsTable,
 } from "./report.view.js";
@@ -19,6 +21,8 @@ export function mountReportPage() {
   const stateBox = document.getElementById("reportState");
   const summaryBox = document.getElementById("reportSummary");
   const paymentsBox = document.getElementById("reportPayments");
+  const doctorRankingBox = document.getElementById("reportDoctorRanking");
+  const specialtyRevenueBox = document.getElementById("reportSpecialtyRevenue");
 
   async function loadReport(d) {
     try {
@@ -33,6 +37,12 @@ export function mountReportPage() {
         visitsCompleted: report.visitsCompleted,
         aiSignals: report.aiSignals,
       });
+      if (doctorRankingBox) {
+        doctorRankingBox.innerHTML = renderDoctorRanking(report.doctorRevenue || []);
+      }
+      if (specialtyRevenueBox) {
+        specialtyRevenueBox.innerHTML = renderSpecialtyRevenue(report.specialtyRevenue || []);
+      }
       if (!report.payments.length) {
         paymentsBox.innerHTML = renderEmptyPayments();
         return;
