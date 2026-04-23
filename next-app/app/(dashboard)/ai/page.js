@@ -1,6 +1,8 @@
+/* eslint-disable @next/next/no-img-element */
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   searchPatients,
@@ -183,7 +185,7 @@ function PatientSelectPage() {
 }
 
 // ─── Tooth Button ─────────────────────────────────────────────────────────────
-function ToothBtn({ n, jaw, status, isSelected, isHidden, bite, onClick }) {
+function ToothBtn({ n, status, isSelected, isHidden, bite, onClick }) {
   const imgStyle = (() => {
     if (status === "removed") return { filter: "grayscale(1) opacity(0.4)", transform: "scale(0.85)" };
     if (status === "missing") return { filter: "grayscale(1) opacity(0.2)", transform: "scale(0.75)" };
@@ -631,7 +633,7 @@ function AiCorePage({ patientId }) {
                 <>
                   <div className="text-[11px] text-gray-400 mt-1">Верхняя челюсть</div>
                   <div className="flex flex-nowrap gap-1 min-w-max">
-                    {UPPER.map((n) => <ToothBtn key={n} n={n} jaw="upper" status={teeth[n] || "normal"} isSelected={String(selectedTooth) === String(n)} isHidden={false} bite={bite} onClick={() => handleToothClick(n, teeth[n] || "normal")} />)}
+                    {UPPER.map((n) => <ToothBtn key={n} n={n} status={teeth[n] || "normal"} isSelected={String(selectedTooth) === String(n)} isHidden={false} bite={bite} onClick={() => handleToothClick(n, teeth[n] || "normal")} />)}
                   </div>
                 </>
               )}
@@ -639,7 +641,7 @@ function AiCorePage({ patientId }) {
                 <>
                   <div className="text-[11px] text-gray-400 mt-1">Нижняя челюсть</div>
                   <div className="flex flex-nowrap gap-1 min-w-max">
-                    {LOWER.map((n) => <ToothBtn key={n} n={n} jaw="lower" status={teeth[n] || "normal"} isSelected={String(selectedTooth) === String(n)} isHidden={false} bite={bite} onClick={() => handleToothClick(n, teeth[n] || "normal")} />)}
+                    {LOWER.map((n) => <ToothBtn key={n} n={n} status={teeth[n] || "normal"} isSelected={String(selectedTooth) === String(n)} isHidden={false} bite={bite} onClick={() => handleToothClick(n, teeth[n] || "normal")} />)}
                   </div>
                 </>
               )}
@@ -938,9 +940,17 @@ function AiCorePage({ patientId }) {
 }
 
 // ─── Main Export ──────────────────────────────────────────────────────────────
-export default function AiPage() {
+function AiPageContent() {
   const searchParams = useSearchParams();
   const patientId = searchParams.get("patient");
   if (!patientId) return <PatientSelectPage />;
   return <AiCorePage patientId={patientId} />;
+}
+
+export default function AiPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 24, color: "var(--muted)", fontSize: 14 }}>Жүктелуде...</div>}>
+      <AiPageContent />
+    </Suspense>
+  );
 }
