@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/AuthContext";
 import { searchPatients, getPatientById, createPatient, updatePatient } from "@/lib/api";
+import { Bot, HeartPulse, CalendarDays, HandMetal, Sparkles, FileDown, AlertTriangle, UserRound } from "lucide-react";
 
 // ── Date formatter ────────────────────────────────────────────────────────────
 function fmtDate(iso) {
@@ -202,14 +203,14 @@ function PatientCard({ patient }) {
                   background: "var(--active)", borderLeft: "2px solid var(--primary)",
                   borderRadius: "var(--radius-xs)", padding: "10px 12px", fontSize: 12, color: "var(--text)",
                 }}>
-                  <div style={{ color: "var(--primary)", fontWeight: 600, marginBottom: 4, fontSize: 11 }}>🤖 AI Резюме</div>
+                  <div style={{ color: "var(--primary)", fontWeight: 600, marginBottom: 4, fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}><Bot size={12} /> AI Резюме</div>
                   {t.aiSummary}
                 </div>
               )}
             </div>
           )) : (
             <div style={{ textAlign: "center", padding: "40px 0", color: "var(--muted)" }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>🦷</div>
+              <div style={{ fontSize: 32, marginBottom: 8, display: "flex", justifyContent: "center" }}><HeartPulse size={32} /></div>
               <div style={{ fontSize: 13 }}>История лечения пуста</div>
             </div>
           )}
@@ -244,7 +245,7 @@ function PatientCard({ patient }) {
             </div>
           )) : (
             <div style={{ textAlign: "center", padding: "40px 0", color: "var(--muted)" }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>📅</div>
+              <div style={{ fontSize: 32, marginBottom: 8, display: "flex", justifyContent: "center" }}><CalendarDays size={32} /></div>
               <div style={{ fontSize: 13 }}>Нет запланированных визитов</div>
             </div>
           )}
@@ -265,7 +266,7 @@ function PatientCabinet() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, margin: "0 0 6px 0", color: "var(--text)" }}>
-            Добро пожаловать, {user?.name || "Пациент"}! 👋
+            Добро пожаловать, {user?.name || "Пациент"}! <HandMetal size={24} style={{ display: "inline", verticalAlign: "middle" }} />
           </h1>
           <p style={{ color: "var(--muted)", margin: 0, fontSize: 14 }}>Ваша личная медицинская карта и история лечения</p>
         </div>
@@ -303,10 +304,10 @@ function PatientCabinet() {
             <div style={{ position: "absolute", bottom: 10, color: "rgba(255,255,255,0.5)", fontSize: 11 }}>Крутите для просмотра (Демо)</div>
           </div>
           <div style={{ padding: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            {[["Фото ДО", "🦷"], ["Фото ПОСЛЕ", "✨"]].map(([label, emoji]) => (
+            {[["Фото ДО", <HeartPulse key="do" size={22} />], ["Фото ПОСЛЕ", <Sparkles key="posle" size={22} />]].map(([label, icon]) => (
               <div key={label}>
                 <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>{label}</div>
-                <div style={{ height: 56, background: "var(--surface-2)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{emoji}</div>
+                <div style={{ height: 56, background: "var(--surface-2)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{icon}</div>
               </div>
             ))}
           </div>
@@ -325,7 +326,7 @@ function PatientCabinet() {
                 disabled={downloading}
                 onClick={() => { setDownloading(true); setTimeout(() => setDownloading(false), 2000); }}
               >
-                {downloading ? "⏳ Скачивание..." : "📄 Скачать AI-Протокол (eGov)"}
+                {downloading ? "Скачивание..." : <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><FileDown size={13} /> Скачать AI-Протокол (eGov)</span>}
               </button>
             </div>
             <div style={{ borderLeft: "2px solid var(--border)", paddingLeft: 12, opacity: 0.7 }}>
@@ -440,12 +441,12 @@ function PatientListInner() {
         )}
         {error && (
           <div style={{ padding: "32px 0", textAlign: "center", color: "var(--danger)", fontSize: 13 }}>
-            ⚠️ {error}
+            <AlertTriangle size={14} style={{ display: "inline", verticalAlign: "middle", marginRight: 4 }} /> {error}
           </div>
         )}
         {!loading && !error && patients.length === 0 && (
           <div style={{ padding: "48px 0", textAlign: "center" }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>👤</div>
+            <div style={{ fontSize: 32, marginBottom: 8, display: "flex", justifyContent: "center" }}><UserRound size={32} /></div>
             <div style={{ color: "var(--muted)", fontSize: 13 }}>Пациенты не найдены</div>
           </div>
         )}

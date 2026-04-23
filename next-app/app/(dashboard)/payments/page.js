@@ -10,6 +10,7 @@ import {
   searchPatients,
   getDoctors,
 } from "@/lib/api";
+import { Inbox, Banknote, CreditCard, AlertTriangle, Package, Search, PartyPopper, Phone, X, Check } from "lucide-react";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -162,7 +163,7 @@ function KassaTab() {
             <div style={{ padding: "32px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>Жүктелуде...</div>
           ) : payments.length === 0 ? (
             <div style={{ padding: "40px 0", textAlign: "center" }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>📭</div>
+              <div style={{ fontSize: 32, marginBottom: 8, display: "flex", justifyContent: "center" }}><Inbox size={32} /></div>
               <div style={{ color: "var(--muted)", fontSize: 13 }}>Бұл күнде төлемдер жоқ</div>
             </div>
           ) : (
@@ -235,7 +236,7 @@ function KassaTab() {
             </Field>
             <Field label="Төлем әдісі">
               <div style={{ display: "flex", gap: 8 }}>
-                {[["cash", "💵 Қолма-қол"], ["card", "💳 Карта"]].map(([m, label]) => (
+                {[["cash", <span key="c" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Banknote size={14} /> Қолма-қол</span>], ["card", <span key="d" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><CreditCard size={14} /> Карта</span>]].map(([m, label]) => (
                   <button key={m} type="button" onClick={() => setForm(f => ({ ...f, method: m }))}
                     style={{
                       flex: 1, padding: "8px 4px", borderRadius: "var(--radius-sm)",
@@ -290,7 +291,7 @@ function DebtorsTab() {
   const totalDebt = debtors.reduce((s, p) => s + Math.abs(p.balance || 0), 0);
 
   function sendWhatsApp(phone, name, debt) {
-    const text = `Сәлем, ${name}! NeuroDent клиникасынан хабарласып отырмыз. Сіздің ${debt.toLocaleString("ru-RU")} ₸ қарызыңыз бар. Ыңғайлы уақытта төлеуіңізді сұраймыз. 📞 +7 771 163 2030`;
+    const text = `Сәлем, ${name}! NeuroDent клиникасынан хабарласып отырмыз. Сіздің ${debt.toLocaleString("ru-RU")} ₸ қарызыңыз бар. Ыңғайлы уақытта төлеуіңізді сұраймыз. +7 771 163 2030`;
     window.open(`https://wa.me/${phone?.replace(/\D/g, "")}?text=${encodeURIComponent(text)}`, "_blank");
   }
 
@@ -303,14 +304,14 @@ function DebtorsTab() {
           icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>} />
       </div>
 
-      <input type="text" placeholder="🔍  Пациент іздеу..."
+      <input type="text" placeholder="Пациент іздеу..."
         value={query} onChange={e => setQuery(e.target.value)}
-        style={{ ...inputStyle, maxWidth: 360 }} />
+        style={{ ...inputStyle, maxWidth: 360, paddingLeft: 36, backgroundImage: "none" }} />
 
       <div style={cardStyle}>
         {debtors.length === 0 ? (
           <div style={{ padding: "48px 0", textAlign: "center" }}>
-            <div style={{ fontSize: 36, marginBottom: 10 }}>{query ? "🔍" : "🎉"}</div>
+            <div style={{ fontSize: 36, marginBottom: 10, display: "flex", justifyContent: "center" }}>{query ? <Search size={36} /> : <PartyPopper size={36} />}</div>
             <div style={{ color: "var(--muted)", fontSize: 13 }}>{query ? "Табылмады" : "Қарызкерлер жоқ"}</div>
           </div>
         ) : (
@@ -391,7 +392,7 @@ function SkladTab() {
 
   function orderText(item) {
     const text = `Тапсырыс:\n${item.name}\nСаны: ${item.minQuantity * 3} ${item.unit}\nNeuroDent клиникасы +7 771 163 2030`;
-    navigator.clipboard?.writeText(text).then(() => alert("Тапсырыс мәтіні көшірілді ✓"));
+    navigator.clipboard?.writeText(text).then(() => alert("Тапсырыс мәтіні көшірілді"));
   }
 
   const filtered = items.filter(i =>
@@ -410,12 +411,12 @@ function SkladTab() {
       </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <input type="text" placeholder="🔍  Тауар немесе категория..."
+        <input type="text" placeholder="Тауар немесе категория..."
           value={query} onChange={e => setQuery(e.target.value)}
-          style={{ ...inputStyle, flex: 1, maxWidth: 360 }} />
+          style={{ ...inputStyle, flex: 1, maxWidth: 360, paddingLeft: 36, backgroundImage: "none" }} />
         <button onClick={() => setShowAdd(v => !v)}
           style={showAdd ? { ...btnOutline } : { ...btnPrimary }}>
-          {showAdd ? "✕ Жабу" : "+ Тауар қосу"}
+          {showAdd ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><X size={14} /> Жабу</span> : "+ Тауар қосу"}
         </button>
       </div>
 
@@ -502,7 +503,7 @@ function SkladTab() {
                   onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                   <td style={{ ...tdStyle, fontWeight: 500 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      {isLow && <span title="Аз қалды" style={{ color: "var(--warning)", fontSize: 14 }}>⚠️</span>}
+                      {isLow && <span title="Аз қалды" style={{ color: "var(--warning)", fontSize: 14, display: "inline-flex", alignItems: "center" }}><AlertTriangle size={14} /></span>}
                       {item.name}
                     </div>
                   </td>
@@ -602,9 +603,9 @@ const qtyBtn = {
 
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 const TABS = [
-  { id: "kassa", label: "💵 Касса" },
-  { id: "debtors", label: "⚠️ Должники" },
-  { id: "sklad", label: "📦 Склад" },
+  { id: "kassa", label: <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><Banknote size={14} /> Касса</span> },
+  { id: "debtors", label: <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><AlertTriangle size={14} /> Должники</span> },
+  { id: "sklad", label: <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><Package size={14} /> Склад</span> },
 ];
 
 export default function PaymentsPage() {

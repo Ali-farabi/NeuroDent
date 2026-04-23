@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { getDayReport } from "@/lib/api";
+import { AlertTriangle, TrendingDown, Package, Wallet, Banknote, CreditCard } from "lucide-react";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -152,7 +153,7 @@ export default function ReportPage() {
       )}
       {error && (
         <div style={{ padding: "48px 0", textAlign: "center", color: "var(--danger)", fontSize: 13 }}>
-          ⚠️ {error}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={14} /> {error}</span>
         </div>
       )}
 
@@ -163,7 +164,7 @@ export default function ReportPage() {
         </h2>
         <div style={{ borderTop: "1px solid var(--border)", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
           <div style={{ background: "rgba(239,68,68,0.04)", borderRight: "1px solid var(--border)", padding: 16, display: "flex", gap: 12 }}>
-            <div style={{ fontSize: 24 }}>📉</div>
+            <div style={{ fontSize: 24, display: "flex" }}><TrendingDown size={24} /></div>
             <div>
               <div style={{ fontWeight: 600, color: "var(--danger)", fontSize: 14, marginBottom: 4 }}>Снижение доходимости</div>
               <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
@@ -172,7 +173,7 @@ export default function ReportPage() {
             </div>
           </div>
           <div style={{ background: "rgba(245,158,11,0.04)", padding: 16, display: "flex", gap: 12 }}>
-            <div style={{ fontSize: 24 }}>📦</div>
+            <div style={{ fontSize: 24, display: "flex" }}><Package size={24} /></div>
             <div>
               <div style={{ fontWeight: 600, color: "#d97706", fontSize: 14, marginBottom: 4 }}>Запасы на исходе</div>
               <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
@@ -283,7 +284,7 @@ export default function ReportPage() {
 
             {payments.length === 0 ? (
               <div style={{ padding: "32px 0", textAlign: "center" }}>
-                <div style={{ fontSize: 28, marginBottom: 8 }}>💰</div>
+                <div style={{ fontSize: 28, marginBottom: 8, display: "flex", justifyContent: "center" }}><Wallet size={28} /></div>
                 <div style={{ color: "var(--muted)", fontSize: 13 }}>Нет оплат за эту дату</div>
               </div>
             ) : (
@@ -334,7 +335,7 @@ export default function ReportPage() {
                               color: p.method === "cash" ? "var(--success)" : "var(--primary)",
                               border: "1px solid transparent",
                             }}>
-                              {p.method === "cash" ? "💵 Наличные" : "💳 Карта"}
+                              {p.method === "cash" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Banknote size={12} /> Наличные</span> : <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><CreditCard size={12} /> Карта</span>}
                             </span>
                           </td>
                           <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 600, color: "var(--text)" }}>

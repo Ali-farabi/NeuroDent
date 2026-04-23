@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { getUsers, createUser, updateUser } from "@/lib/api";
+import { UserRound } from "lucide-react";
 
 const ROLE_LABELS = {
   owner:     "Владелец",
@@ -205,7 +206,7 @@ export default function UsersPage() {
           </div>
         ) : users.length === 0 ? (
           <div style={{ padding: "48px 0", textAlign: "center" }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>👤</div>
+            <div style={{ fontSize: 32, marginBottom: 8, display: "flex", justifyContent: "center" }}><UserRound size={32} /></div>
             <div style={{ color: "var(--muted)", fontSize: 13 }}>
               {query ? "Не найдено" : "Нет пользователей"}
             </div>
