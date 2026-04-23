@@ -468,6 +468,38 @@ export async function getDayReport(date) {
   return clone({ date, payments, totalAmount, visitsCompleted, aiSignals });
 }
 
+// VISITS (all patients)
+export async function getAllVisits(filters = {}) {
+  await delay(450);
+  const db = getDb();
+  let list = db.visits.map((v) => {
+    const appt    = db.appointments.find((a) => a.id === v.appointmentId);
+    const patient = db.patients.find((p) => p.id === v.patientId);
+    const doctor  = db.doctors.find((d) => d.id === v.doctorId);
+    return {
+      ...v,
+      date:        appt?.date     || "",
+      time:        appt?.time     || "",
+      patientName: patient?.name  || "—",
+      patientPhone:patient?.phone || "",
+      doctorName:  doctor?.name   || "—",
+      specialty:   doctor?.specialty || "",
+    };
+  });
+  if (filters.from)     list = list.filter((v) => v.date >= filters.from);
+  if (filters.to)       list = list.filter((v) => v.date <= filters.to);
+  if (filters.doctorId) list = list.filter((v) => v.doctorId === filters.doctorId);
+  if (filters.query) {
+    const q = String(filters.query).toLowerCase();
+    list = list.filter((v) =>
+      v.patientName.toLowerCase().includes(q) ||
+      (v.diagnosis || "").toLowerCase().includes(q) ||
+      (v.complaint || "").toLowerCase().includes(q)
+    );
+  }
+  return clone(list.sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time)));
+}
+
 // USERS
 export async function getUsers(query = "") {
   await delay(350);
