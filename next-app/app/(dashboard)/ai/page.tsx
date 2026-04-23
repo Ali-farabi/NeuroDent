@@ -1,10 +1,8 @@
 /* eslint-disable @next/next/no-img-element */
-/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Bot, Mic, CheckCircle2, AlertTriangle, Info, Sparkles, Upload, FileText, Key, Check, MicVocal } from "lucide-react";
 import {
   searchPatients,
   getPatientById,
@@ -12,11 +10,80 @@ import {
   finishVisit,
   getVisitsByPatient,
 } from "@/lib/api";
+import {
+  Bot,
+  Mic,
+  MicOff,
+  CheckCircle2,
+  AlertTriangle,
+  Info,
+  Sparkles,
+  Upload,
+  FileText,
+  Key,
+  Check,
+  ChevronLeft,
+  Search,
+  ArrowUpFromLine,
+  Stethoscope,
+  FileDown,
+} from "lucide-react";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface Patient {
+  id: string;
+  name: string;
+  phone: string;
+  birthDate?: string;
+  createdAt?: string;
+}
+
+interface Appointment {
+  id: string;
+  doctorId: string;
+  patientId: string;
+  date: string;
+  time: string;
+  duration: number;
+  status: string;
+  visitId: string | null;
+  patientName?: string;
+  doctorName?: string;
+}
+
+interface Visit {
+  id: string;
+  diagnosis?: string;
+  complaint?: string;
+  notes?: string;
+  startedAt?: string;
+  diagnosisCode?: string;
+  cariesType?: string;
+  toothNumber?: string;
+}
+
+type ToothStatus = "normal" | "caries" | "filling" | "healthy" | "removed" | "missing";
+type BiteType = "permanent" | "milk";
+type JawFilter = "all" | "upper" | "lower";
+type CariesType = "surface" | "medium" | "deep" | "complicated";
+type ModalPhase = "loading" | "done" | "select" | "password" | "signing";
+
+interface ModalState {
+  title: string;
+  phase: ModalPhase;
+}
+
+interface ToothImageItem {
+  id: string;
+  url: string;
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 const UPPER = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28];
 const LOWER = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38];
-const STATUS_ORDER = ["normal", "caries", "filling", "healthy", "removed", "missing"];
-const TOOTH_IMG = {
+const STATUS_ORDER: ToothStatus[] = ["normal", "caries", "filling", "healthy", "removed", "missing"];
+
+const TOOTH_IMG: Record<ToothStatus, string> = {
   caries: "/images/teeth/RedCaries.png",
   filling: "/images/teeth/Yellowplomb.png",
   healthy: "/images/teeth/Greentooth.png",
@@ -25,7 +92,20 @@ const TOOTH_IMG = {
   missing: "/images/teeth/Whitetooth.png",
 };
 
-const ICD_GROUPS = [
+interface IcdItem {
+  code: string;
+  label: string;
+  active?: boolean;
+}
+
+interface IcdGroup {
+  code: string;
+  title: string;
+  open?: boolean;
+  items: IcdItem[];
+}
+
+const ICD_GROUPS: IcdGroup[] = [
   { code: "K00", title: "K00 Нарушения развития и прорезывания зубов", items: [{ code: "K00.0", label: "K00.0 Нарушения прорезывания зубов" }] },
   { code: "K01", title: "K01 Ретинированные и импактные зубы", items: [{ code: "K01.0", label: "K01.0 Ретинированные зубы" }] },
   {
@@ -99,8 +179,23 @@ const ICD_GROUPS = [
   },
 ];
 
+const CARIES_HINTS: Record<CariesType, string> = {
+  surface: "Для поверхностного кариеса рекомендована реминерализующая терапия.",
+  medium: "Для среднего кариеса — препарирование и пломбирование Filtek Z250.",
+  deep: "Для K02.1 рекомендовано применение биоактивных прокладок (MTA) при глубоком кариесе.",
+  complicated: "Осложнённый кариес — требуется эндодонтическое лечение (пульпит/периодонтит).",
+};
+
+const SURFACE_DEFS = [
+  { key: "M", label: "М — Медиальная" },
+  { key: "D", label: "Д — Дистальная" },
+  { key: "O", label: "О — Жевательная" },
+  { key: "V", label: "В — Вестибулярная" },
+  { key: "L", label: "Я — Язычная" },
+];
+
 // ─── Modal ────────────────────────────────────────────────────────────────────
-function Modal({ title, children, onClose }) {
+function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-[999]" onClick={onClose}>
       <div className="w-full max-w-[560px] bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
@@ -117,13 +212,17 @@ function Modal({ title, children, onClose }) {
 // ─── Patient Selection ────────────────────────────────────────────────────────
 function PatientSelectPage() {
   const router = useRouter();
-  const [allPatients, setAllPatients] = useState([]);
-  const [filtered, setFiltered] = useState([]);
+  const [allPatients, setAllPatients] = useState<Patient[]>([]);
+  const [filtered, setFiltered] = useState<Patient[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    searchPatients("").then((list) => { setAllPatients(list); setFiltered(list); setLoading(false); });
+    searchPatients("").then((list: Patient[]) => {
+      setAllPatients(list);
+      setFiltered(list);
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => {
@@ -138,21 +237,19 @@ function PatientSelectPage() {
         <p className="text-sm text-gray-500 mt-1">Автопротоколирование, МКБ-10 и анализ истории</p>
       </header>
 
-      {/* Hero */}
       <div className="flex items-start gap-5 p-6 bg-white border border-gray-200 shadow-sm">
-        <div className="text-5xl leading-none shrink-0 opacity-90"><img src="/images/teeth/Whitetooth.png" alt="" className="w-12 h-12 object-contain" /></div>
+        <Stethoscope className="w-12 h-12 shrink-0 text-gray-700 opacity-90" strokeWidth={1.2} />
         <div className="min-w-0">
           <h2 className="text-xl font-extrabold text-gray-900 tracking-tight mb-2">Выберите пациента для приема</h2>
           <p className="text-sm text-gray-500 leading-relaxed">Чтобы AI-ассистент начал слушать и писать протокол, выберите пациента из базы.</p>
         </div>
       </div>
 
-      {/* Search */}
       <div className="relative">
-        <svg className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={20} />
         <input
           type="text"
-          className="w-full h-[52px] pl-12 pr-5 text-[15px] border border-gray-200 bg-white text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/20 transition"
+          className="w-full h-[52px] pl-12 pr-5 text-[15px] border border-gray-200 bg-white text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/20 transition rounded-lg"
           placeholder="Поиск по имени или телефону..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -160,22 +257,32 @@ function PatientSelectPage() {
         />
       </div>
 
-      {/* List */}
       <div className="flex flex-col gap-3">
         <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Найденные пациенты</h3>
         <div className="flex flex-col gap-3 max-h-[420px] overflow-y-auto">
           {loading ? (
-            <div className="py-12 text-center text-sm text-gray-400 bg-white border border-gray-200">Загрузка...</div>
+            <div className="py-12 text-center text-sm text-gray-400 bg-white border border-gray-200 rounded-lg">Загрузка...</div>
           ) : filtered.length === 0 ? (
-            <div className="py-12 text-center text-sm text-gray-400 bg-white border border-gray-200">Пациенты не найдены</div>
+            <div className="py-12 text-center text-sm text-gray-400 bg-white border border-gray-200 rounded-lg">Пациенты не найдены</div>
           ) : (
             filtered.map((p) => (
-              <div key={p.id} className="flex items-center justify-between gap-5 px-5 py-4 bg-white border border-gray-200 cursor-pointer hover:bg-gray-50 hover:border-blue-100 transition group" onClick={() => router.push(`/ai?patient=${p.id}`)}>
+              <div
+                key={p.id}
+                className="flex items-center justify-between gap-5 px-5 py-4 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 hover:border-blue-100 transition group"
+                onClick={() => router.push(`/ai?patient=${p.id}`)}
+              >
                 <div className="min-w-0">
                   <div className="font-bold text-[15px] text-gray-900">{p.name}</div>
-                  <div className="text-[13px] text-gray-500">Зарегистрирован: {p.createdAt || "—"} &bull; {p.phone}</div>
+                  <div className="text-[13px] text-gray-500">
+                    Зарегистрирован: {p.createdAt || "—"} &bull; {p.phone}
+                  </div>
                 </div>
-                <button type="button" className="shrink-0 px-5 py-2.5 text-sm font-semibold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 hover:border-blue-400 transition">Выбрать</button>
+                <button
+                  type="button"
+                  className="shrink-0 px-5 py-2.5 text-sm font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 hover:border-blue-400 transition"
+                >
+                  Выбрать
+                </button>
               </div>
             ))
           )}
@@ -186,21 +293,27 @@ function PatientSelectPage() {
 }
 
 // ─── Tooth Button ─────────────────────────────────────────────────────────────
-function ToothBtn({ n, status, isSelected, isHidden, bite, onClick }) {
-  const imgStyle = (() => {
+function ToothBtn({ n, status, isSelected, bite, onClick }: {
+  n: number;
+  status: ToothStatus;
+  isSelected: boolean;
+  bite: BiteType;
+  onClick: () => void;
+}) {
+  const imgStyle: React.CSSProperties = (() => {
     if (status === "removed") return { filter: "grayscale(1) opacity(0.4)", transform: "scale(0.85)" };
     if (status === "missing") return { filter: "grayscale(1) opacity(0.2)", transform: "scale(0.75)" };
     if (bite === "milk") return { filter: "sepia(0.5) saturate(1.3) brightness(1.05)", transform: "scale(0.88)" };
     return {};
   })();
 
-  const numStyle = (() => {
+  const numStyle: React.CSSProperties = (() => {
     if (status === "removed") return { color: "#ef4444", textDecoration: "line-through" };
     if (status === "missing") return { color: "#d1d5db", textDecoration: "line-through" };
     return {};
   })();
 
-  const bgMap = {
+  const bgMap: Record<ToothStatus, string> = {
     normal: "bg-gray-50",
     caries: "bg-red-50 border-red-300",
     filling: "bg-yellow-50 border-yellow-300",
@@ -208,8 +321,6 @@ function ToothBtn({ n, status, isSelected, isHidden, bite, onClick }) {
     removed: "bg-red-50/50 border-red-200 border-dashed opacity-60",
     missing: "border-gray-300 border-dashed opacity-35",
   };
-
-  if (isHidden) return null;
 
   return (
     <button
@@ -221,16 +332,21 @@ function ToothBtn({ n, status, isSelected, isHidden, bite, onClick }) {
       onClick={onClick}
       title={`Зуб ${n}`}
     >
-      <img src={TOOTH_IMG[status] || TOOTH_IMG.normal} alt={`Зуб ${n}`} className="w-[52px] h-[52px] object-cover object-[center_20%] rounded-md mix-blend-multiply transition-all duration-200" style={imgStyle} />
+      <img
+        src={TOOTH_IMG[status] || TOOTH_IMG.normal}
+        alt={`Зуб ${n}`}
+        className="w-[52px] h-[52px] object-cover object-[center_20%] rounded-md mix-blend-multiply transition-all duration-200"
+        style={imgStyle}
+      />
       <span className="text-[10px] text-gray-400" style={numStyle}>{n}</span>
     </button>
   );
 }
 
 // ─── ICD-10 Tree ──────────────────────────────────────────────────────────────
-function IcdTree({ activeCode, onSelect }) {
-  const [openGroups, setOpenGroups] = useState(() => {
-    const m = {};
+function IcdTree({ activeCode, onSelect }: { activeCode: string; onSelect: (code: string, label: string) => void }) {
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const m: Record<string, boolean> = {};
     ICD_GROUPS.forEach((g) => { m[g.code] = !!g.open; });
     return m;
   });
@@ -240,25 +356,44 @@ function IcdTree({ activeCode, onSelect }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-gray-50 p-2.5 max-h-[460px] flex flex-col gap-2">
       <div className="relative">
-        <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-        <input type="text" className="w-full h-8 pl-8 pr-2.5 text-xs rounded-md border border-gray-200 bg-white focus:outline-none focus:border-blue-500" placeholder="Поиск по МКБ-10..." value={search} onChange={(e) => setSearch(e.target.value)} autoComplete="off" />
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+        <input
+          type="text"
+          className="w-full h-8 pl-8 pr-2.5 text-xs rounded-md border border-gray-200 bg-white focus:outline-none focus:border-blue-500"
+          placeholder="Поиск по МКБ-10..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          autoComplete="off"
+        />
       </div>
-      <div className="flex-1 overflow-y-auto pr-1 text-xs custom-scrollbar">
+      <div className="flex-1 overflow-y-auto pr-1 text-xs">
         {ICD_GROUPS.map((group) => {
           const matchItems = group.items.filter((i) => !q || i.label.toLowerCase().includes(q));
-          if (!q && !group.title.toLowerCase().includes(q) && matchItems.length === 0) return null;
           if (q && !group.title.toLowerCase().includes(q) && matchItems.length === 0) return null;
           const isOpen = q ? true : !!openGroups[group.code];
           return (
             <div key={group.code} className="rounded-md p-1">
-              <button type="button" className="w-full flex items-center gap-1 border-none bg-transparent cursor-pointer text-xs px-1 py-0.5 text-left text-gray-900 hover:bg-gray-100 rounded" onClick={() => setOpenGroups((p) => ({ ...p, [group.code]: !p[group.code] }))}>
+              <button
+                type="button"
+                className="w-full flex items-center gap-1 border-none bg-transparent cursor-pointer text-xs px-1 py-0.5 text-left text-gray-900 hover:bg-gray-100 rounded"
+                onClick={() => setOpenGroups((p) => ({ ...p, [group.code]: !p[group.code] }))}
+              >
                 <span className="text-[10px] text-gray-400">{isOpen ? "▼" : "▶"}</span>
                 <span>{group.title}</span>
               </button>
               {isOpen && (
                 <div className="ml-[18px] mt-0.5 flex flex-col gap-0.5">
                   {(q ? matchItems : group.items).map((item) => (
-                    <button key={item.code} type="button" className={`border-none rounded px-1.5 py-1 text-left cursor-pointer transition text-xs ${activeCode === item.code ? "bg-blue-100 text-blue-700" : "bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`} onClick={() => onSelect(item.code, item.label)}>
+                    <button
+                      key={item.code}
+                      type="button"
+                      className={`border-none rounded px-1.5 py-1 text-left cursor-pointer transition text-xs ${
+                        activeCode === item.code
+                          ? "bg-blue-100 text-blue-700"
+                          : "bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                      }`}
+                      onClick={() => onSelect(item.code, item.label)}
+                    >
                       {item.label}
                     </button>
                   ))}
@@ -273,86 +408,103 @@ function IcdTree({ activeCode, onSelect }) {
 }
 
 // ─── Surface Popup ────────────────────────────────────────────────────────────
-function SurfacePopup({ tooth, surfaces, onToggle, onClose }) {
-  if (!tooth) return null;
-  const defs = [
-    { key: "M", label: "М — Медиальная" },
-    { key: "D", label: "Д — Дистальная" },
-    { key: "O", label: "О — Жевательная" },
-    { key: "V", label: "В — Вестибулярная" },
-    { key: "L", label: "Я — Язычная" },
-  ];
+function SurfacePopup({ tooth, surfaces, onToggle, onClose }: {
+  tooth: number;
+  surfaces: string[];
+  onToggle: (key: string) => void;
+  onClose: () => void;
+}) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-lg mt-2 w-full max-w-[260px]">
       <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Укажите поверхность</div>
       <div className="flex flex-col gap-1 mb-2.5">
-        {defs.map((s) => (
-          <button key={s.key} type="button" className={`px-2.5 py-1.5 text-xs border rounded-md text-left transition ${surfaces.includes(s.key) ? "bg-red-50 border-red-300 text-red-600 font-semibold" : "bg-gray-50 border-gray-200 text-gray-900 hover:bg-gray-100"}`} onClick={() => onToggle(s.key)}>
+        {SURFACE_DEFS.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            className={`px-2.5 py-1.5 text-xs border rounded-md text-left transition ${
+              surfaces.includes(s.key)
+                ? "bg-red-50 border-red-300 text-red-600 font-semibold"
+                : "bg-gray-50 border-gray-200 text-gray-900 hover:bg-gray-100"
+            }`}
+            onClick={() => onToggle(s.key)}
+          >
             {s.label}
           </button>
         ))}
       </div>
-      <button type="button" className="w-full py-1.5 text-xs font-semibold border border-blue-500 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white transition" onClick={onClose}>&#10003; Готово</button>
+      <button
+        type="button"
+        className="w-full py-1.5 text-xs font-semibold border border-blue-500 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white transition"
+        onClick={onClose}
+      >
+        Готово
+      </button>
     </div>
   );
 }
 
 // ─── AI Core Page ─────────────────────────────────────────────────────────────
-function AiCorePage({ patientId }) {
+function AiCorePage({ patientId }: { patientId: string }) {
   const router = useRouter();
-  const [patientData, setPatientData] = useState(null);
-  const [activeAppointment, setActiveAppointment] = useState(null);
-  const [visits, setVisits] = useState([]);
+  const [patientData, setPatientData] = useState<Patient | null>(null);
+  const [activeAppointment, setActiveAppointment] = useState<Appointment | null>(null);
+  const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState("protocol");
 
-  // Tooth
-  const [teeth, setTeeth] = useState({});
-  const [selectedTooth, setSelectedTooth] = useState(null);
-  const [surfacePopupTooth, setSurfacePopupTooth] = useState(null);
-  const [activeSurfaces, setActiveSurfaces] = useState([]);
-  const [jawFilter, setJawFilter] = useState("all");
-  const [bite, setBite] = useState("permanent");
+  // Tooth state
+  const [teeth, setTeeth] = useState<Record<number, ToothStatus>>({});
+  const [selectedTooth, setSelectedTooth] = useState<number | null>(null);
+  const [surfacePopupTooth, setSurfacePopupTooth] = useState<number | null>(null);
+  const [activeSurfaces, setActiveSurfaces] = useState<string[]>([]);
+  const [jawFilter, setJawFilter] = useState<JawFilter>("all");
+  const [bite, setBite] = useState<BiteType>("permanent");
 
-  // Form
+  // Form state
   const [diagnosisText, setDiagnosisText] = useState("Кариес дентина (16)");
   const [complaints, setComplaints] = useState("Боль в верхней челюсти справа при приеме холодной пищи. Ноет со вчерашнего дня.");
   const [anamnesis, setAnamnesis] = useState("Зуб ранее не лечен.");
   const [objective, setObjective] = useState("Глубокая кариозная полость в зубе 1.6, размягченный дентин, зондирование болезненно.");
   const [treatment, setTreatment] = useState("Анестезия инфильтрационная, препарирование полости, медикаментозная обработка, постановка световой пломбы.");
   const [diagnosisCode, setDiagnosisCode] = useState("K02.1");
-  const [cariesType, setCariesType] = useState("deep");
+  const [cariesType, setCariesType] = useState<CariesType>("deep");
 
-  // Voice
+  // Voice state
   const [isRecording, setIsRecording] = useState(false);
   const [aiStatus, setAiStatus] = useState("Слушаю...");
   const [recordingTime, setRecordingTime] = useState(0);
   const transcriptRef = useRef("");
-  const timerRef = useRef(null);
-  const recogRef = useRef(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recogRef = useRef<any>(null);
 
-  // Visit
+  // Visit state
   const [finishing, setFinishing] = useState(false);
   const [visitFinished, setVisitFinished] = useState(false);
 
-  // Images
-  const [images, setImages] = useState([]);
-  const [activeImage, setActiveImage] = useState(null);
-  const fileRef = useRef(null);
-  const urlsRef = useRef([]);
+  // Image state
+  const [images, setImages] = useState<ToothImageItem[]>([]);
+  const [activeImage, setActiveImage] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const urlsRef = useRef<string[]>([]);
 
   // Modal & eGov
-  const [modal, setModal] = useState(null);
+  const [modal, setModal] = useState<ModalState | null>(null);
   const [egovSigned, setEgovSigned] = useState(false);
 
   // Toast
-  const [toast, setToast] = useState(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   // Load data
   useEffect(() => {
     if (!patientId) return;
-    Promise.all([getPatientById(patientId), getActiveAppointmentByPatient(patientId), getVisitsByPatient(patientId)])
+    Promise.all([
+      getPatientById(patientId) as Promise<Patient>,
+      getActiveAppointmentByPatient(patientId) as Promise<Appointment | null>,
+      getVisitsByPatient(patientId) as Promise<Visit[]>,
+    ])
       .then(([patient, appt, visitList]) => {
         setPatientData(patient);
         setActiveAppointment(appt);
@@ -372,10 +524,10 @@ function AiCorePage({ patientId }) {
     }
   }, [loading, patientData]);
 
-  // Cleanup
+  // Cleanup URLs
   useEffect(() => () => urlsRef.current.forEach((u) => URL.revokeObjectURL(u)), []);
 
-  // Timer
+  // Recording timer
   useEffect(() => {
     if (isRecording) {
       setRecordingTime(0);
@@ -394,30 +546,36 @@ function AiCorePage({ patientId }) {
     }
   }, [toast]);
 
-  function showToast(msg) {
-    setToast(msg);
-  }
+  const showToast = useCallback((msg: string) => setToast(msg), []);
 
   function startRecording() {
     transcriptRef.current = "";
     setIsRecording(true);
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SR) {
       const r = new SR();
       r.lang = "ru-RU";
       r.continuous = true;
       r.interimResults = true;
-      r.onresult = (e) => {
+      r.onresult = (e: SpeechRecognitionEvent) => {
         let interim = "";
         for (let i = e.resultIndex; i < e.results.length; i++) {
           const t = e.results[i][0].transcript;
-          if (e.results[i].isFinal) { transcriptRef.current += t + " "; setComplaints(transcriptRef.current.trim()); }
-          else interim = t;
+          if (e.results[i].isFinal) {
+            transcriptRef.current += t + " ";
+            setComplaints(transcriptRef.current.trim());
+          } else {
+            interim = t;
+          }
         }
         if (interim) setAiStatus(interim);
       };
-      r.onerror = (e) => setAiStatus(`Ошибка: ${e.error}`);
-      r.onend = () => { if (isRecording) try { r.start(); } catch {} };
+      r.onerror = (e: Event) => {
+        const err = e as ErrorEvent;
+        setAiStatus(`Ошибка: ${err.error || "unknown"}`);
+      };
+      r.onend = () => { if (isRecording) try { r.start(); } catch { /* ignore */ } };
       r.start();
       recogRef.current = r;
     }
@@ -444,7 +602,7 @@ function AiCorePage({ patientId }) {
     showToast("Запись завершена — поля протокола заполнены из речи");
   }
 
-  function handleToothClick(n, cur) {
+  function handleToothClick(n: number, cur: ToothStatus) {
     setSelectedTooth(n);
     const next = STATUS_ORDER[(STATUS_ORDER.indexOf(cur) + 1) % STATUS_ORDER.length];
     setTeeth((p) => ({ ...p, [n]: next }));
@@ -458,7 +616,7 @@ function AiCorePage({ patientId }) {
   }
 
   function exportToothFormula() {
-    const r = {};
+    const r: Record<number, { status: string }> = {};
     [...UPPER, ...LOWER].forEach((n) => { r[n] = { status: teeth[n] || "normal" }; });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([JSON.stringify(r, null, 2)], { type: "application/json" }));
@@ -468,8 +626,12 @@ function AiCorePage({ patientId }) {
 
   function readVisitData() {
     return {
-      complaint: complaints, diagnosis: diagnosisText, notes: treatment,
-      diagnosisCode, cariesType, toothNumber: selectedTooth ? String(selectedTooth) : "",
+      complaint: complaints,
+      diagnosis: diagnosisText,
+      notes: treatment,
+      diagnosisCode,
+      cariesType,
+      toothNumber: selectedTooth ? String(selectedTooth) : "",
       protocol: { complaints, anamnesis, objective, diagnosisText, treatment },
       materials: [
         { code: "ultracain", name: "Ultracain D-S forte 1.7ml", qty: 1, unit: "амп" },
@@ -485,10 +647,14 @@ function AiCorePage({ patientId }) {
       await finishVisit(activeAppointment.id, readVisitData());
       setVisitFinished(true);
       showToast("Автосписание со склада: Ultracain (1), Filtek Z250 (1)");
-    } catch (err) { alert(err.message); } finally { setFinishing(false); }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Ошибка");
+    } finally {
+      setFinishing(false);
+    }
   }
 
-  function handleImageUpload(e) {
+  function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f?.type.startsWith("image/")) return;
     const url = URL.createObjectURL(f);
@@ -498,7 +664,7 @@ function AiCorePage({ patientId }) {
     e.target.value = "";
   }
 
-  function handleDeleteImage(id) {
+  function handleDeleteImage(id: string) {
     setImages((p) => {
       const rm = p.find((i) => i.id === id);
       const next = p.filter((i) => i.id !== id);
@@ -506,13 +672,6 @@ function AiCorePage({ patientId }) {
       return next;
     });
   }
-
-  const cariesHints = {
-    surface: "Для поверхностного кариеса рекомендована реминерализующая терапия.",
-    medium: "Для среднего кариеса — препарирование и пломбирование Filtek Z250.",
-    deep: "Для K02.1 рекомендовано применение биоактивных прокладок (MTA) при глубоком кариесе.",
-    complicated: "Осложнённый кариес — требуется эндодонтическое лечение (пульпит/периодонтит).",
-  };
 
   if (loading) return <div className="p-6 text-center text-gray-400">Загрузка...</div>;
   if (!patientData) return <div className="p-6 text-center text-gray-400">Пациент не найден</div>;
@@ -527,7 +686,7 @@ function AiCorePage({ patientId }) {
     { key: "add", label: "+" },
   ];
 
-  const counts = { normal: 0, caries: 0, filling: 0, healthy: 0, removed: 0, missing: 0 };
+  const counts: Record<ToothStatus, number> = { normal: 0, caries: 0, filling: 0, healthy: 0, removed: 0, missing: 0 };
   [...UPPER, ...LOWER].forEach((n) => { const s = teeth[n] || "normal"; if (counts[s] !== undefined) counts[s]++; });
 
   const legend = [
@@ -551,22 +710,27 @@ function AiCorePage({ patientId }) {
           <p className="text-[13px] text-gray-500 m-0">Автопротоколирование, МКБ-10, тип кариеса и зубная формула</p>
         </div>
         <div className="flex gap-2.5 flex-wrap">
-          <button className="px-3.5 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition flex items-center gap-1.5" onClick={() => router.push("/ai")}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
+          <button
+            className="px-3.5 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition flex items-center gap-1.5"
+            onClick={() => router.push("/ai")}
+          >
+            <ChevronLeft size={14} />
             Сменить пациента
           </button>
           <button
-            className={`px-3.5 py-2 text-sm font-medium text-white rounded-lg flex items-center gap-2 transition shadow-lg ${isRecording ? "bg-red-600 shadow-red-500/30" : "bg-red-500 hover:bg-red-600 shadow-red-500/30"}`}
+            className={`px-3.5 py-2 text-sm font-medium text-white rounded-lg flex items-center gap-2 transition shadow-lg ${
+              isRecording ? "bg-red-600 shadow-red-500/30" : "bg-red-500 hover:bg-red-600 shadow-red-500/30"
+            }`}
             onClick={isRecording ? stopRecording : startRecording}
           >
             {isRecording ? (
               <>
-                <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+                <MicOff size={14} />
                 Остановить ({String(Math.floor(recordingTime / 60)).padStart(2, "0")}:{String(recordingTime % 60).padStart(2, "0")})
               </>
             ) : (
               <>
-                <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+                <Mic size={14} />
                 Слушать прием (Запись голоса)
               </>
             )}
@@ -574,25 +738,15 @@ function AiCorePage({ patientId }) {
         </div>
       </div>
 
-      {/* Tabs — горизонтал scroll мобайлда */}
-      <div style={{
-        display: "flex", flexWrap: "nowrap", gap: 4, overflowX: "auto",
-        background: "var(--surface)", border: "1px solid var(--border)",
-        borderRadius: 99, padding: 4, scrollbarWidth: "none",
-        msOverflowStyle: "none",
-      }}>
+      {/* Tabs */}
+      <div className="inline-flex items-center flex-wrap gap-1 p-1 bg-white rounded-full border border-gray-200">
         {tabs.map((t) => (
           <button
             key={t.key}
             type="button"
-            style={{
-              padding: "6px 14px", borderRadius: 99, border: "none",
-              background: activeTab === t.key ? "var(--primary)" : "transparent",
-              color: activeTab === t.key ? "#fff" : "var(--muted)",
-              fontWeight: activeTab === t.key ? 600 : 400,
-              fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
-              transition: "all 0.15s",
-            }}
+            className={`px-3.5 py-1.5 text-xs font-medium rounded-full border-none cursor-pointer transition ${
+              activeTab === t.key ? "bg-blue-600 text-white" : "bg-transparent text-gray-500 hover:bg-gray-100"
+            } ${t.key === "add" ? "font-bold" : ""}`}
             onClick={() => setActiveTab(t.key)}
           >
             {t.label}
@@ -610,16 +764,26 @@ function AiCorePage({ patientId }) {
               <div className="text-xs text-gray-500">Взрослый &bull; {patientData.phone}</div>
             </div>
             <div className="flex gap-2 items-center flex-wrap">
-              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">Риск: Низкий</span>
-              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 flex items-center gap-1"><AlertTriangle size={12} /> Жалоба: боль в 1.6</span>
-              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-600 border border-sky-200 flex items-center gap-1"><Info size={12} /> МКБ-10: K02.1</span>
+              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+                <Bot size={12} /> Риск: Низкий
+              </span>
+              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 flex items-center gap-1">
+                <AlertTriangle size={12} /> Жалоба: боль в 1.6
+              </span>
+              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-600 border border-sky-200 flex items-center gap-1">
+                <Info size={12} /> МКБ-10: K02.1
+              </span>
             </div>
           </div>
 
           {/* AI Summary */}
           <div className="w-full bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-            <div className="text-[11px] font-bold text-blue-600 uppercase mb-2 flex items-center gap-1"><Sparkles size={12} /> AI-Summary пациента</div>
-            <div className="text-[13px] text-gray-700 leading-relaxed">Аллергий нет. Последний визит 6 месяцев назад (чистка). В прошлом лечился пульпит зуба 46. Возможна чувствительность эмали.</div>
+            <div className="text-[11px] font-bold text-blue-600 uppercase mb-2 flex items-center gap-1">
+              <Sparkles size={12} /> AI-Summary пациента
+            </div>
+            <div className="text-[13px] text-gray-700 leading-relaxed">
+              Аллергий нет. Последний визит 6 месяцев назад (чистка). В прошлом лечился пульпит зуба 46. Возможна чувствительность эмали.
+            </div>
           </div>
 
           {/* Tooth Formula */}
@@ -627,8 +791,15 @@ function AiCorePage({ patientId }) {
             <div className="flex justify-between items-center mb-3 gap-3 flex-wrap">
               <div className="font-bold text-sm text-gray-900">Зубная формула</div>
               <div className="flex gap-1.5 flex-wrap">
-                {[{ k: "all", l: "Полость рта" }, { k: "upper", l: "Верхняя челюсть" }, { k: "lower", l: "Нижняя челюсть" }].map((f) => (
-                  <button key={f.k} type="button" className={`px-2.5 py-1 text-[11px] rounded-full border cursor-pointer transition ${jawFilter === f.k ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100"}`} onClick={() => setJawFilter(f.k)}>
+                {([{ k: "all", l: "Полость рта" }, { k: "upper", l: "Верхняя челюсть" }, { k: "lower", l: "Нижняя челюсть" }] as const).map((f) => (
+                  <button
+                    key={f.k}
+                    type="button"
+                    className={`px-2.5 py-1 text-[11px] rounded-full border cursor-pointer transition ${
+                      jawFilter === f.k ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100"
+                    }`}
+                    onClick={() => setJawFilter(f.k)}
+                  >
                     {f.l}
                   </button>
                 ))}
@@ -637,8 +808,24 @@ function AiCorePage({ patientId }) {
 
             <div className="flex items-center gap-1.5 mb-2.5">
               <span className="text-xs text-gray-500">Прикус:</span>
-              <button type="button" className={`px-3 py-1 text-[11px] border rounded-full cursor-pointer transition ${bite === "permanent" ? "bg-blue-50 border-blue-500 text-blue-700 font-semibold" : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"}`} onClick={() => setBite("permanent")}>Постоянный</button>
-              <button type="button" className={`px-3 py-1 text-[11px] border rounded-full cursor-pointer transition ${bite === "milk" ? "bg-amber-50 border-amber-500 text-amber-600 font-semibold" : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"}`} onClick={() => setBite("milk")}>Молочный</button>
+              <button
+                type="button"
+                className={`px-3 py-1 text-[11px] border rounded-full cursor-pointer transition ${
+                  bite === "permanent" ? "bg-blue-50 border-blue-500 text-blue-700 font-semibold" : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"
+                }`}
+                onClick={() => setBite("permanent")}
+              >
+                Постоянный
+              </button>
+              <button
+                type="button"
+                className={`px-3 py-1 text-[11px] border rounded-full cursor-pointer transition ${
+                  bite === "milk" ? "bg-amber-50 border-amber-500 text-amber-600 font-semibold" : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"
+                }`}
+                onClick={() => setBite("milk")}
+              >
+                Молочный
+              </button>
             </div>
 
             <div className="flex flex-col gap-1.5 overflow-x-auto pb-2">
@@ -646,7 +833,9 @@ function AiCorePage({ patientId }) {
                 <>
                   <div className="text-[11px] text-gray-400 mt-1">Верхняя челюсть</div>
                   <div className="flex flex-nowrap gap-1 min-w-max">
-                    {UPPER.map((n) => <ToothBtn key={n} n={n} status={teeth[n] || "normal"} isSelected={String(selectedTooth) === String(n)} isHidden={false} bite={bite} onClick={() => handleToothClick(n, teeth[n] || "normal")} />)}
+                    {UPPER.map((n) => (
+                      <ToothBtn key={n} n={n} status={teeth[n] || "normal"} isSelected={selectedTooth === n} bite={bite} onClick={() => handleToothClick(n, teeth[n] || "normal")} />
+                    ))}
                   </div>
                 </>
               )}
@@ -654,13 +843,22 @@ function AiCorePage({ patientId }) {
                 <>
                   <div className="text-[11px] text-gray-400 mt-1">Нижняя челюсть</div>
                   <div className="flex flex-nowrap gap-1 min-w-max">
-                    {LOWER.map((n) => <ToothBtn key={n} n={n} status={teeth[n] || "normal"} isSelected={String(selectedTooth) === String(n)} isHidden={false} bite={bite} onClick={() => handleToothClick(n, teeth[n] || "normal")} />)}
+                    {LOWER.map((n) => (
+                      <ToothBtn key={n} n={n} status={teeth[n] || "normal"} isSelected={selectedTooth === n} bite={bite} onClick={() => handleToothClick(n, teeth[n] || "normal")} />
+                    ))}
                   </div>
                 </>
               )}
             </div>
 
-            {surfacePopupTooth && <SurfacePopup tooth={surfacePopupTooth} surfaces={activeSurfaces} onToggle={(k) => setActiveSurfaces((p) => p.includes(k) ? p.filter((s) => s !== k) : [...p, k])} onClose={handleSurfaceClose} />}
+            {surfacePopupTooth && (
+              <SurfacePopup
+                tooth={surfacePopupTooth}
+                surfaces={activeSurfaces}
+                onToggle={(k) => setActiveSurfaces((p) => p.includes(k) ? p.filter((s) => s !== k) : [...p, k])}
+                onClose={handleSurfaceClose}
+              />
+            )}
 
             <div className="flex flex-wrap gap-2.5 mt-2.5 text-[11px] text-gray-400">
               {legend.map((l) => (
@@ -671,7 +869,13 @@ function AiCorePage({ patientId }) {
                 </div>
               ))}
               <div className="ml-auto">
-                <button type="button" className="px-2.5 py-1 text-[11px] border border-gray-200 rounded-md bg-white text-gray-700 hover:bg-gray-50 hover:border-blue-500 hover:text-blue-600 transition cursor-pointer flex items-center gap-1" onClick={exportToothFormula}><Upload size={11} /> JSON</button>
+                <button
+                  type="button"
+                  className="px-2.5 py-1 text-[11px] border border-gray-200 rounded-md bg-white text-gray-700 hover:bg-gray-50 hover:border-blue-500 hover:text-blue-600 transition cursor-pointer flex items-center gap-1"
+                  onClick={exportToothFormula}
+                >
+                  <ArrowUpFromLine size={11} /> JSON
+                </button>
               </div>
             </div>
             <div className="text-[11px] text-gray-400 text-right mt-1">
@@ -684,9 +888,14 @@ function AiCorePage({ patientId }) {
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2">
                 {isRecording && <span className="inline-block w-3.5 h-3.5 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin" />}
-                <span className="font-bold text-blue-600 text-[15px]">AI-Автопротокол</span>
+                <span className="font-bold text-blue-600 text-[15px] flex items-center gap-1.5">
+                  <Bot size={16} /> AI-Автопротокол
+                </span>
               </div>
-              <span className="text-[11px] text-gray-400 bg-gray-50 px-2 py-1 rounded">{aiStatus}</span>
+              <span className="text-[11px] text-gray-400 bg-gray-50 px-2 py-1 rounded flex items-center gap-1">
+                {isRecording && <Mic size={12} className="text-red-500 animate-pulse" />}
+                {aiStatus}
+              </span>
             </div>
 
             <div className="grid grid-cols-[1.4fr_1.2fr] gap-4 items-start max-[992px]:grid-cols-1">
@@ -727,36 +936,60 @@ function AiCorePage({ patientId }) {
                   <div className="flex flex-col gap-1">
                     <label className="text-[11px] text-gray-500">Тип кариеса</label>
                     <div className="flex flex-wrap gap-1.5">
-                      {[{ k: "surface", l: "Поверхностный" }, { k: "medium", l: "Средний" }, { k: "deep", l: "Глубокий" }, { k: "complicated", l: "Осложнённый" }].map((c) => (
-                        <button key={c.k} type="button" className={`px-2.5 py-1 text-[11px] rounded-full border cursor-pointer transition ${cariesType === c.k ? "bg-blue-50 border-blue-500 text-blue-700 shadow-[0_0_0_1px_rgba(59,130,246,0.25)]" : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"}`} onClick={() => setCariesType(c.k)}>
+                      {([{ k: "surface", l: "Поверхностный" }, { k: "medium", l: "Средний" }, { k: "deep", l: "Глубокий" }, { k: "complicated", l: "Осложнённый" }] as const).map((c) => (
+                        <button
+                          key={c.k}
+                          type="button"
+                          className={`px-2.5 py-1 text-[11px] rounded-full border cursor-pointer transition ${
+                            cariesType === c.k
+                              ? "bg-blue-50 border-blue-500 text-blue-700 shadow-[0_0_0_1px_rgba(59,130,246,0.25)]"
+                              : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"
+                          }`}
+                          onClick={() => setCariesType(c.k)}
+                        >
                           {c.l}
                         </button>
                       ))}
                     </div>
-                    {cariesType && <div className="text-[11px] text-gray-400 mt-1">{cariesHints[cariesType]}</div>}
+                    {cariesType && <div className="text-[11px] text-gray-400 mt-1">{CARIES_HINTS[cariesType]}</div>}
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-2 mt-2">
                   {visitFinished ? (
-                    <div className="text-center py-4 bg-green-50 rounded-lg text-green-600 font-semibold flex items-center justify-center gap-2"><CheckCircle2 size={18} /> Прием завершен и материалы списаны</div>
+                    <div className="text-center py-4 bg-green-50 rounded-lg text-green-600 font-semibold flex items-center justify-center gap-2">
+                      <CheckCircle2 size={18} /> Прием завершен и материалы списаны
+                    </div>
                   ) : (
-                    <button className="w-full py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50 flex items-center justify-center gap-2" disabled={finishing} onClick={handleFinishVisit}>
+                    <button
+                      className="w-full py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                      disabled={finishing}
+                      onClick={handleFinishVisit}
+                    >
                       {finishing ? (
                         <><span className="inline-block w-3.5 h-3.5 border-2 border-white border-r-transparent rounded-full animate-spin" /> Сохранение...</>
                       ) : "Завершить прием и списать материалы"}
                     </button>
                   )}
                   <div className="grid grid-cols-2 gap-2 max-[992px]:grid-cols-1">
-                    <button className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition" onClick={() => {
-                      setModal({ title: "Экспорт в PDF", phase: "loading" });
-                      setTimeout(() => setModal((p) => p ? { ...p, phase: "done" } : null), 1800);
-                    }}> <FileText size={14} /> Экспорт PDF</button>
                     <button
-                      className={`px-3 py-2 text-sm font-medium rounded-lg transition ${egovSigned ? "bg-green-50 border border-green-300 text-green-600 cursor-default" : "text-gray-700 bg-white border border-gray-200 hover:bg-gray-50"}`}
+                      className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
+                      onClick={() => {
+                        setModal({ title: "Экспорт в PDF", phase: "loading" });
+                        setTimeout(() => setModal((p) => p ? { ...p, phase: "done" } : null), 1800);
+                      }}
+                    >
+                      <FileDown size={14} /> Экспорт PDF
+                    </button>
+                    <button
+                      className={`px-3 py-2 text-sm font-medium rounded-lg transition flex items-center justify-center gap-1.5 ${
+                        egovSigned
+                          ? "bg-green-50 border border-green-300 text-green-600 cursor-default"
+                          : "text-gray-700 bg-white border border-gray-200 hover:bg-gray-50"
+                      }`}
                       onClick={egovSigned ? undefined : () => setModal({ title: "Подписание через eGov (ЭЦП)", phase: "select" })}
                     >
-                      {egovSigned ? <span className="flex items-center gap-1"><CheckCircle2 size={14} /> Подписано ЭЦП</span> : <span className="flex items-center gap-1"><Key size={14} /> Подпись eGov</span>}
+                      {egovSigned ? <><CheckCircle2 size={14} /> Подписано ЭЦП</> : <><Key size={14} /> Подпись eGov</>}
                     </button>
                   </div>
                 </div>
@@ -773,20 +1006,40 @@ function AiCorePage({ patientId }) {
       {activeTab === "images" && (
         <div className="p-6 max-w-full mx-auto flex flex-col gap-5">
           <input type="file" ref={fileRef} accept="image/*" className="hidden" onChange={handleImageUpload} />
-          <div className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 text-gray-400 cursor-pointer hover:border-blue-500 hover:bg-blue-50/30 hover:text-blue-500 transition" onClick={() => fileRef.current?.click()}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+          <div
+            className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 text-gray-400 cursor-pointer hover:border-blue-500 hover:bg-blue-50/30 hover:text-blue-500 transition"
+            onClick={() => fileRef.current?.click()}
+          >
+            <Upload size={24} />
             <span className="text-sm font-medium">Прикрепить фото</span>
           </div>
           <div className="text-center text-[15px] font-semibold text-gray-900">Август 2022</div>
           <div className="w-full max-w-[560px] mx-auto rounded-xl overflow-hidden bg-gray-50 border border-gray-200">
             <div className={`w-full overflow-hidden mb-2.5 ${!activeImage ? "flex items-center justify-center pt-5" : ""}`}>
-              {!activeImage ? <span className="text-[13px] text-gray-400">Нет изображений</span> : <img src={activeImage} alt="ОПТГ" className="w-full h-auto max-h-[360px] object-contain block" />}
+              {!activeImage ? (
+                <span className="text-[13px] text-gray-400">Нет изображений</span>
+              ) : (
+                <img src={activeImage} alt="ОПТГ" className="w-full h-auto max-h-[360px] object-contain block" />
+              )}
             </div>
             <div className="flex flex-wrap gap-2 justify-center mb-2.5">
               {images.map((img) => (
                 <div key={img.id} className="relative inline-block">
-                  <img src={img.url} alt="thumb" className={`w-24 h-16 object-cover rounded-md border cursor-pointer bg-gray-50 ${activeImage === img.url ? "border-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.2)]" : "border-gray-200"}`} onClick={() => setActiveImage(img.url)} />
-                  <button type="button" className="absolute -top-1.5 -right-1.5 w-[18px] h-[18px] rounded-full border-none bg-black/65 text-white text-xs flex items-center justify-center cursor-pointer hover:bg-red-600 transition" onClick={() => handleDeleteImage(img.id)}>×</button>
+                  <img
+                    src={img.url}
+                    alt="thumb"
+                    className={`w-24 h-16 object-cover rounded-md border cursor-pointer bg-gray-50 ${
+                      activeImage === img.url ? "border-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.2)]" : "border-gray-200"
+                    }`}
+                    onClick={() => setActiveImage(img.url)}
+                  />
+                  <button
+                    type="button"
+                    className="absolute -top-1.5 -right-1.5 w-[18px] h-[18px] rounded-full border-none bg-black/65 text-white text-xs flex items-center justify-center cursor-pointer hover:bg-red-600 transition"
+                    onClick={() => handleDeleteImage(img.id)}
+                  >
+                    &times;
+                  </button>
                 </div>
               ))}
             </div>
@@ -794,7 +1047,7 @@ function AiCorePage({ patientId }) {
           <div className="flex flex-wrap gap-2.5 items-center pt-2 border-t border-gray-200">
             <button className="px-4 py-2 text-[13px] font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition">Назад</button>
             <button className="px-4 py-2 text-[13px] font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition">Назначить повторный прием</button>
-            <button className="px-4 py-2 text-[13px] font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition">Распечатать</button>
+            <button className="px-4 py-2 text-[13px] font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition flex items-center gap-1.5"><FileText size={14} /> Распечатать</button>
             <button className="px-4 py-2 text-[13px] font-medium bg-red-600 text-white border-none rounded-lg hover:bg-red-700 transition cursor-pointer">Удалить полностью карточку</button>
             <button className="px-5 py-2 text-[13px] font-medium bg-blue-600 text-white border-none rounded-lg hover:bg-blue-700 transition cursor-pointer ml-auto">Сохранить</button>
           </div>
@@ -849,15 +1102,19 @@ function AiCorePage({ patientId }) {
           <div className="flex flex-col gap-1.5 mt-1.5">
             {visits.length === 0 ? (
               <div className="text-xs text-gray-400">Пока нет завершённых визитов</div>
-            ) : visits.map((v) => (
-              <div key={v.id} className="text-xs px-2.5 py-2 rounded-md bg-gray-50 flex flex-col gap-0.5">
-                <div className="flex justify-between gap-2">
-                  <span className="font-semibold">{v.diagnosis || "Без диагноза"}</span>
-                  <span className="text-[11px] text-gray-500">{v.startedAt?.slice(0, 10)} {v.startedAt?.slice(11, 16)}</span>
+            ) : (
+              visits.map((v) => (
+                <div key={v.id} className="text-xs px-2.5 py-2 rounded-md bg-gray-50 flex flex-col gap-0.5">
+                  <div className="flex justify-between gap-2">
+                    <span className="font-semibold">{v.diagnosis || "Без диагноза"}</span>
+                    <span className="text-[11px] text-gray-500">{v.startedAt?.slice(0, 10)} {v.startedAt?.slice(11, 16)}</span>
+                  </div>
+                  <div className="text-[11px] text-gray-500">
+                    Тип кариеса: {v.cariesType || "—"}{v.diagnosisCode ? ` • ${v.diagnosisCode}` : ""}{v.toothNumber ? ` • зуб ${v.toothNumber}` : ""}
+                  </div>
                 </div>
-                <div className="text-[11px] text-gray-500">Тип кариеса: {v.cariesType || "—"}{v.diagnosisCode ? ` • ${v.diagnosisCode}` : ""}{v.toothNumber ? ` • зуб ${v.toothNumber}` : ""}</div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       )}
@@ -896,7 +1153,7 @@ function AiCorePage({ patientId }) {
           )}
           {modal.title.includes("PDF") && modal.phase === "done" && (
             <div className="text-center p-5">
-              <div className="text-4xl mb-4 flex justify-center"><CheckCircle2 size={48} className="text-green-500" /></div>
+              <CheckCircle2 size={48} className="text-green-500 mx-auto mb-4" />
               <div className="text-base font-semibold mb-3">PDF успешно сформирован</div>
               <div className="text-[13px] text-gray-400 mb-6">Документ автоматически сохранен в карту пациента и скачан.</div>
               <button className="w-full px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition" onClick={() => setModal(null)}>Закрыть</button>
@@ -906,8 +1163,11 @@ function AiCorePage({ patientId }) {
             <div className="p-2.5">
               <div className="text-[13px] text-gray-500 mb-2">Документ для подписи сформирован на основе AI-протокола:</div>
               <div className="text-[13px] text-gray-500 mb-3"><b>МКБ-10:</b> {diagnosisCode || "—"} &bull; <b>Тип кариеса:</b> {cariesType || "—"} &bull; <b>Зуб:</b> {selectedTooth || "—"}</div>
-              <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer bg-gray-50 mb-5 hover:border-blue-500 hover:bg-blue-50/30 transition" onClick={() => setModal((p) => p ? { ...p, phase: "password" } : null)}>
-                <div className="text-2xl mb-2 flex justify-center"><Key size={32} className="text-blue-600" /></div>
+              <div
+                className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer bg-gray-50 mb-5 hover:border-blue-500 hover:bg-blue-50/30 transition"
+                onClick={() => setModal((p) => p ? { ...p, phase: "password" } : null)}
+              >
+                <Key size={32} className="text-blue-600 mx-auto mb-2" />
                 <div className="font-semibold text-sm text-blue-600">Выбрать файл ЭЦП</div>
                 <div className="text-[11px] text-gray-400 mt-1">.p12 или .cer</div>
               </div>
@@ -916,18 +1176,23 @@ function AiCorePage({ patientId }) {
           {modal.title.includes("eGov") && modal.phase === "password" && (
             <div className="p-2.5">
               <div className="text-[13px] text-gray-500 mb-3"><b>МКБ-10:</b> {diagnosisCode || "—"} &bull; <b>Тип кариеса:</b> {cariesType || "—"} &bull; <b>Зуб:</b> {selectedTooth || "—"}</div>
-              <div className="border border-green-300 rounded-lg p-4 text-center mb-4 bg-green-50/50">
-                <span className="text-green-600 mr-2 flex items-center"><Check size={16} /></span>
+              <div className="border border-green-300 rounded-lg p-4 text-center mb-4 bg-green-50/50 flex items-center justify-center gap-2">
+                <Check size={16} className="text-green-600" />
                 <span className="font-semibold text-[13px]">GOSTKNCA_xxxxxxxx.p12 выбран</span>
               </div>
               <div className="mb-4">
                 <label className="text-xs font-semibold block mb-2">Пароль от хранилища ключей:</label>
                 <input type="password" className="w-full px-3 py-2 border border-gray-200 bg-white text-sm rounded-lg" placeholder="Введите пароль..." defaultValue="123456" />
               </div>
-              <button className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition" onClick={() => {
-                setModal((p) => p ? { ...p, phase: "signing" } : null);
-                setTimeout(() => { setEgovSigned(true); setModal(null); }, 1500);
-              }}>Подписать документ</button>
+              <button
+                className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition"
+                onClick={() => {
+                  setModal((p) => p ? { ...p, phase: "signing" } : null);
+                  setTimeout(() => { setEgovSigned(true); setModal(null); }, 1500);
+                }}
+              >
+                Подписать документ
+              </button>
             </div>
           )}
           {modal.title.includes("eGov") && modal.phase === "signing" && (
@@ -942,7 +1207,7 @@ function AiCorePage({ patientId }) {
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-5 right-5 bg-white border border-gray-200 shadow-xl px-4 py-3.5 rounded-xl z-[9999] flex items-center gap-3 text-[13px] animate-[fadeIn_0.2s_ease]">
-          <span className="text-xl"><MicVocal size={22} /></span>
+          <Mic size={22} className="text-blue-600 shrink-0" />
           <div>
             <div className="font-semibold">{toast}</div>
           </div>
@@ -962,7 +1227,7 @@ function AiPageContent() {
 
 export default function AiPage() {
   return (
-    <Suspense fallback={<div style={{ padding: 24, color: "var(--muted)", fontSize: 14 }}>Жүктелуде...</div>}>
+    <Suspense fallback={<div className="p-6 text-center text-gray-400">Загрузка...</div>}>
       <AiPageContent />
     </Suspense>
   );
