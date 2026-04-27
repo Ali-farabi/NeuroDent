@@ -8,14 +8,12 @@ const ROLE_LABELS = {
   owner:     "Владелец",
   admin:     "Админ",
   doctor:    "Врач",
-  assistant: "Ассистент",
 };
 
 const ROLE_COLORS = {
   owner:     { bg: "#eff6ff", color: "#1d4ed8", border: "#bfdbfe" },
   admin:     { bg: "#f0fdf4", color: "#15803d", border: "#bbf7d0" },
   doctor:    { bg: "#fdf4ff", color: "#7e22ce", border: "#e9d5ff" },
-  assistant: { bg: "#fff7ed", color: "#c2410c", border: "#fed7aa" },
 };
 
 const SPECIALTIES = ["Терапевт", "Хирург", "Ортодонт", "Пародонтолог", "Ортопед", "Детский стоматолог"];
@@ -134,7 +132,6 @@ function UserModal({ mode, user, existingUsers, onClose, onSaved }) {
               {!ownerExists && <option value="owner">Владелец</option>}
               <option value="admin">Админ</option>
               <option value="doctor">Врач</option>
-              <option value="assistant">Ассистент</option>
             </select>
             {ownerExists && form.role === "owner" && (
               <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 3 }}>
@@ -144,7 +141,7 @@ function UserModal({ mode, user, existingUsers, onClose, onSaved }) {
           </Field>
 
           {form.role === "doctor" && (
-            <Field label="Мамандық (Специализация)">
+            <Field label="Специализация">
               <select value={form.specialty} onChange={set("specialty")} style={inputStyle}>
                 <option value="">— Выберите —</option>
                 {SPECIALTIES.map((s) => <option key={s} value={s}>{s}</option>)}

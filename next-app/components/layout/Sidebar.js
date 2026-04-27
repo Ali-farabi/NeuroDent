@@ -10,7 +10,7 @@ const menuItems = [
     route: "ai",
     href: "/ai",
     label: "Core AI Layer",
-    roles: ["owner", "doctor", "assistant"],
+    roles: ["owner", "doctor"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
@@ -35,7 +35,7 @@ const menuItems = [
     route: "schedule",
     href: "/schedule",
     label: "Call-центр и CRM",
-    roles: ["owner", "admin", "doctor", "assistant"],
+    roles: ["owner", "admin", "doctor"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -49,7 +49,7 @@ const menuItems = [
     route: "visits",
     href: "/visits",
     label: "История визитов",
-    roles: ["owner", "admin", "doctor", "assistant"],
+    roles: ["owner", "admin", "doctor"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -76,7 +76,7 @@ const menuItems = [
     route: "patients",
     href: "/patients",
     label: "Пациентский модуль",
-    roles: ["owner", "admin", "doctor", "assistant", "patient"],
+    roles: ["owner", "admin", "doctor", "patient"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />

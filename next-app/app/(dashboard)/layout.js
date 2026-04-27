@@ -11,10 +11,10 @@ const PAGE_ROLES = {
   "/report":   ["owner"],
   "/payments": ["owner", "admin"],
   "/users":    ["owner"],
-  "/ai":       ["owner", "doctor", "assistant"],
-  "/schedule": ["owner", "admin", "doctor", "assistant"],
-  "/visits":   ["owner", "admin", "doctor", "assistant"],
-  "/patients": ["owner", "admin", "doctor", "assistant", "patient"],
+  "/ai":       ["owner", "doctor"],
+  "/schedule": ["owner", "admin", "doctor"],
+  "/visits":   ["owner", "admin", "doctor"],
+  "/patients": ["owner", "admin", "doctor", "patient"],
 };
 
 function getAllowedRoles(path) {

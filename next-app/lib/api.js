@@ -4,7 +4,7 @@ function delay(ms = 600) {
 
 const clone = (data) => JSON.parse(JSON.stringify(data));
 const TODAY = new Date().toISOString().slice(0, 10);
-const DB_VERSION = "5"; // increment to force localStorage reset
+const DB_VERSION = "6"; // increment to force localStorage reset
 
 function shiftDate(isoDate, days) {
   const d = new Date(`${isoDate}T00:00:00`);
@@ -44,9 +44,9 @@ function saveDb(db) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MOCK DATABASE — localStorage-та сақталады (key: "neurodent_db")
+// MOCK DATABASE — хранится в localStorage (key: "neurodent_db")
 //
-// Backend-қа ауысқанда мына кестелер керек:
+// При переходе на backend понадобятся следующие таблицы:
 //   doctors    → PostgreSQL: doctors (id, name, specialty, user_id FK→users)
 //   patients   → PostgreSQL: patients (id, name, phone, birth_date, allergies, bonus_points, channel)
 //   users      → PostgreSQL: users (id, name, phone, email, role, password_hash, specialty, is_active)
@@ -56,52 +56,52 @@ function saveDb(db) {
 //   inventory  → PostgreSQL: inventory (id, name, unit, quantity, min_quantity)
 // ─────────────────────────────────────────────────────────────────────────────
 const initialDb = {
-  // doctors: расписание, визит, AI бетімен байланысады — doctor.id = appointment.doctorId = visit.doctorId
-  // Backend: createUser(role=doctor) → автоматты doctors кестесіне жазылады (userId = doctorId)
+  // doctors: связан с расписанием, визитом, AI страницей — doctor.id = appointment.doctorId = visit.doctorId
+  // Backend: createUser(role=doctor) → автоматически записывается в таблицу doctors (userId = doctorId)
   doctors: [
-    { id: "d1", name: "Сейтқали Марат Бекұлы", specialty: "Терапевт" },
-    { id: "d2", name: "Жұмабаев Ерлан Сейітұлы", specialty: "Хирург-стоматолог" },
-    { id: "d3", name: "Нұрланова Айгүл Маратқызы", specialty: "Ортодонт" },
-    { id: "d4", name: "Қасымов Данияр Әлібекұлы", specialty: "Пародонтолог" },
-    { id: "d5", name: "Бекова Сабина Нұрланқызы", specialty: "Эндодонт" },
-    { id: "d6", name: "Әбілов Тимур Сейітқалиұлы", specialty: "Ортопед-стоматолог" },
+    { id: "d1", name: "Сейткали Марат Бекович", specialty: "Терапевт" },
+    { id: "d2", name: "Жумабаев Ерлан Сеитович", specialty: "Хирург-стоматолог" },
+    { id: "d3", name: "Нурланова Айгуль Маратовна", specialty: "Ортодонт" },
+    { id: "d4", name: "Касымов Данияр Алибекович", specialty: "Пародонтолог" },
+    { id: "d5", name: "Бекова Сабина Нурлановна", specialty: "Эндодонт" },
+    { id: "d6", name: "Абилов Тимур Сейткалиевич", specialty: "Ортопед-стоматолог" },
   ],
-  // patients: барлық беттің орталығы — appointment, visit, payment, CRM бәрі patient.id арқылы байланысады
-  // channel — CRM бетінде қай арна арқылы хабарласқанын көрсетеді (WhatsApp / Instagram / Телефон)
-  // lastMessage — CRM тізімінде соңғы хабардың мәтіні (backend-та: crm_messages кестесінен JOIN)
+  // patients: центр всех страниц — appointment, visit, payment, CRM — всё связано через patient.id
+  // channel — показывает канал связи в CRM (WhatsApp / Instagram / Телефон)
+  // lastMessage — текст последнего сообщения в CRM (backend: JOIN из таблицы crm_messages)
   patients: [
     { id: "p1",  name: "Иван Иванов",      phone: "87001112233", birthDate: "2001-04-10", createdAt: "2023-03-02", email: "ivan@mail.ru",      address: "Алматы, Абай 10",        balance: 0,      allergies: "Аллергия на лидокаин", bonusPoints: 320, channel: "WhatsApp",  lastMessage: "Здравствуйте! Можно записаться к хирургу?", lastMessageTime: "10:42" },
     { id: "p2",  name: "Анна Петрова",     phone: "87009998877", birthDate: "1998-11-05", createdAt: "2023-11-10", email: "anna@gmail.com",    address: "Алматы, Достык 5",       balance: 0,      allergies: null,                   bonusPoints: 85,  channel: "Instagram", lastMessage: "Сколько стоит имплант?",                    lastMessageTime: "Вчера" },
     { id: "p3",  name: "Дамир Алиев",      phone: "87005556677", birthDate: "2005-02-01", createdAt: "2024-01-15", email: "damir@mail.ru",     address: "Алматы, Сейфуллин 34",   balance: 0,      allergies: null,                   bonusPoints: 175, channel: "WhatsApp",  lastMessage: "Спасибо, буду вовремя.",                    lastMessageTime: "Вчера" },
     { id: "p4",  name: "Айгерим Бекова",   phone: "87712345678", birthDate: "1995-07-22", createdAt: "2024-02-10", email: "",                  address: "Алматы, Тимирязев 42",   balance: -8000,  allergies: "Пенициллин",            bonusPoints: 0,   channel: "WhatsApp",  lastMessage: "Когда можно к ортодонту?",                  lastMessageTime: "Пн"    },
-    { id: "p5",  name: "Нұрлан Сейітов",   phone: "87001234567", birthDate: "1988-03-15", createdAt: "2024-03-05", email: "nurlan@inbox.ru",   address: "Алматы, Розыбакиев 15",  balance: 0,      allergies: null,                   bonusPoints: 210, channel: "Телефон",   lastMessage: null,                                         lastMessageTime: null    },
-    { id: "p6",  name: "Мадина Қасымова",  phone: "87759876543", birthDate: "2000-12-30", createdAt: "2024-03-18", email: "madina@mail.kz",    address: "Алматы, Навои 25",       balance: 0,      allergies: null,                   bonusPoints: 50,  channel: "Instagram", lastMessage: "Добрый день!",                               lastMessageTime: "Пт"    },
-    { id: "p7",  name: "Арман Жұмабаев",   phone: "87013334455", birthDate: "1992-09-08", createdAt: "2024-04-01", email: "",                  address: "Алматы, Байтурсынов 8",  balance: -5000,  allergies: "Артикаин",              bonusPoints: 130, channel: "WhatsApp",  lastMessage: "Можно перенести на пятницу?",               lastMessageTime: "Чт"    },
-    { id: "p8",  name: "Зарина Әбілова",   phone: "87027778899", birthDate: "2003-05-17", createdAt: "2024-04-10", email: "zarina@gmail.com",  address: "Алматы, Саина 88",       balance: 0,      allergies: null,                   bonusPoints: 0,   channel: "WhatsApp",  lastMessage: null,                                         lastMessageTime: null    },
-    { id: "p9",  name: "Серік Нұрланов",   phone: "87051112233", birthDate: "1979-11-04", createdAt: "2024-04-15", email: "",                  address: "Алматы, Рыскулова 20",   balance: 0,      allergies: null,                   bonusPoints: 440, channel: "Телефон",   lastMessage: null,                                         lastMessageTime: null    },
+    { id: "p5",  name: "Нурлан Сеитов",    phone: "87001234567", birthDate: "1988-03-15", createdAt: "2024-03-05", email: "nurlan@inbox.ru",   address: "Алматы, Розыбакиев 15",  balance: 0,      allergies: null,                   bonusPoints: 210, channel: "Телефон",   lastMessage: null,                                         lastMessageTime: null    },
+    { id: "p6",  name: "Мадина Касымова",  phone: "87759876543", birthDate: "2000-12-30", createdAt: "2024-03-18", email: "madina@mail.kz",    address: "Алматы, Навои 25",       balance: 0,      allergies: null,                   bonusPoints: 50,  channel: "Instagram", lastMessage: "Добрый день!",                               lastMessageTime: "Пт"    },
+    { id: "p7",  name: "Арман Жумабаев",   phone: "87013334455", birthDate: "1992-09-08", createdAt: "2024-04-01", email: "",                  address: "Алматы, Байтурсынов 8",  balance: -5000,  allergies: "Артикаин",              bonusPoints: 130, channel: "WhatsApp",  lastMessage: "Можно перенести на пятницу?",               lastMessageTime: "Чт"    },
+    { id: "p8",  name: "Зарина Абилова",   phone: "87027778899", birthDate: "2003-05-17", createdAt: "2024-04-10", email: "zarina@gmail.com",  address: "Алматы, Саина 88",       balance: 0,      allergies: null,                   bonusPoints: 0,   channel: "WhatsApp",  lastMessage: null,                                         lastMessageTime: null    },
+    { id: "p9",  name: "Серик Нурланов",   phone: "87051112233", birthDate: "1979-11-04", createdAt: "2024-04-15", email: "",                  address: "Алматы, Рыскулова 20",   balance: 0,      allergies: null,                   bonusPoints: 440, channel: "Телефон",   lastMessage: null,                                         lastMessageTime: null    },
     { id: "p10", name: "Дина Марат",       phone: "87082223344", birthDate: "1997-06-25", createdAt: "2024-04-18", email: "dina@mail.kz",      address: "Алматы, Жандосова 12",   balance: 0,      allergies: null,                   bonusPoints: 60,  channel: "WhatsApp",  lastMessage: "Спасибо за приём!",                         lastMessageTime: "Ср"    },
   ],
   appointments: [
-    // d1 Сейтқали — Терапевт
+    // d1 Сейткали — Терапевт
     { id: "a1",  doctorId: "d1", date: TODAY, time: "09:00", duration: 30, patientId: "p1", status: "completed",  visitId: null },
     { id: "a2",  doctorId: "d1", date: TODAY, time: "10:00", duration: 60, patientId: "p2", status: "arrived",    visitId: null },
     { id: "a7",  doctorId: "d1", date: TODAY, time: "14:00", duration: 45, patientId: "p3", status: "scheduled",  visitId: null },
-    // d2 Жұмабаев — Хирург
+    // d2 Жумабаев — Хирург
     { id: "a3",  doctorId: "d2", date: TODAY, time: "09:00", duration: 45, patientId: "p4", status: "completed",  visitId: null },
     { id: "a3b", doctorId: "d2", date: TODAY, time: "11:30", duration: 45, patientId: "p3", status: "scheduled",  visitId: null },
-    // d3 Нұрланова — Ортодонт
+    // d3 Нурланова — Ортодонт
     { id: "a6",  doctorId: "d3", date: TODAY, time: "10:30", duration: 90, patientId: "p2", status: "arrived",    visitId: null },
     { id: "a8",  doctorId: "d3", date: TODAY, time: "13:00", duration: 30, patientId: "p1", status: "cancelled",  visitId: null },
-    // d4 Қасымов — Пародонтолог
+    // d4 Касымов — Пародонтолог
     { id: "a4b", doctorId: "d4", date: TODAY, time: "09:30", duration: 60, patientId: "p7", status: "completed",  visitId: null },
     { id: "a4c", doctorId: "d4", date: TODAY, time: "12:00", duration: 30, patientId: "p8", status: "scheduled",  visitId: null },
     // d5 Бекова — Эндодонт
     { id: "a10", doctorId: "d5", date: TODAY, time: "09:00", duration: 45, patientId: "p5", status: "completed",  visitId: null },
     { id: "a10b",doctorId: "d5", date: TODAY, time: "11:00", duration: 60, patientId: "p6", status: "arrived",    visitId: null },
-    // d6 Әбілов — Ортопед
+    // d6 Абилов — Ортопед
     { id: "a6b", doctorId: "d6", date: TODAY, time: "10:00", duration: 60, patientId: "p9", status: "arrived",    visitId: null },
     { id: "a6c", doctorId: "d6", date: TODAY, time: "14:30", duration: 30, patientId: "p10",status: "scheduled",  visitId: null },
-    // Өткен күндер (history)
+    // Прошлые дни (history)
     { id: "a5",  doctorId: "d2", date: shiftDate(TODAY, -3), time: "09:00", duration: 30, patientId: "p1", status: "completed", visitId: "v2" },
     { id: "a9",  doctorId: "d3", date: shiftDate(TODAY, -5), time: "08:30", duration: 30, patientId: "p3", status: "completed", visitId: "v4" },
     { id: "a11", doctorId: "d1", date: shiftDate(TODAY, -2), time: "09:00", duration: 45, patientId: "p2", status: "completed", visitId: "v3" },
@@ -163,11 +163,10 @@ const initialDb = {
     { id: "inv12", name: "Брекет-система металл (комплект)", category: "Ортодонтия", quantity: 7, unit: "комп", minQuantity: 2 },
   ],
   users: [
-    { id: "u1", name: "Сейтқали Болат Маратұлы", phone: "87001234567", email: "owner@neurodent.kz", role: "owner", isActive: true, createdAt: "2023-01-01" },
-    { id: "u2", name: "Жақсыбекова Айнур", phone: "87007654321", email: "admin@neurodent.kz", role: "admin", isActive: true, createdAt: "2023-02-15" },
-    { id: "u3", name: "Сейтқали Марат Бекұлы", phone: "87005551234", email: "doctor1@neurodent.kz", role: "doctor", isActive: true, createdAt: "2023-03-10" },
-    { id: "u4", name: "Жұмабаев Ерлан Сейітұлы", phone: "87005557890", email: "doctor2@neurodent.kz", role: "doctor", isActive: true, createdAt: "2023-04-01" },
-    { id: "u5", name: "Сәрсенова Камила", phone: "87009871234", email: "assistant@neurodent.kz", role: "assistant", isActive: true, createdAt: "2023-06-20" },
+    { id: "u1", name: "Сейткали Болат Маратович", phone: "87001234567", email: "owner@neurodent.kz", role: "owner", isActive: true, createdAt: "2023-01-01" },
+    { id: "u2", name: "Жаксыбекова Айнур", phone: "87007654321", email: "admin@neurodent.kz", role: "admin", isActive: true, createdAt: "2023-02-15" },
+    { id: "u3", name: "Сейткали Марат Бекович", phone: "87005551234", email: "doctor1@neurodent.kz", role: "doctor", isActive: true, createdAt: "2023-03-10" },
+    { id: "u4", name: "Жумабаев Ерлан Сеитович", phone: "87005557890", email: "doctor2@neurodent.kz", role: "doctor", isActive: true, createdAt: "2023-04-01" },
   ],
 };
 
@@ -185,7 +184,6 @@ export async function login(phone, password) {
   if (password === "admin") return { role: "admin", phone: cleanPhone, name: "Админ" };
   if (password === "doctor") return { role: "doctor", phone: cleanPhone, name: "Врач" };
   if (password === "patient") return { role: "patient", phone: cleanPhone, name: "Пациент" };
-  if (password === "assistant") return { role: "assistant", phone: cleanPhone, name: "Ассистент" };
   throw new Error("Неверный пароль");
 }
 
@@ -539,7 +537,7 @@ export async function getDayReport(date) {
   const totalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
   const visitsCompleted = db.appointments.filter((a) => a.date === date && a.status === "completed").length;
 
-  // AI signals: кариес типі + тіс нөмірі бойынша (visits-тен агрегация)
+  // AI signals: по типу кариеса + номеру зуба (агрегация из visits)
   const aiSignals = { cariesByType: { surface: 0, medium: 0, deep: 0, complicated: 0 }, teethByCount: {} };
   db.appointments.filter((a) => a.date === date && a.visitId).forEach((appt) => {
     const v = db.visits.find((x) => x.id === appt.visitId);
@@ -548,7 +546,7 @@ export async function getDayReport(date) {
     if (v.toothNumber) aiSignals.teethByCount[v.toothNumber] = (aiSignals.teethByCount[v.toothNumber] || 0) + 1;
   });
 
-  // Дәрігер бойынша кіріс: payment → visitId → visit.doctorId → doctor
+  // Выручка по врачам: payment → visitId → visit.doctorId → doctor
   const doctorMap = {};
   for (const pay of payments) {
     const visit = pay.visitId ? db.visits.find((v) => v.id === pay.visitId) : null;
@@ -564,7 +562,7 @@ export async function getDayReport(date) {
   }
   const doctorStats = Object.values(doctorMap).sort((a, b) => b.revenue - a.revenue);
 
-  // Мамандық бойынша кіріс (Терапия, Хирургия, Ортодонт...)
+  // Выручка по специализации (Терапия, Хирургия, Ортодонт...)
   const specialtyMap = {};
   for (const doc of doctorStats) {
     const sp = doc.specialty || "Другие";
@@ -574,10 +572,10 @@ export async function getDayReport(date) {
     .map(([name, revenue]) => ({ name, revenue }))
     .sort((a, b) => b.revenue - a.revenue);
 
-  // Склад ескертулері: quantity <= minQuantity болған позициялар
+  // Уведомления склада: позиции где quantity <= minQuantity
   const lowInventory = (db.inventory || []).filter((i) => i.quantity <= i.minQuantity);
 
-  // Кешегі күнмен салыстыру (periodChange)
+  // Сравнение со вчерашним днём (periodChange)
   const prevDate = (() => {
     const d = new Date(date);
     d.setDate(d.getDate() - 1);
@@ -650,7 +648,7 @@ export async function createUser(data) {
   const name = String(data?.name || "").trim();
   const phone = String(data?.phone || "").replace(/\D/g, "");
   const email = String(data?.email || "").trim();
-  const role = ["owner", "admin", "doctor", "assistant"].includes(data?.role) ? data.role : "admin";
+  const role = ["owner", "admin", "doctor"].includes(data?.role) ? data.role : "admin";
   const password = String(data?.password || "").trim();
   const specialty = role === "doctor" ? String(data?.specialty || "").trim() : "";
   if (name.length < 2) throw new Error("Имя слишком короткое");
@@ -678,7 +676,7 @@ export async function updateUser(id, patch) {
   if (patch.name !== undefined) u.name = String(patch.name).trim();
   if (patch.phone !== undefined) u.phone = String(patch.phone).replace(/\D/g, "");
   if (patch.email !== undefined) u.email = String(patch.email).trim();
-  if (patch.role !== undefined && ["owner", "admin", "doctor", "assistant"].includes(patch.role)) u.role = patch.role;
+  if (patch.role !== undefined && ["owner", "admin", "doctor"].includes(patch.role)) u.role = patch.role;
   if (patch.isActive !== undefined) u.isActive = !!patch.isActive;
   if (patch.password !== undefined && String(patch.password).trim().length >= 4) u.password = String(patch.password).trim();
   if (patch.specialty !== undefined) u.specialty = String(patch.specialty).trim();
@@ -693,7 +691,7 @@ export async function updateUser(id, patch) {
       db.doctors.push({ id, name: u.name, specialty: u.specialty || "" });
     }
   } else if (docRecord) {
-    // Рөл doctor емес болса — doctors тізімінен алып тастаймыз
+    // Если роль не doctor — удаляем из списка doctors
     db.doctors = db.doctors.filter((d) => d.id !== id);
   }
   saveDb(db);

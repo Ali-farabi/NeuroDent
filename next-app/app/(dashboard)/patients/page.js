@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/AuthContext";
-import { searchPatients, getPatientById, createPatient, updatePatient, getPatientVisits, getPatientPayments } from "@/lib/api";
+import { searchPatients, getPatientById, createPatient, updatePatient, getPatientVisits } from "@/lib/api";
 import { Bot, HeartPulse, CalendarDays, HandMetal, Sparkles, FileDown, AlertTriangle, UserRound } from "lucide-react";
 
 // ── Date formatter ────────────────────────────────────────────────────────────
@@ -138,12 +138,12 @@ function PatientForm({ mode, patient, onSave, onCancel }) {
 // ── Patient card with 3 tabs ──────────────────────────────────────────────────
 function PatientCard({ patient }) {
   const { user } = useAuth();
-  const isDoctor = user?.role === "doctor" || user?.role === "assistant";
+  const isDoctor = user?.role === "doctor";
   const [tab, setTab] = useState("info");
   const [visits, setVisits] = useState(null);
 
   useEffect(() => {
-    getPatientVisits(patient.id).then(setVisits); // eslint-disable-line react-hooks/set-state-in-effect
+    getPatientVisits(patient.id).then(setVisits);
   }, [patient.id]);
 
   const TABS = [
@@ -284,11 +284,11 @@ function PatientCabinet() {
 
   useEffect(() => {
     if (!user?.phone) return;
-    searchPatients(user.phone).then((list) => { // eslint-disable-line react-hooks/set-state-in-effect
+    searchPatients(user.phone).then((list) => {
       const p = list[0];
       if (!p) return;
-      setPatientData(p); // eslint-disable-line react-hooks/set-state-in-effect
-      getPatientVisits(p.id).then(setPatientVisits); // eslint-disable-line react-hooks/set-state-in-effect
+      setPatientData(p);
+      getPatientVisits(p.id).then(setPatientVisits);
     });
   }, [user?.phone]);
 
@@ -393,7 +393,7 @@ function PatientCabinet() {
   );
 }
 
-// ── Patient list (owner / admin / doctor / assistant) ─────────────────────────
+// ── Patient list (owner / admin / doctor) ─────────────────────────────────────
 function PatientListInner() {
   const router  = useRouter();
   const { user } = useAuth();
@@ -427,7 +427,7 @@ function PatientListInner() {
   }, [search]);
 
   const canCreate = ["owner", "admin"].includes(user?.role);
-  const canAI     = ["owner", "doctor", "assistant"].includes(user?.role);
+  const canAI     = ["owner", "doctor"].includes(user?.role);
 
   async function handleSave(form) {
     if (modal.mode === "create") await createPatient(form);

@@ -450,7 +450,7 @@ function SkladTab() {
                 onChange={e => setForm(f => ({ ...f, minQuantity: e.target.value }))}
                 placeholder="5" style={inputStyle} />
             </Field>
-            <Field label="Баға (₸)">
+            <Field label="Цена (₸)">
               <input type="number" min="0" value={form.price}
                 onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
                 placeholder="1200" style={inputStyle} />

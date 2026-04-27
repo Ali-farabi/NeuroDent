@@ -96,7 +96,7 @@ export default function ReportPage() {
   const topRevenue     = doctorStats[0]?.revenue || 1;
   const noShowRate     = report?.noShowRate ?? 0;
 
-  // Период өзгерістері (кешегімен салыстыру)
+  // Изменения за период (сравнение со вчерашним)
   const pc = report?.periodChange || {};
   const fmtPct  = (v) => v == null ? "—" : v >= 0 ? `+${v}%`    : `${v}%`;
   const fmtVis  = (v) => v == null ? "—" : v >= 0 ? `+${v} визит` : `${v} визит`;

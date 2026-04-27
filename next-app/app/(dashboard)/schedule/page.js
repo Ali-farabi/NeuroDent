@@ -183,8 +183,8 @@ function ApptDetailModal({ appt, doctors, role, onClose, onStatusChanged, onOpen
 
           {/* Action buttons */}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {/* AI button — doctor/assistant/owner */}
-            {["doctor","assistant","owner"].includes(role) && (
+            {/* AI button — doctor/owner */}
+            {["doctor","owner"].includes(role) && (
               <button onClick={() => { onOpenAi(appt.patientId); onClose(); }} style={{ ...btnPrimary, width: "100%", padding: "11px 0", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                 <Bot size={16} /> Открыть Core AI Layer
               </button>
@@ -392,7 +392,7 @@ function CalendarTab({ doctors, patients, role }) {
           <MiniCalendar value={date} onChange={setDate} />
         </div>
         <div style={{ height: 1, background: "var(--border)" }} />
-        {!["doctor","assistant"].includes(role) && (
+        {role !== "doctor" && (
           <div style={{ padding: "14px 16px" }}>
             <button onClick={() => setNewModal(true)} style={{ ...btnPrimary, width: "100%", padding: "11px 0", fontSize: 14 }}
               onMouseEnter={e => { e.currentTarget.style.opacity="0.88"; }}
@@ -465,7 +465,7 @@ function CrmTab({ patients, onNewAppt }) {
   const [search, setSearch]             = useState("");
   const messagesEnd                     = useRef(null);
 
-  // backend-та: GET /api/crm/contacts?q= — пациент + канал + соңғы хабар
+  // backend: GET /api/crm/contacts?q= — пациент + канал + последнее сообщение
   const chatPatients = patients.slice(0, 8);
   const filtered = chatPatients.filter(p =>
     !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.phone.includes(search)
@@ -508,7 +508,7 @@ function CrmTab({ patients, onNewAppt }) {
         </div>
         <div style={{ flex: 1, overflowY: "auto" }}>
           {filtered.map((p) => {
-            // channel — mock-та patient.channel өрісінен алынады; backend-та crm_contacts кестесінен
+            // channel — в mock берётся из patient.channel; в backend — из таблицы crm_contacts
             const ch = p.channel || "WhatsApp";
             const cc = CH_COLOR[ch] || CH_COLOR.WhatsApp;
             const isActive = selected?.id === p.id;
@@ -654,7 +654,7 @@ export default function SchedulePage() {
     Promise.all([getDoctors(), searchPatients("")]).then(([d, p]) => { setDoctors(d); setPatients(p); });
   }, []);
 
-  // badge — пациенттер ішінде жаңа хабары барлар (backend-та: unread_count)
+  // badge — пациенты с новыми сообщениями (backend: unread_count)
   const unreadCount = patients.filter(p => p.lastMessage).length;
 
   const TABS = [
