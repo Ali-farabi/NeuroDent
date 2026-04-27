@@ -92,7 +92,6 @@ export default function VisitsPage() {
   const timer = useRef(null);
 
   async function load(q, dId, f, t) {
-    // eslint-disable-next-line
     setLoading(true);
     try {
       const data = await getAllVisits({ query: q, doctorId: dId, from: f, to: t });
@@ -104,8 +103,8 @@ export default function VisitsPage() {
 
   useEffect(() => {
     getDoctors().then(setDoctors);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load("", "", MONTH_AGO, TODAY);
-  // eslint-disable-next-line
   }, []);
 
   function onQueryChange(e) {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { getUsers, createUser, updateUser } from "@/lib/api";
-import { UserRound } from "lucide-react";
+import { UserRound, Eye, EyeOff } from "lucide-react";
 
 const ROLE_LABELS = {
   owner:     "Владелец",
@@ -17,6 +17,8 @@ const ROLE_COLORS = {
   doctor:    { bg: "#fdf4ff", color: "#7e22ce", border: "#e9d5ff" },
   assistant: { bg: "#fff7ed", color: "#c2410c", border: "#fed7aa" },
 };
+
+const SPECIALTIES = ["Терапевт", "Хирург", "Ортодонт", "Пародонтолог", "Ортопед", "Детский стоматолог"];
 
 const inputStyle = {
   width: "100%", padding: "8px 12px",
@@ -46,26 +48,39 @@ function Field({ label, children }) {
 }
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
-function UserModal({ mode, user, onClose, onSaved }) {
+function UserModal({ mode, user, existingUsers, onClose, onSaved }) {
   const isEdit = mode === "edit";
+  const ownerExists = existingUsers.some((u) => u.role === "owner" && (!isEdit || u.id !== user?.id));
+
   const [form, setForm] = useState({
-    name:     isEdit ? (user?.name     ?? "") : "",
-    phone:    isEdit ? (user?.phone    ?? "") : "",
-    email:    isEdit ? (user?.email    ?? "") : "",
-    role:     isEdit ? (user?.role     ?? "admin") : "admin",
-    isActive: isEdit ? (user?.isActive !== false) : true,
+    name:      isEdit ? (user?.name      ?? "") : "",
+    phone:     isEdit ? (user?.phone     ?? "") : "",
+    email:     isEdit ? (user?.email     ?? "") : "",
+    role:      isEdit ? (user?.role      ?? "admin") : "admin",
+    specialty: isEdit ? (user?.specialty ?? "") : "",
+    password:  "",
+    isActive:  isEdit ? (user?.isActive !== false) : true,
   });
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [saving, setSaving]     = useState(false);
+  const [err, setErr]           = useState("");
 
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true); setErr("");
     try {
       if (isEdit) {
-        await updateUser(user.id, { name: form.name, phone: form.phone, email: form.email, role: form.role, isActive: form.isActive });
+        await updateUser(user.id, {
+          name: form.name, phone: form.phone, email: form.email,
+          role: form.role, specialty: form.specialty,
+          isActive: form.isActive,
+          ...(form.password ? { password: form.password } : {}),
+        });
       } else {
-        await createUser({ name: form.name, phone: form.phone, email: form.email, role: form.role });
+        await createUser({
+          name: form.name, phone: form.phone, email: form.email,
+          role: form.role, specialty: form.specialty, password: form.password,
+        });
       }
       onSaved();
       onClose();
@@ -76,13 +91,15 @@ function UserModal({ mode, user, onClose, onSaved }) {
     }
   }
 
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.35)" }} />
       <div style={{
-        position: "relative", width: "min(440px, 94vw)",
+        position: "relative", width: "min(460px, 94vw)",
         background: "var(--surface)", borderRadius: "var(--radius)",
-        boxShadow: "var(--shadow-lg)", padding: 28,
+        boxShadow: "var(--shadow-lg)", padding: 28, maxHeight: "90vh", overflowY: "auto",
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>
@@ -98,38 +115,88 @@ function UserModal({ mode, user, onClose, onSaved }) {
 
         <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12 }}>
           <Field label="ФИО *">
-            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            <input value={form.name} onChange={set("name")}
               placeholder="Иванов Иван Иванович" style={inputStyle} required minLength={2} />
           </Field>
+
           <Field label="Телефон *">
-            <input type="tel" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+            <input type="tel" value={form.phone} onChange={set("phone")}
               placeholder="87001234567" style={inputStyle} required />
           </Field>
+
           <Field label="Email">
-            <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+            <input type="email" value={form.email} onChange={set("email")}
               placeholder="user@clinic.kz" style={inputStyle} />
           </Field>
+
           <Field label="Роль">
-            <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} style={inputStyle}>
-              <option value="owner">Владелец</option>
+            <select value={form.role} onChange={set("role")} style={inputStyle}>
+              {!ownerExists && <option value="owner">Владелец</option>}
               <option value="admin">Админ</option>
               <option value="doctor">Врач</option>
               <option value="assistant">Ассистент</option>
             </select>
+            {ownerExists && form.role === "owner" && (
+              <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 3 }}>
+                Владелец уже существует — можно только один
+              </div>
+            )}
           </Field>
+
+          {form.role === "doctor" && (
+            <Field label="Мамандық (Специализация)">
+              <select value={form.specialty} onChange={set("specialty")} style={inputStyle}>
+                <option value="">— Выберите —</option>
+                {SPECIALTIES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </Field>
+          )}
+
+          <Field label={isEdit ? "Новый пароль (оставьте пустым, если не меняете)" : "Пароль * (мин. 4 символа)"}>
+            <div style={{ position: "relative" }}>
+              <input
+                type={showPass ? "text" : "password"}
+                value={form.password}
+                onChange={set("password")}
+                placeholder={isEdit ? "Введите новый пароль..." : "Минимум 4 символа"}
+                style={{ ...inputStyle, paddingRight: 36 }}
+                required={!isEdit}
+                minLength={isEdit ? undefined : 4}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass((v) => !v)}
+                style={{
+                  position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+                  border: "none", background: "transparent", cursor: "pointer",
+                  color: "var(--muted)", display: "flex", padding: 2,
+                }}
+              >
+                {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+            {!isEdit && (
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
+                Сотрудник войдёт по номеру телефона и этому паролю
+              </div>
+            )}
+          </Field>
+
           {isEdit && (
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
               <input type="checkbox" checked={form.isActive}
-                onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} />
+                onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))} />
               Активен
             </label>
           )}
+
           {err && (
             <div style={{
               fontSize: 12, padding: "8px 12px", borderRadius: "var(--radius-sm)",
               background: "#fef2f2", color: "var(--danger)", border: "1px solid #fecaca",
             }}>{err}</div>
           )}
+
           <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
             <button type="button" onClick={onClose} style={{ ...btnOutline, flex: 1 }}>Отмена</button>
             <button type="submit" disabled={saving} style={{ ...btnPrimary, flex: 1 }}>
@@ -156,6 +223,7 @@ export default function UsersPage() {
     finally { setLoading(false); }
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadUsers(""); }, []);
 
   function handleSearch(e) {
@@ -169,11 +237,11 @@ export default function UsersPage() {
     <div style={{ padding: 0, display: "grid", gap: 0 }}>
       <style>{`
         .usr-row { display: flex; align-items: center; gap: 12px; padding: 14px 20px; transition: background 0.1s; }
-        .usr-status { font-size: 12px; font-weight: 500; flex-shrink: 0; min-width: 72px; }
+        .usr-meta { font-size: 12px; color: var(--muted); flex-shrink: 0; }
         .usr-edit { padding: 5px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 12px; font-weight: 500; cursor: pointer; flex-shrink: 0; }
         @media (max-width: 560px) {
           .usr-row { gap: 8px; padding: 12px 14px; flex-wrap: wrap; }
-          .usr-status { display: none; }
+          .usr-meta { display: none; }
           .usr-edit { padding: 4px 10px; font-size: 11px; }
         }
       `}</style>
@@ -182,8 +250,7 @@ export default function UsersPage() {
       <div style={{
         display: "flex", gap: 10, alignItems: "center",
         background: "var(--surface)", border: "1px solid var(--border)",
-        borderRadius: 0, padding: "12px 16px",
-        borderBottom: "none",
+        borderRadius: 0, padding: "12px 16px", borderBottom: "none",
       }}>
         <input
           type="text" value={query} onChange={handleSearch}
@@ -217,8 +284,8 @@ export default function UsersPage() {
             <div key={u.id}
               className="usr-row"
               style={{ borderBottom: i < users.length - 1 ? "1px solid var(--border)" : "none" }}
-              onMouseEnter={e => e.currentTarget.style.background = "var(--hover)"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+              onMouseEnter={(e) => e.currentTarget.style.background = "var(--hover)"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
             >
               {/* Avatar */}
               <div style={{
@@ -232,7 +299,12 @@ export default function UsersPage() {
 
               {/* Name + contacts */}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{u.name}</div>
+                <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {u.name}
+                  {u.specialty && (
+                    <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400, marginLeft: 6 }}>· {u.specialty}</span>
+                  )}
+                </div>
                 <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {u.phone}{u.email ? ` · ${u.email}` : ""}
                 </div>
@@ -247,7 +319,7 @@ export default function UsersPage() {
               </span>
 
               {/* Status */}
-              <span className="usr-status" style={{ color: u.isActive !== false ? "var(--success)" : "var(--muted)" }}>
+              <span className="usr-meta" style={{ color: u.isActive !== false ? "var(--success)" : "var(--muted)" }}>
                 {u.isActive !== false ? "Активен" : "Неактивен"}
               </span>
 
@@ -264,6 +336,7 @@ export default function UsersPage() {
         <UserModal
           mode={modal.mode}
           user={modal.user}
+          existingUsers={users}
           onClose={() => setModal(null)}
           onSaved={() => loadUsers(query)}
         />

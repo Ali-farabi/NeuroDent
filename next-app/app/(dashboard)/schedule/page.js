@@ -7,7 +7,7 @@ import {
   updateAppointmentStatus, getPatientById, getVisitsByPatient,
 } from "@/lib/api";
 import { useAuth } from "@/lib/AuthContext";
-import { Bot, Stethoscope, Phone, CalendarDays, MessageCircle, Sparkles, ClipboardList, Bell, UserRound, X } from "lucide-react";
+import { Bot, Stethoscope, Phone, CalendarDays, MessageCircle, Sparkles, ClipboardList, Bell, UserRound } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const TODAY    = new Date().toISOString().slice(0, 10);
@@ -404,7 +404,7 @@ function CalendarTab({ doctors, patients, role }) {
         <div style={{ padding: "14px 16px", flex: 1 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", letterSpacing: 0.7, textTransform: "uppercase", marginBottom: 10 }}>Статусы</div>
           <div style={{ display: "grid", gap: 8 }}>
-            {Object.entries(STATUS_STYLE).map(([, s]) => (
+            {Object.values(STATUS_STYLE).map((s) => (
               <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 9 }}>
                 <div style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, background: s.bg, border: `1px solid ${s.border}`, borderLeft: `4px solid ${s.stripe}` }} />
                 <span style={{ fontSize: 12, color: "var(--text)", fontWeight: 500 }}>{s.label}</span>
@@ -426,7 +426,7 @@ function CalendarTab({ doctors, patients, role }) {
       {newModal && (
         <ApptModal doctors={doctors} patients={patients} date={date}
           onClose={() => setNewModal(false)}
-          onSaved={d => { setDate(d); load(d, doctorId); setNewModal(false); }}
+          onSaved={d => { setDate(d); reload(); setNewModal(false); }}
         />
       )}
 
@@ -443,15 +443,16 @@ function CalendarTab({ doctors, patients, role }) {
 }
 
 // ── CRM Tab ────────────────────────────────────────────────────────────────────
-const MOCK_MSGS  = ["Здравствуйте! Можно записаться на завтра к хирургу?","Сколько стоит имплант?","Спасибо, буду вовремя.","Когда можно к ортодонту?","Напомните время приёма","Добрый день!","Можно перенести на пятницу?","Спасибо за приём!"];
-const MOCK_TIMES = ["10:42","Вчера","Вчера","Пн","Сб","Пт","Чт","Ср"];
-const CHANNELS   = ["WhatsApp","WhatsApp","Instagram","WhatsApp","WhatsApp","Instagram","WhatsApp","WhatsApp"];
-const CH_COLOR   = {
+// В реальном backend: канал и последнее сообщение хранятся в таблице crm_contacts
+// Здесь используем поле patient.channel из mock-данных
+const CH_COLOR = {
   WhatsApp:  { bg: "#f0fdf4", color: "#15803d", border: "#bbf7d0" },
   Instagram: { bg: "#fdf2f8", color: "#9d174d", border: "#f9a8d4" },
+  Телефон:   { bg: "#eff6ff", color: "#1d4ed8", border: "#bfdbfe" },
 };
 
-function CrmTab({ patients }) {
+function CrmTab({ patients, onNewAppt }) {
+  const router = useRouter();
   const [selected, setSelected]         = useState(null);
   const [patientInfo, setPatientInfo]   = useState(null);
   const [patientVisits, setPatientVisits] = useState([]);
@@ -464,6 +465,7 @@ function CrmTab({ patients }) {
   const [search, setSearch]             = useState("");
   const messagesEnd                     = useRef(null);
 
+  // backend-та: GET /api/crm/contacts?q= — пациент + канал + соңғы хабар
   const chatPatients = patients.slice(0, 8);
   const filtered = chatPatients.filter(p =>
     !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.phone.includes(search)
@@ -477,7 +479,7 @@ function CrmTab({ patients }) {
       const [info, visits] = await Promise.all([getPatientById(p.id), getVisitsByPatient(p.id)]);
       setPatientInfo(info);
       setPatientVisits(visits);
-    } catch (_) {}
+    } catch {}
     finally { setLoadingCard(false); }
   }
 
@@ -505,9 +507,10 @@ function CrmTab({ patients }) {
           <input type="text" placeholder="Поиск пациента..." value={search} onChange={e => setSearch(e.target.value)} style={inputStyle} />
         </div>
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {filtered.map((p, i) => {
-            const ch       = CHANNELS[i] || "WhatsApp";
-            const cc       = CH_COLOR[ch] || CH_COLOR.WhatsApp;
+          {filtered.map((p) => {
+            // channel — mock-та patient.channel өрісінен алынады; backend-та crm_contacts кестесінен
+            const ch = p.channel || "WhatsApp";
+            const cc = CH_COLOR[ch] || CH_COLOR.WhatsApp;
             const isActive = selected?.id === p.id;
             return (
               <div key={p.id} onClick={() => selectPatient(p)} style={{ padding: "11px 14px", borderBottom: "1px solid var(--border)", cursor: "pointer", background: isActive ? "rgba(59,130,246,0.06)" : "transparent", borderLeft: isActive ? "3px solid var(--primary)" : "3px solid transparent", transition: "background 0.1s" }}
@@ -521,9 +524,9 @@ function CrmTab({ patients }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 4 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
-                      <div style={{ fontSize: 10, color: "var(--muted)", flexShrink: 0 }}>{MOCK_TIMES[i] || ""}</div>
+                      <div style={{ fontSize: 10, color: "var(--muted)", flexShrink: 0 }}>{p.lastMessageTime || ""}</div>
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>{MOCK_MSGS[i] || ""}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>{p.lastMessage || "Нет сообщений"}</div>
                     <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 5, marginTop: 3, display: "inline-block", background: cc.bg, color: cc.color, border: `1px solid ${cc.border}`, fontWeight: 600 }}>{ch}</span>
                   </div>
                 </div>
@@ -567,11 +570,11 @@ function CrmTab({ patients }) {
           <div style={{ borderTop: "1px solid var(--border)", background: "var(--surface)", padding: "10px 16px", flexShrink: 0 }}>
             <div style={{ display: "flex", gap: 6, marginBottom: 9 }}>
               {[
-                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Sparkles size={11} /> AI-Ответ</span>,    text: "Добрый день! Да, конечно. У доктора есть окошко на 14:30. Записать вас?", primary: true },
-                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><ClipboardList size={11} /> Прайс</span>,       text: "Добрый день! Актуальный прайс на услуги клиники прикреплён.", primary: false },
-                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Bell size={11} /> Напоминание</span>, text: "Напоминаем о вашем приёме завтра. Ждём вас!", primary: false },
+                { key: "ai",     label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Sparkles size={11} /> AI-Ответ</span>,    text: "Добрый день! Да, конечно. У доктора есть окошко на 14:30. Записать вас?", primary: true },
+                { key: "price",  label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><ClipboardList size={11} /> Прайс</span>,   text: "Добрый день! Актуальный прайс на услуги клиники прикреплён.", primary: false },
+                { key: "remind", label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Bell size={11} /> Напоминание</span>,       text: "Напоминаем о вашем приёме завтра. Ждём вас!", primary: false },
               ].map(b => (
-                <button key={b.label} onClick={() => setMsg(b.text)} style={{ fontSize: 11, padding: "5px 11px", borderRadius: 7, cursor: "pointer", fontWeight: 600, border: b.primary?"1px solid var(--primary)":"1px solid var(--border)", background: b.primary?"rgba(59,130,246,0.09)":"var(--surface-2)", color: b.primary?"var(--primary)":"var(--muted)" }}>{b.label}</button>
+                <button key={b.key} onClick={() => setMsg(b.text)} style={{ fontSize: 11, padding: "5px 11px", borderRadius: 7, cursor: "pointer", fontWeight: 600, border: b.primary?"1px solid var(--primary)":"1px solid var(--border)", background: b.primary?"rgba(59,130,246,0.09)":"var(--surface-2)", color: b.primary?"var(--primary)":"var(--muted)" }}>{b.label}</button>
               ))}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
@@ -608,7 +611,7 @@ function CrmTab({ patients }) {
             {/* Info */}
             <div style={{ display: "grid", gap: 9, fontSize: 12, marginBottom: 16 }}>
               {[
-                { label: "Канал",           value: CHANNELS[patients.findIndex(p=>p.id===selected.id)] || "WhatsApp", color: "#15803d" },
+                { label: "Канал",           value: selected.channel || "WhatsApp", color: "#15803d" },
                 { label: "Последний визит", value: lastVisit ? lastVisit.date : "—" },
                 { label: "Всего визитов",   value: patientVisits.length > 0 ? `${patientVisits.length} визит(а)` : "—" },
                 { label: "Диагноз",         value: lastVisit?.diagnosis || "—" },
@@ -623,9 +626,12 @@ function CrmTab({ patients }) {
             {/* Actions */}
             <div style={{ display: "grid", gap: 8 }}>
               {[
-                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Phone size={13} /> Позвонить</span>,        fn: () => { const n=(selected.phone||"").replace(/\D/g,"").replace(/^8/,"7"); window.location.href=`tel:+${n}`; } },
-                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><CalendarDays size={13} /> Записать на приём</span>, fn: () => {} },
-                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><ClipboardList size={13} /> Карточка пациента</span>, fn: () => {} },
+                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Phone size={13} /> Позвонить</span>,
+                  fn: () => { const n=(selected.phone||"").replace(/\D/g,"").replace(/^8/,"7"); window.location.href=`tel:+${n}`; } },
+                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><CalendarDays size={13} /> Записать на приём</span>,
+                  fn: () => onNewAppt?.() },
+                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><ClipboardList size={13} /> Карточка пациента</span>,
+                  fn: () => router.push(`/patients?q=${encodeURIComponent(selected.name)}`) },
               ].map(b => (
                 <button key={b.label} onClick={b.fn} style={{ ...btnOutline, width: "100%", fontSize: 12, padding: "8px 0" }}>{b.label}</button>
               ))}
@@ -640,17 +646,20 @@ function CrmTab({ patients }) {
 // ── Main ───────────────────────────────────────────────────────────────────────
 export default function SchedulePage() {
   const { user } = useAuth();
-  const [tab, setTab]         = useState("calendar");
-  const [doctors, setDoctors] = useState([]);
+  const [tab, setTab]           = useState("calendar");
+  const [doctors, setDoctors]   = useState([]);
   const [patients, setPatients] = useState([]);
 
   useEffect(() => {
     Promise.all([getDoctors(), searchPatients("")]).then(([d, p]) => { setDoctors(d); setPatients(p); });
   }, []);
 
+  // badge — пациенттер ішінде жаңа хабары барлар (backend-та: unread_count)
+  const unreadCount = patients.filter(p => p.lastMessage).length;
+
   const TABS = [
     { id: "calendar", label: <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><CalendarDays size={15} /> Умный календарь</span> },
-    { id: "crm",      label: <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><MessageCircle size={15} /> WhatsApp & Звонки</span>, badge: 3 },
+    { id: "crm",      label: <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><MessageCircle size={15} /> WhatsApp & Звонки</span>, badge: unreadCount || null },
   ];
 
   return (
@@ -665,7 +674,12 @@ export default function SchedulePage() {
       </div>
       <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
         {tab === "calendar" && <CalendarTab doctors={doctors} patients={patients} role={user?.role} />}
-        {tab === "crm"      && <CrmTab patients={patients} />}
+        {tab === "crm"      && (
+          <CrmTab
+            patients={patients}
+            onNewAppt={() => { setTab("calendar"); setNewApptOpen(true); }}
+          />
+        )}
       </div>
     </div>
   );

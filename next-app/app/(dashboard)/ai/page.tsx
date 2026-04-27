@@ -213,21 +213,19 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
 function PatientSelectPage() {
   const router = useRouter();
   const [allPatients, setAllPatients] = useState<Patient[]>([]);
-  const [filtered, setFiltered] = useState<Patient[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     searchPatients("").then((list: Patient[]) => {
       setAllPatients(list);
-      setFiltered(list);
       setLoading(false);
     });
   }, []);
 
-  useEffect(() => {
+  const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    setFiltered(allPatients.filter((p) => !q || p.name.toLowerCase().includes(q) || String(p.phone).includes(q)));
+    return allPatients.filter((p) => !q || p.name.toLowerCase().includes(q) || String(p.phone).includes(q));
   }, [search, allPatients]);
 
   return (
@@ -408,7 +406,7 @@ function IcdTree({ activeCode, onSelect }: { activeCode: string; onSelect: (code
 }
 
 // ─── Surface Popup ────────────────────────────────────────────────────────────
-function SurfacePopup({ tooth, surfaces, onToggle, onClose }: {
+function SurfacePopup({ surfaces, onToggle, onClose }: {
   tooth: number;
   surfaces: string[];
   onToggle: (key: string) => void;
@@ -519,6 +517,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
   useEffect(() => {
     if (!loading && patientData) {
       const url = "/images/examplecoreai.png";
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setImages([{ id: "default", url }]);
       setActiveImage(url);
     }
@@ -530,7 +529,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
   // Recording timer
   useEffect(() => {
     if (isRecording) {
-      setRecordingTime(0);
+      setRecordingTime(0); // eslint-disable-line react-hooks/set-state-in-effect
       timerRef.current = setInterval(() => setRecordingTime((t) => t + 1), 1000);
     } else if (timerRef.current) {
       clearInterval(timerRef.current);

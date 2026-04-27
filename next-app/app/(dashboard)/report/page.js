@@ -86,11 +86,37 @@ export default function ReportPage() {
 
   const totalAmount      = report?.totalAmount || 0;
   const visitsCompleted  = report?.visitsCompleted || 0;
-  const avgCheck         = visitsCompleted ? Math.round(totalAmount / visitsCompleted) : 0;
+  const avgCheck         = report?.avgCheck || (visitsCompleted ? Math.round(totalAmount / visitsCompleted) : 0);
   const deepCaries       = report?.aiSignals?.cariesByType?.deep || 0;
   const payments         = report?.payments || [];
   const teethByCount     = report?.aiSignals?.teethByCount || {};
   const topTeeth         = Object.entries(teethByCount).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const doctorStats    = report?.doctorStats || [];
+  const lowInventory   = report?.lowInventory || [];
+  const topRevenue     = doctorStats[0]?.revenue || 1;
+  const noShowRate     = report?.noShowRate ?? 0;
+
+  // Период өзгерістері (кешегімен салыстыру)
+  const pc = report?.periodChange || {};
+  const fmtPct  = (v) => v == null ? "—" : v >= 0 ? `+${v}%`    : `${v}%`;
+  const fmtVis  = (v) => v == null ? "—" : v >= 0 ? `+${v} визит` : `${v} визит`;
+  const posColor = "rgba(16,185,129,0.1)";
+  const negColor = "rgba(239,68,68,0.1)";
+  const neutColor = "var(--surface-2)";
+  const badgeBgOf  = (v) => v == null ? neutColor : v >= 0 ? posColor : negColor;
+  const badgeClrOf = (v) => v == null ? "var(--muted)" : v >= 0 ? "var(--success)" : "var(--danger)";
+
+  const spColors = ["var(--primary)", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444"];
+  const specialtyStats = report?.specialtyStats || [];
+  const spTotal    = specialtyStats.reduce((s, x) => s + x.revenue, 0) || 1;
+  const spGradient = specialtyStats.length
+    ? specialtyStats.reduce((acc, sp, i) => {
+        const pct = Math.round((sp.revenue / spTotal) * 100);
+        acc.parts.push(`${spColors[i] || "#94a3b8"} ${acc.prev}% ${acc.prev + pct}%`);
+        acc.prev += pct;
+        return acc;
+      }, { parts: [], prev: 0 }).parts.join(", ")
+    : "var(--border) 0% 100%";
 
   const panel = {
     background: "var(--surface)", border: "1px solid var(--border)",
@@ -168,16 +194,22 @@ export default function ReportPage() {
             <div>
               <div style={{ fontWeight: 600, color: "var(--danger)", fontSize: 14, marginBottom: 4 }}>Снижение доходимости</div>
               <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
-                За последние 3 дня доходимость пациентов к ортодонту упала до 45% (норма 70%). Рекомендуется проверить скрипты админов.
+                {visitsCompleted === 0
+                  ? "За выбранную дату нет завершённых визитов."
+                  : `Завершено ${visitsCompleted} визит(а). Средний чек: ${fmt(avgCheck)}.`}
               </div>
             </div>
           </div>
-          <div style={{ background: "rgba(245,158,11,0.04)", padding: 16, display: "flex", gap: 12 }}>
+          <div style={{ background: lowInventory.length > 0 ? "rgba(245,158,11,0.04)" : "rgba(16,185,129,0.04)", padding: 16, display: "flex", gap: 12 }}>
             <div style={{ fontSize: 24, display: "flex" }}><Package size={24} /></div>
             <div>
-              <div style={{ fontWeight: 600, color: "#d97706", fontSize: 14, marginBottom: 4 }}>Запасы на исходе</div>
+              <div style={{ fontWeight: 600, color: lowInventory.length > 0 ? "#d97706" : "var(--success)", fontSize: 14, marginBottom: 4 }}>
+                {lowInventory.length > 0 ? "Запасы на исходе" : "Склад в норме"}
+              </div>
               <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
-                Слепочная масса Speedex достигла критического минимума (4 упак). Необходимо срочно сделать заказ у поставщика.
+                {lowInventory.length > 0
+                  ? lowInventory.map(i => `${i.name} — ${i.quantity} ${i.unit}`).join("; ")
+                  : "Все материалы в достаточном количестве."}
               </div>
             </div>
           </div>
@@ -192,10 +224,10 @@ export default function ReportPage() {
             gap: 0, borderBottom: "none",
           }}>
             {[
-              { label: "Общая выручка",       value: fmt(totalAmount),    badge: "+12%",         badgeBg: "rgba(16,185,129,0.1)",  badgeColor: "var(--success)" },
-              { label: "Завершённые визиты",   value: visitsCompleted,     badge: "+3 визита",    badgeBg: "rgba(16,185,129,0.1)",  badgeColor: "var(--success)" },
-              { label: "Средний чек",          value: fmt(avgCheck),       badge: "-5%",          badgeBg: "rgba(239,68,68,0.1)",   badgeColor: "var(--danger)"  },
-              { label: "Глубокий кариес (AI)", value: deepCaries,          badge: deepCaries > 0 ? "Есть случаи" : "Нет случаев", badgeBg: "var(--surface-2)", badgeColor: "var(--muted)" },
+              { label: "Общая выручка",       value: fmt(totalAmount),  badge: fmtPct(pc.revenueChange),  badgeBg: badgeBgOf(pc.revenueChange),  badgeColor: badgeClrOf(pc.revenueChange)  },
+              { label: "Завершённые визиты",  value: visitsCompleted,   badge: fmtVis(pc.visitsChange),   badgeBg: badgeBgOf(pc.visitsChange),   badgeColor: badgeClrOf(pc.visitsChange)   },
+              { label: "Средний чек",         value: fmt(avgCheck),     badge: fmtPct(pc.avgCheckChange), badgeBg: badgeBgOf(pc.avgCheckChange), badgeColor: badgeClrOf(pc.avgCheckChange) },
+              { label: "Не пришли (no-show)", value: `${noShowRate}%`,  badge: deepCaries > 0 ? `${deepCaries} глуб. кариес` : "Кариес ОК", badgeBg: deepCaries > 0 ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)", badgeColor: deepCaries > 0 ? "var(--danger)" : "var(--success)" },
             ].map(c => (
               <div key={c.label} style={{ border: "1px solid var(--border)", borderTop: "none" }}>
                 <StatCard {...c} />
@@ -216,42 +248,60 @@ export default function ReportPage() {
                 }}>Топ по выручке</span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                <DoctorRow rank={1} name="Сейтқали М.Б. (Терапевт)"   revenue={185000} barWidth={100} barColor="var(--primary)" protocols="98%"             avgCheck={35000} alert={false} />
-                <DoctorRow rank={2} name="Жұмабаев Е.С. (Хирург)"     revenue={120000} barWidth={65}  barColor="#3b82f6"         protocols="92%"             avgCheck={60000} alert={false} />
-                <DoctorRow rank={3} name="Нұрланова А.М. (Ортодонт)"  revenue={45000}  barWidth={25}  barColor="#f59e0b"         protocols="75% (Отклонения)" avgCheck={15000} alert={true}  />
+                {doctorStats.length === 0 ? (
+                  <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: "16px 0" }}>
+                    Нет данных за выбранную дату
+                  </div>
+                ) : doctorStats.map((doc, i) => {
+                  const barColors = ["var(--primary)", "#3b82f6", "#f59e0b", "#10b981", "#8b5cf6"];
+                  const avgCheckDoc = doc.visits ? Math.round(doc.revenue / doc.visits) : 0;
+                  return (
+                    <DoctorRow
+                      key={doc.id}
+                      rank={i + 1}
+                      name={`${doc.name.split(" ").slice(0, 2).join(" ")} (${doc.specialty || "—"})`}
+                      revenue={doc.revenue}
+                      barWidth={Math.round((doc.revenue / topRevenue) * 100)}
+                      barColor={barColors[i] || "#94a3b8"}
+                      protocols="—"
+                      avgCheck={avgCheckDoc}
+                      alert={false}
+                    />
+                  );
+                })}
               </div>
             </div>
 
             {/* Revenue by Specialty */}
             <div style={{ ...panel, borderRadius: 0, borderTop: "none", display: "flex", flexDirection: "column" }}>
               <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", margin: "0 0 20px" }}>Выручка по направлениям</h2>
-              <div style={{ display: "flex", alignItems: "center", gap: 32, flex: 1 }}>
-                <div style={{
-                  position: "relative", width: 140, height: 140, borderRadius: "50%", flexShrink: 0,
-                  background: "conic-gradient(var(--primary) 0% 50%, #10b981 50% 80%, #f59e0b 80% 100%)",
-                  boxShadow: "inset 0 0 0 28px var(--surface)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontWeight: 800, fontSize: 15, color: "var(--text)" }}>350K ₸</div>
+              {specialtyStats.length === 0 ? (
+                <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: "16px 0" }}>Нет данных за выбранную дату</div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 32, flex: 1 }}>
+                  <div style={{
+                    position: "relative", width: 140, height: 140, borderRadius: "50%", flexShrink: 0,
+                    background: `conic-gradient(${spGradient})`,
+                    boxShadow: "inset 0 0 0 28px var(--surface)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontWeight: 800, fontSize: 13, color: "var(--text)" }}>{fmt(spTotal)}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>
+                    {specialtyStats.map((sp, i) => (
+                      <div key={sp.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ width: 10, height: 10, background: spColors[i] || "#94a3b8", borderRadius: 2 }} />
+                          <span style={{ color: "var(--text)" }}>{sp.name}</span>
+                        </div>
+                        <span style={{ fontWeight: 600, color: "var(--text)" }}>{Math.round((sp.revenue / spTotal) * 100)}%</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>
-                  {[
-                    { color: "var(--primary)", label: "Ортопедия", pct: "50%" },
-                    { color: "#10b981",         label: "Хирургия",  pct: "30%" },
-                    { color: "#f59e0b",         label: "Терапия",   pct: "20%" },
-                  ].map(item => (
-                    <div key={item.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ width: 10, height: 10, background: item.color, borderRadius: 2 }} />
-                        <span style={{ color: "var(--text)" }}>{item.label}</span>
-                      </div>
-                      <span style={{ fontWeight: 600, color: "var(--text)" }}>{item.pct}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              )}
             </div>
           </div>
 

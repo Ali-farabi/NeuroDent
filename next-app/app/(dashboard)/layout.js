@@ -8,7 +8,7 @@ import Header from "@/components/layout/Header";
 
 // Role-based access matrix
 const PAGE_ROLES = {
-  "/report":   ["owner", "admin"],
+  "/report":   ["owner"],
   "/payments": ["owner", "admin"],
   "/users":    ["owner"],
   "/ai":       ["owner", "doctor", "assistant"],

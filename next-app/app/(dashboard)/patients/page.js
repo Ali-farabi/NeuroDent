@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/AuthContext";
-import { searchPatients, getPatientById, createPatient, updatePatient } from "@/lib/api";
+import { searchPatients, getPatientById, createPatient, updatePatient, getPatientVisits, getPatientPayments } from "@/lib/api";
 import { Bot, HeartPulse, CalendarDays, HandMetal, Sparkles, FileDown, AlertTriangle, UserRound } from "lucide-react";
 
 // ── Date formatter ────────────────────────────────────────────────────────────
@@ -78,6 +78,7 @@ function PatientForm({ mode, patient, onSave, onCancel }) {
     email:     patient?.email     || "",
     address:   patient?.address   || "",
     birthDate: patient?.birthDate || "",
+    allergies: patient?.allergies || "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState("");
@@ -112,6 +113,10 @@ function PatientForm({ mode, patient, onSave, onCancel }) {
         <input type="date" value={form.birthDate} onChange={e => setForm(f => ({ ...f, birthDate: e.target.value }))}
           max={new Date().toISOString().split("T")[0]} style={inputStyle} />
       </Field>
+      <Field label="Аллергии (анестезия, медикаменты)">
+        <input value={form.allergies} onChange={e => setForm(f => ({ ...f, allergies: e.target.value }))}
+          placeholder="Напр: Лидокаин, Пенициллин" style={inputStyle} />
+      </Field>
 
       {error && (
         <div style={{
@@ -135,6 +140,11 @@ function PatientCard({ patient }) {
   const { user } = useAuth();
   const isDoctor = user?.role === "doctor" || user?.role === "assistant";
   const [tab, setTab] = useState("info");
+  const [visits, setVisits] = useState(null);
+
+  useEffect(() => {
+    getPatientVisits(patient.id).then(setVisits); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [patient.id]);
 
   const TABS = [
     { key: "info",      label: "Информация" },
@@ -190,66 +200,75 @@ function PatientCard({ patient }) {
       {/* Treatment tab */}
       {tab === "treatment" && (
         <div style={{ maxHeight: 380, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
-          {patient.treatments?.length > 0 ? patient.treatments.map((t, i) => (
-            <div key={i} style={{
-              background: "var(--surface-2)", border: "1px solid var(--border)",
-              borderRadius: "var(--radius-sm)", padding: 14,
-            }}>
-              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2 }}>{t.procedure}</div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>Диагноз: {t.diagnosis}</div>
-              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Врач: {t.doctor} · {t.date}</div>
-              {!isDoctor && t.cost && <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>Стоимость: {t.cost} ₸</div>}
-              {t.aiSummary && (
-                <div style={{
-                  background: "var(--active)", borderLeft: "2px solid var(--primary)",
-                  borderRadius: "var(--radius-xs)", padding: "10px 12px", fontSize: 12, color: "var(--text)",
-                }}>
-                  <div style={{ color: "var(--primary)", fontWeight: 600, marginBottom: 4, fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}><Bot size={12} /> AI Резюме</div>
-                  {t.aiSummary}
-                </div>
-              )}
-            </div>
-          )) : (
+          {visits === null ? (
+            <div style={{ textAlign: "center", padding: "40px 0", color: "var(--muted)", fontSize: 13 }}>Загрузка...</div>
+          ) : visits.filter(v => v.visitId).length === 0 ? (
             <div style={{ textAlign: "center", padding: "40px 0", color: "var(--muted)" }}>
               <div style={{ fontSize: 32, marginBottom: 8, display: "flex", justifyContent: "center" }}><HeartPulse size={32} /></div>
               <div style={{ fontSize: 13 }}>История лечения пуста</div>
             </div>
-          )}
+          ) : visits.filter(v => v.visitId).map((v, i) => (
+            <div key={i} style={{
+              background: "var(--surface-2)", border: "1px solid var(--border)",
+              borderRadius: "var(--radius-sm)", padding: 14,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>
+                  {v.diagnosis || "Лечение"}
+                  {v.toothNumber && <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400, marginLeft: 6 }}>зуб #{v.toothNumber}</span>}
+                </div>
+                {v.diagnosisCode && <span style={{ fontSize: 11, color: "var(--muted)", background: "var(--surface)", border: "1px solid var(--border)", padding: "2px 7px", borderRadius: 4 }}>{v.diagnosisCode}</span>}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>{v.doctorName}{v.specialty ? ` · ${v.specialty}` : ""} · {fmtDate(v.date)}</div>
+              {!isDoctor && v.cost && <div style={{ fontWeight: 600, fontSize: 13, marginTop: 6 }}>{Number(v.cost).toLocaleString("ru-RU")} ₸</div>}
+              {v.notes && (
+                <div style={{
+                  marginTop: 8, background: "var(--active)", borderLeft: "2px solid var(--primary)",
+                  borderRadius: "var(--radius-xs)", padding: "10px 12px", fontSize: 12, color: "var(--text)",
+                }}>
+                  <div style={{ color: "var(--primary)", fontWeight: 600, marginBottom: 4, fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}><Bot size={12} /> AI Резюме</div>
+                  {v.notes}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
       {/* Visits tab */}
       {tab === "visits" && (
         <div style={{ maxHeight: 380, overflowY: "auto", display: "flex", flexDirection: "column", gap: 0 }}>
-          {patient.visits?.length > 0 ? patient.visits.map((v, i) => (
-            <div key={i} style={{
-              padding: "12px 0",
-              borderTop: i > 0 ? "1px solid var(--border)" : "none",
-              opacity: v.status === "Завершен" ? 0.8 : 1,
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                <span style={{ fontWeight: 600, fontSize: 13 }}>{v.date}</span>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>{v.time}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div>
-                  <div style={{ fontWeight: 500, fontSize: 14, marginBottom: 2 }}>{v.type}</div>
-                  <div style={{ fontSize: 12, color: "var(--muted)" }}>{v.doctor}</div>
-                </div>
-                <span style={{
-                  fontSize: 11, padding: "2px 8px", borderRadius: 6, fontWeight: 500,
-                  background: v.status === "Завершен" ? "#f0fdf4" : "var(--active)",
-                  color: v.status === "Завершен" ? "var(--success)" : "var(--primary)",
-                  border: `1px solid ${v.status === "Завершен" ? "#bbf7d0" : "#bfdbfe"}`,
-                }}>{v.status}</span>
-              </div>
-            </div>
-          )) : (
+          {visits === null ? (
+            <div style={{ textAlign: "center", padding: "40px 0", color: "var(--muted)", fontSize: 13 }}>Загрузка...</div>
+          ) : visits.length === 0 ? (
             <div style={{ textAlign: "center", padding: "40px 0", color: "var(--muted)" }}>
               <div style={{ fontSize: 32, marginBottom: 8, display: "flex", justifyContent: "center" }}><CalendarDays size={32} /></div>
-              <div style={{ fontSize: 13 }}>Нет запланированных визитов</div>
+              <div style={{ fontSize: 13 }}>Нет визитов</div>
             </div>
-          )}
+          ) : visits.map((v, i) => {
+            const done    = v.statusRaw === "completed";
+            const cancelled = v.statusRaw === "cancelled";
+            const badgeBg  = done ? "#f0fdf4" : cancelled ? "#fef2f2" : "var(--active)";
+            const badgeClr = done ? "var(--success)" : cancelled ? "var(--danger)" : "var(--primary)";
+            const badgeBdr = done ? "#bbf7d0" : cancelled ? "#fecaca" : "#bfdbfe";
+            return (
+              <div key={i} style={{ padding: "12px 0", borderTop: i > 0 ? "1px solid var(--border)" : "none" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                      <span style={{ fontWeight: 600, fontSize: 13 }}>{fmtDate(v.date)}</span>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>{v.time}</span>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>{v.doctorName}</div>
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>{v.specialty}</div>
+                  </div>
+                  <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, fontWeight: 500, background: badgeBg, color: badgeClr, border: `1px solid ${badgeBdr}`, flexShrink: 0 }}>
+                    {v.status}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -259,7 +278,21 @@ function PatientCard({ patient }) {
 // ── Patient personal cabinet (role = patient) ─────────────────────────────────
 function PatientCabinet() {
   const { user } = useAuth();
-  const [downloading, setDownloading] = useState(false);
+  const [patientData, setPatientData] = useState(null);
+  const [patientVisits, setPatientVisits] = useState([]);
+  const [downloading, setDownloading] = useState(null);
+
+  useEffect(() => {
+    if (!user?.phone) return;
+    searchPatients(user.phone).then((list) => { // eslint-disable-line react-hooks/set-state-in-effect
+      const p = list[0];
+      if (!p) return;
+      setPatientData(p); // eslint-disable-line react-hooks/set-state-in-effect
+      getPatientVisits(p.id).then(setPatientVisits); // eslint-disable-line react-hooks/set-state-in-effect
+    });
+  }, [user?.phone]);
+
+  const completedVisits = patientVisits.filter(v => v.visitId);
 
   return (
     <div style={{ padding: 24, maxWidth: 1000, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 }}>
@@ -282,20 +315,28 @@ function PatientCabinet() {
             </svg>
           </div>
           <div>
-            <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase" }}>Ваши бонусы</div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)" }}>12 500 ₸</div>
+            <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase" }}>Ваши баллы</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)" }}>{patientData?.bonusPoints ?? user?.bonusPoints ?? 0}</div>
           </div>
         </div>
       </div>
+
+      {/* Allergy warning */}
+      {(patientData?.allergies || user?.allergies) && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "var(--radius-sm)", padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+          <AlertTriangle size={16} style={{ color: "var(--danger)", flexShrink: 0 }} />
+          <span style={{ fontSize: 13, color: "var(--danger)", fontWeight: 500 }}>
+            Аллергия: {patientData?.allergies || user?.allergies}
+          </span>
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20 }}>
         {/* 3D Model */}
         <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", overflow: "hidden", boxShadow: "var(--shadow-sm)" }}>
           <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ fontWeight: 700, fontSize: 15 }}>Ваша 3D-модель челюсти</div>
-            <span style={{ background: "var(--active)", color: "var(--primary)", fontSize: 11, padding: "2px 8px", borderRadius: 6, fontWeight: 500 }}>
-              Обновлено 15.01.2024
-            </span>
+            <span style={{ background: "var(--active)", color: "var(--primary)", fontSize: 11, padding: "2px 8px", borderRadius: 6, fontWeight: 500 }}>Демо</span>
           </div>
           <div style={{ background: "#111", height: 180, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
             <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1">
@@ -317,32 +358,35 @@ function PatientCabinet() {
         {/* Treatment history */}
         <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 16, boxShadow: "var(--shadow-sm)", display: "flex", flexDirection: "column" }}>
           <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16 }}>История лечения</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
-            <div style={{ borderLeft: "2px solid var(--primary)", paddingLeft: 12 }}>
-              <div style={{ fontSize: 11, color: "var(--primary)", fontWeight: 600, marginBottom: 4 }}>Вчера, 15:00</div>
-              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Лечение кариеса (Зуб 1.6)</div>
-              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Врач: Dr. Johnson · Материал: Filtek Z250</div>
-              <button
-                style={{ fontSize: 11, padding: "4px 10px", border: "1px solid var(--primary)", color: "var(--primary)", borderRadius: "var(--radius-xs)", background: "var(--active)", cursor: "pointer" }}
-                disabled={downloading}
-                onClick={() => { setDownloading(true); setTimeout(() => setDownloading(false), 2000); }}
-              >
-                {downloading ? "Скачивание..." : <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><FileDown size={13} /> Скачать AI-Протокол (eGov)</span>}
-              </button>
+          {completedVisits.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "24px 0", color: "var(--muted)", fontSize: 13 }}>Нет завершённых визитов</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, flex: 1 }}>
+              {completedVisits.slice(0, 3).map((v, i) => (
+                <div key={i} style={{ borderLeft: `2px solid ${i === 0 ? "var(--primary)" : "var(--border)"}`, paddingLeft: 12, opacity: i === 0 ? 1 : 0.7 }}>
+                  <div style={{ fontSize: 11, color: i === 0 ? "var(--primary)" : "var(--muted)", fontWeight: 600, marginBottom: 4 }}>
+                    {fmtDate(v.date)}, {v.time}
+                  </div>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
+                    {v.diagnosis || "Прием"}
+                    {v.toothNumber && <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12 }}> · Зуб #{v.toothNumber}</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: i === 0 ? 8 : 0 }}>Врач: {v.doctorName}</div>
+                  {i === 0 && (
+                    <button
+                      style={{ fontSize: 11, padding: "4px 10px", border: "1px solid var(--primary)", color: "var(--primary)", borderRadius: "var(--radius-xs)", background: "var(--active)", cursor: "pointer" }}
+                      disabled={downloading === v.appointmentId}
+                      onClick={() => { setDownloading(v.appointmentId); setTimeout(() => setDownloading(null), 2000); }}
+                    >
+                      {downloading === v.appointmentId
+                        ? "Скачивание..."
+                        : <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><FileDown size={13} /> Скачать AI-Протокол (eGov)</span>}
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
-            <div style={{ borderLeft: "2px solid var(--border)", paddingLeft: 12, opacity: 0.7 }}>
-              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, marginBottom: 4 }}>15 Января 2024</div>
-              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Профессиональная чистка</div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>Врач: Dr. Smith</div>
-            </div>
-          </div>
-          <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: 8 }}>Ваш план лечения</div>
-            <div style={{ background: "#fef9ec", border: "1px solid #fcd34d", padding: 12, borderRadius: "var(--radius-sm)", fontSize: 12 }}>
-              Нужно удалить зуб мудрости (Зуб 4.8).<br />
-              <span style={{ color: "#b45309", fontWeight: 600, marginTop: 4, display: "inline-block" }}>Позвоните нам: +7 771 163 2030</span>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
@@ -372,9 +416,10 @@ function PatientListInner() {
 
   useEffect(() => {
     const q = searchParams.get("q") || "";
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (q) setSearch(q);
     load(q);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     clearTimeout(timerRef.current);
@@ -420,6 +465,7 @@ function PatientListInner() {
         display: "flex", gap: 10, alignItems: "center",
         background: "var(--surface)", border: "1px solid var(--border)",
         borderBottom: "none", padding: "12px 16px",
+        position: "sticky", top: 0, zIndex: 10,
       }}>
         <input
           value={search} onChange={e => setSearch(e.target.value)}

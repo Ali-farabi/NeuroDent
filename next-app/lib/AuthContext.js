@@ -11,7 +11,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const saved = localStorage.getItem("neurodent_user");
     if (saved) {
-      try { setUser(JSON.parse(saved)); } catch {}
+      try { setUser(JSON.parse(saved)); } catch {} // eslint-disable-line react-hooks/set-state-in-effect
     }
     setLoading(false);
   }, []);

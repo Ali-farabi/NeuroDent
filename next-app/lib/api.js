@@ -4,7 +4,7 @@ function delay(ms = 600) {
 
 const clone = (data) => JSON.parse(JSON.stringify(data));
 const TODAY = new Date().toISOString().slice(0, 10);
-const DB_VERSION = "3"; // increment to force localStorage reset
+const DB_VERSION = "5"; // increment to force localStorage reset
 
 function shiftDate(isoDate, days) {
   const d = new Date(`${isoDate}T00:00:00`);
@@ -43,7 +43,21 @@ function saveDb(db) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MOCK DATABASE — localStorage-та сақталады (key: "neurodent_db")
+//
+// Backend-қа ауысқанда мына кестелер керек:
+//   doctors    → PostgreSQL: doctors (id, name, specialty, user_id FK→users)
+//   patients   → PostgreSQL: patients (id, name, phone, birth_date, allergies, bonus_points, channel)
+//   users      → PostgreSQL: users (id, name, phone, email, role, password_hash, specialty, is_active)
+//   appointments → PostgreSQL: appointments (id, doctor_id, patient_id, date, time, duration, status, visit_id)
+//   visits     → PostgreSQL: visits (id, appointment_id, doctor_id, patient_id, diagnosis, icd_code, ...)
+//   payments   → PostgreSQL: payments (id, patient_id, doctor_id, amount, method, date, debt)
+//   inventory  → PostgreSQL: inventory (id, name, unit, quantity, min_quantity)
+// ─────────────────────────────────────────────────────────────────────────────
 const initialDb = {
+  // doctors: расписание, визит, AI бетімен байланысады — doctor.id = appointment.doctorId = visit.doctorId
+  // Backend: createUser(role=doctor) → автоматты doctors кестесіне жазылады (userId = doctorId)
   doctors: [
     { id: "d1", name: "Сейтқали Марат Бекұлы", specialty: "Терапевт" },
     { id: "d2", name: "Жұмабаев Ерлан Сейітұлы", specialty: "Хирург-стоматолог" },
@@ -52,17 +66,20 @@ const initialDb = {
     { id: "d5", name: "Бекова Сабина Нұрланқызы", specialty: "Эндодонт" },
     { id: "d6", name: "Әбілов Тимур Сейітқалиұлы", specialty: "Ортопед-стоматолог" },
   ],
+  // patients: барлық беттің орталығы — appointment, visit, payment, CRM бәрі patient.id арқылы байланысады
+  // channel — CRM бетінде қай арна арқылы хабарласқанын көрсетеді (WhatsApp / Instagram / Телефон)
+  // lastMessage — CRM тізімінде соңғы хабардың мәтіні (backend-та: crm_messages кестесінен JOIN)
   patients: [
-    { id: "p1",  name: "Иван Иванов",      phone: "87001112233", birthDate: "2001-04-10", createdAt: "2023-03-02", allergies: "Аллергия на лидокаин", bonusPoints: 320 },
-    { id: "p2",  name: "Анна Петрова",     phone: "87009998877", birthDate: "1998-11-05", createdAt: "2023-11-10", allergies: null,                   bonusPoints: 85  },
-    { id: "p3",  name: "Дамир Алиев",      phone: "87005556677", birthDate: "2005-02-01", createdAt: "2024-01-15", allergies: null,                   bonusPoints: 175 },
-    { id: "p4",  name: "Айгерим Бекова",   phone: "87712345678", birthDate: "1995-07-22", createdAt: "2024-02-10", allergies: "Пенициллин",            bonusPoints: 0   },
-    { id: "p5",  name: "Нұрлан Сейітов",   phone: "87001234567", birthDate: "1988-03-15", createdAt: "2024-03-05", allergies: null,                   bonusPoints: 210 },
-    { id: "p6",  name: "Мадина Қасымова",  phone: "87759876543", birthDate: "2000-12-30", createdAt: "2024-03-18", allergies: null,                   bonusPoints: 50  },
-    { id: "p7",  name: "Арман Жұмабаев",   phone: "87013334455", birthDate: "1992-09-08", createdAt: "2024-04-01", allergies: "Артикаин",              bonusPoints: 130 },
-    { id: "p8",  name: "Зарина Әбілова",   phone: "87027778899", birthDate: "2003-05-17", createdAt: "2024-04-10", allergies: null,                   bonusPoints: 0   },
-    { id: "p9",  name: "Серік Нұрланов",   phone: "87051112233", birthDate: "1979-11-04", createdAt: "2024-04-15", allergies: null,                   bonusPoints: 440 },
-    { id: "p10", name: "Дина Марат",       phone: "87082223344", birthDate: "1997-06-25", createdAt: "2024-04-18", allergies: null,                   bonusPoints: 60  },
+    { id: "p1",  name: "Иван Иванов",      phone: "87001112233", birthDate: "2001-04-10", createdAt: "2023-03-02", email: "ivan@mail.ru",      address: "Алматы, Абай 10",        balance: 0,      allergies: "Аллергия на лидокаин", bonusPoints: 320, channel: "WhatsApp",  lastMessage: "Здравствуйте! Можно записаться к хирургу?", lastMessageTime: "10:42" },
+    { id: "p2",  name: "Анна Петрова",     phone: "87009998877", birthDate: "1998-11-05", createdAt: "2023-11-10", email: "anna@gmail.com",    address: "Алматы, Достык 5",       balance: 0,      allergies: null,                   bonusPoints: 85,  channel: "Instagram", lastMessage: "Сколько стоит имплант?",                    lastMessageTime: "Вчера" },
+    { id: "p3",  name: "Дамир Алиев",      phone: "87005556677", birthDate: "2005-02-01", createdAt: "2024-01-15", email: "damir@mail.ru",     address: "Алматы, Сейфуллин 34",   balance: 0,      allergies: null,                   bonusPoints: 175, channel: "WhatsApp",  lastMessage: "Спасибо, буду вовремя.",                    lastMessageTime: "Вчера" },
+    { id: "p4",  name: "Айгерим Бекова",   phone: "87712345678", birthDate: "1995-07-22", createdAt: "2024-02-10", email: "",                  address: "Алматы, Тимирязев 42",   balance: -8000,  allergies: "Пенициллин",            bonusPoints: 0,   channel: "WhatsApp",  lastMessage: "Когда можно к ортодонту?",                  lastMessageTime: "Пн"    },
+    { id: "p5",  name: "Нұрлан Сейітов",   phone: "87001234567", birthDate: "1988-03-15", createdAt: "2024-03-05", email: "nurlan@inbox.ru",   address: "Алматы, Розыбакиев 15",  balance: 0,      allergies: null,                   bonusPoints: 210, channel: "Телефон",   lastMessage: null,                                         lastMessageTime: null    },
+    { id: "p6",  name: "Мадина Қасымова",  phone: "87759876543", birthDate: "2000-12-30", createdAt: "2024-03-18", email: "madina@mail.kz",    address: "Алматы, Навои 25",       balance: 0,      allergies: null,                   bonusPoints: 50,  channel: "Instagram", lastMessage: "Добрый день!",                               lastMessageTime: "Пт"    },
+    { id: "p7",  name: "Арман Жұмабаев",   phone: "87013334455", birthDate: "1992-09-08", createdAt: "2024-04-01", email: "",                  address: "Алматы, Байтурсынов 8",  balance: -5000,  allergies: "Артикаин",              bonusPoints: 130, channel: "WhatsApp",  lastMessage: "Можно перенести на пятницу?",               lastMessageTime: "Чт"    },
+    { id: "p8",  name: "Зарина Әбілова",   phone: "87027778899", birthDate: "2003-05-17", createdAt: "2024-04-10", email: "zarina@gmail.com",  address: "Алматы, Саина 88",       balance: 0,      allergies: null,                   bonusPoints: 0,   channel: "WhatsApp",  lastMessage: null,                                         lastMessageTime: null    },
+    { id: "p9",  name: "Серік Нұрланов",   phone: "87051112233", birthDate: "1979-11-04", createdAt: "2024-04-15", email: "",                  address: "Алматы, Рыскулова 20",   balance: 0,      allergies: null,                   bonusPoints: 440, channel: "Телефон",   lastMessage: null,                                         lastMessageTime: null    },
+    { id: "p10", name: "Дина Марат",       phone: "87082223344", birthDate: "1997-06-25", createdAt: "2024-04-18", email: "dina@mail.kz",      address: "Алматы, Жандосова 12",   balance: 0,      allergies: null,                   bonusPoints: 60,  channel: "WhatsApp",  lastMessage: "Спасибо за приём!",                         lastMessageTime: "Ср"    },
   ],
   appointments: [
     // d1 Сейтқали — Терапевт
@@ -159,12 +176,17 @@ export async function login(phone, password) {
   await delay(800);
   const cleanPhone = String(phone || "").replace(/\D/g, "");
   if (cleanPhone.length < 10) throw new Error("Неверный номер телефона");
+  // Check user-specific password from DB first
+  const db = getDb();
+  const dbUser = db.users.find((u) => u.phone === cleanPhone && u.password === password && u.isActive !== false);
+  if (dbUser) return clone({ id: dbUser.id, role: dbUser.role, phone: cleanPhone, name: dbUser.name, specialty: dbUser.specialty });
+  // Mock role-based fallback
   if (password === "1234" || password === "owner") return { role: "owner", phone: cleanPhone, name: "Владелец" };
   if (password === "admin") return { role: "admin", phone: cleanPhone, name: "Админ" };
   if (password === "doctor") return { role: "doctor", phone: cleanPhone, name: "Врач" };
   if (password === "patient") return { role: "patient", phone: cleanPhone, name: "Пациент" };
   if (password === "assistant") return { role: "assistant", phone: cleanPhone, name: "Ассистент" };
-  throw new Error("Неверный пароль. Попробуйте: 1234, admin, doctor, assistant или patient");
+  throw new Error("Неверный пароль");
 }
 
 // PATIENTS
@@ -186,27 +208,35 @@ export async function getPatientById(id) {
 
   const treatments = patientVisits.map((v) => {
     const doctor = db.doctors.find((d) => d.id === v.doctorId);
-    const appt = db.appointments.find((a) => a.id === v.appointmentId);
+    const appt   = db.appointments.find((a) => a.id === v.appointmentId);
+    const pay    = db.payments.find((x) => x.visitId === v.id);
     return {
-      procedure: v.diagnosis || "Лечение",
-      diagnosis: v.complaint || "Без диагноза",
-      doctor: doctor ? doctor.name : "Неизвестный врач",
-      date: appt ? appt.date : "Неизвестная дата",
-      cost: "15 000",
-      aiSummary: v.notes || "AI резюме не сформировано.",
+      procedure:  v.diagnosis || "Лечение",
+      diagnosis:  v.complaint || "—",
+      doctor:     doctor?.name || "Неизвестный врач",
+      specialty:  doctor?.specialty || "",
+      date:       appt?.date || "—",
+      toothNumber: v.toothNumber || null,
+      diagnosisCode: v.diagnosisCode || null,
+      cost:       pay ? pay.amount : null,
+      aiSummary:  v.notes || null,
+      protocol:   v.protocol || null,
     };
   });
 
-  const formattedVisits = patientAppointments.map((a) => {
-    const doctor = db.doctors.find((d) => d.id === a.doctorId);
-    return {
-      date: a.date,
-      time: a.time,
-      type: "Прием специалиста",
-      doctor: doctor ? doctor.name : "Неизвестный врач",
-      status: a.status === "completed" ? "Завершен" : "Запланирован",
-    };
-  });
+  const formattedVisits = patientAppointments
+    .sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time))
+    .map((a) => {
+      const doctor = db.doctors.find((d) => d.id === a.doctorId);
+      const STATUS_MAP = { completed: "Завершен", arrived: "Принимается", cancelled: "Отменён", scheduled: "Запланирован" };
+      return {
+        date: a.date, time: a.time,
+        doctor: doctor?.name || "—",
+        specialty: doctor?.specialty || "",
+        status: STATUS_MAP[a.status] || a.status,
+        statusRaw: a.status,
+      };
+    });
 
   return clone({ ...p, treatments, visits: formattedVisits });
 }
@@ -220,7 +250,14 @@ export async function createPatient(data) {
   if (name.length < 2) throw new Error("Имя слишком короткое");
   if (phone.length < 10) throw new Error("Неверный номер телефона");
   if (db.patients.some((p) => p.phone === phone)) throw new Error("Пациент с таким телефоном уже существует");
-  const newPatient = { id: genId("p"), name, phone, birthDate, createdAt: TODAY };
+  const newPatient = {
+    id: genId("p"), name, phone, birthDate, createdAt: TODAY,
+    email:       String(data?.email    || ""),
+    address:     String(data?.address  || ""),
+    allergies:   data?.allergies ? String(data.allergies) : null,
+    bonusPoints: 0, balance: 0,
+    channel: "Телефон", lastMessage: null, lastMessageTime: null,
+  };
   db.patients.push(newPatient);
   saveDb(db);
   return clone(newPatient);
@@ -231,11 +268,52 @@ export async function updatePatient(id, patch) {
   const db = getDb();
   const p = db.patients.find((x) => x.id === id);
   if (!p) throw new Error("Пациент не найден");
-  if (patch.name !== undefined) p.name = String(patch.name).trim();
-  if (patch.phone !== undefined) p.phone = String(patch.phone).replace(/\D/g, "");
+  if (patch.name      !== undefined) p.name      = String(patch.name).trim();
+  if (patch.phone     !== undefined) p.phone     = String(patch.phone).replace(/\D/g, "");
   if (patch.birthDate !== undefined) p.birthDate = String(patch.birthDate || "");
+  if (patch.email     !== undefined) p.email     = String(patch.email || "");
+  if (patch.address   !== undefined) p.address   = String(patch.address || "");
+  if (patch.allergies !== undefined) p.allergies = patch.allergies ? String(patch.allergies) : null;
   saveDb(db);
   return clone(p);
+}
+
+export async function getPatientVisits(patientId) {
+  await delay(350);
+  const db = getDb();
+  const STATUS_MAP = { completed: "Завершен", arrived: "Принимается", cancelled: "Отменён", scheduled: "Запланирован" };
+  const appointments = db.appointments
+    .filter((a) => a.patientId === patientId)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
+  return clone(appointments.map((appt) => {
+    const visit  = appt.visitId ? db.visits.find((v) => v.id === appt.visitId) : null;
+    const doctor = db.doctors.find((d) => d.id === appt.doctorId);
+    const pay    = visit ? db.payments.find((p) => p.visitId === visit.id) : null;
+    return {
+      appointmentId: appt.id, date: appt.date, time: appt.time,
+      status: STATUS_MAP[appt.status] || appt.status, statusRaw: appt.status,
+      duration: appt.duration, visitId: appt.visitId || null,
+      doctorName: doctor?.name || "—", specialty: doctor?.specialty || "",
+      diagnosis:     visit?.diagnosis     || null,
+      complaint:     visit?.complaint     || null,
+      toothNumber:   visit?.toothNumber   || null,
+      diagnosisCode: visit?.diagnosisCode || null,
+      notes:         visit?.notes         || null,
+      protocol:      visit?.protocol      || null,
+      materials:     visit?.materials     || [],
+      cost:          pay?.amount          || null,
+    };
+  }));
+}
+
+export async function getPatientPayments(patientId) {
+  await delay(250);
+  const db = getDb();
+  return clone(
+    db.payments
+      .filter((p) => p.patientId === patientId)
+      .sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time))
+  );
 }
 
 // PAYMENTS
@@ -453,11 +531,15 @@ export async function getDayReport(date) {
   await delay(700);
   const db = getDb();
   if (!date) throw new Error("Выберите дату");
+
   const payments = db.payments
     .filter((p) => p.date === date)
     .map((p) => ({ ...p, patientName: db.patients.find((x) => x.id === p.patientId)?.name || "Неизвестно" }));
+
   const totalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
   const visitsCompleted = db.appointments.filter((a) => a.date === date && a.status === "completed").length;
+
+  // AI signals: кариес типі + тіс нөмірі бойынша (visits-тен агрегация)
   const aiSignals = { cariesByType: { surface: 0, medium: 0, deep: 0, complicated: 0 }, teethByCount: {} };
   db.appointments.filter((a) => a.date === date && a.visitId).forEach((appt) => {
     const v = db.visits.find((x) => x.id === appt.visitId);
@@ -465,7 +547,59 @@ export async function getDayReport(date) {
     if (v.cariesType && aiSignals.cariesByType[v.cariesType] !== undefined) aiSignals.cariesByType[v.cariesType]++;
     if (v.toothNumber) aiSignals.teethByCount[v.toothNumber] = (aiSignals.teethByCount[v.toothNumber] || 0) + 1;
   });
-  return clone({ date, payments, totalAmount, visitsCompleted, aiSignals });
+
+  // Дәрігер бойынша кіріс: payment → visitId → visit.doctorId → doctor
+  const doctorMap = {};
+  for (const pay of payments) {
+    const visit = pay.visitId ? db.visits.find((v) => v.id === pay.visitId) : null;
+    const doctorId = visit?.doctorId;
+    if (!doctorId) continue;
+    const doctor = db.doctors.find((d) => d.id === doctorId);
+    if (!doctor) continue;
+    if (!doctorMap[doctorId]) {
+      doctorMap[doctorId] = { id: doctorId, name: doctor.name, specialty: doctor.specialty || "", revenue: 0, visits: 0 };
+    }
+    doctorMap[doctorId].revenue += pay.amount;
+    doctorMap[doctorId].visits++;
+  }
+  const doctorStats = Object.values(doctorMap).sort((a, b) => b.revenue - a.revenue);
+
+  // Мамандық бойынша кіріс (Терапия, Хирургия, Ортодонт...)
+  const specialtyMap = {};
+  for (const doc of doctorStats) {
+    const sp = doc.specialty || "Другие";
+    specialtyMap[sp] = (specialtyMap[sp] || 0) + doc.revenue;
+  }
+  const specialtyStats = Object.entries(specialtyMap)
+    .map(([name, revenue]) => ({ name, revenue }))
+    .sort((a, b) => b.revenue - a.revenue);
+
+  // Склад ескертулері: quantity <= minQuantity болған позициялар
+  const lowInventory = (db.inventory || []).filter((i) => i.quantity <= i.minQuantity);
+
+  // Кешегі күнмен салыстыру (periodChange)
+  const prevDate = (() => {
+    const d = new Date(date);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  })();
+  const prevPayments = db.payments.filter((p) => p.date === prevDate);
+  const prevAmount   = prevPayments.reduce((s, p) => s + p.amount, 0);
+  const prevVisits   = db.appointments.filter((a) => a.date === prevDate && a.status === "completed").length;
+  const avgCheck     = visitsCompleted ? Math.round(totalAmount / visitsCompleted) : 0;
+  const prevAvgCheck = prevVisits ? Math.round(prevAmount / prevVisits) : 0;
+  const periodChange = {
+    revenueChange:  prevAmount   > 0 ? Math.round(((totalAmount - prevAmount)   / prevAmount)   * 100) : null,
+    visitsChange:   prevVisits   > 0 ? visitsCompleted - prevVisits                                     : null,
+    avgCheckChange: prevAvgCheck > 0 ? Math.round(((avgCheck   - prevAvgCheck)  / prevAvgCheck) * 100) : null,
+  };
+
+  // No-show rate: scheduled appointments that were never completed/arrived
+  const scheduledTotal  = db.appointments.filter((a) => a.date === date).length;
+  const noShowCount     = db.appointments.filter((a) => a.date === date && (a.status === "scheduled" || a.status === "cancelled")).length;
+  const noShowRate      = scheduledTotal > 0 ? Math.round((noShowCount / scheduledTotal) * 100) : 0;
+
+  return clone({ date, payments, totalAmount, visitsCompleted, avgCheck, aiSignals, doctorStats, specialtyStats, lowInventory, periodChange, noShowRate });
 }
 
 // VISITS (all patients)
@@ -517,11 +651,21 @@ export async function createUser(data) {
   const phone = String(data?.phone || "").replace(/\D/g, "");
   const email = String(data?.email || "").trim();
   const role = ["owner", "admin", "doctor", "assistant"].includes(data?.role) ? data.role : "admin";
+  const password = String(data?.password || "").trim();
+  const specialty = role === "doctor" ? String(data?.specialty || "").trim() : "";
   if (name.length < 2) throw new Error("Имя слишком короткое");
   if (phone.length < 10) throw new Error("Неверный номер телефона");
+  if (password.length < 4) throw new Error("Пароль должен быть не менее 4 символов");
   if (db.users.some((u) => u.phone === phone)) throw new Error("Пользователь с таким телефоном уже есть");
-  const newUser = { id: genId("u"), name, phone, email, role, isActive: true, createdAt: TODAY };
+  if (role === "owner" && db.users.some((u) => u.role === "owner")) throw new Error("Владелец уже существует. В клинике может быть только один владелец.");
+  const userId = genId("u");
+  const newUser = { id: userId, name, phone, email, role, password, specialty, isActive: true, createdAt: TODAY };
   db.users.push(newUser);
+  // Если роль doctor — синхронизируем с таблицей врачей (для расписания, визитов и т.д.)
+  if (role === "doctor") {
+    if (!Array.isArray(db.doctors)) db.doctors = [];
+    db.doctors.push({ id: userId, name, specialty });
+  }
   saveDb(db);
   return clone(newUser);
 }
@@ -536,6 +680,22 @@ export async function updateUser(id, patch) {
   if (patch.email !== undefined) u.email = String(patch.email).trim();
   if (patch.role !== undefined && ["owner", "admin", "doctor", "assistant"].includes(patch.role)) u.role = patch.role;
   if (patch.isActive !== undefined) u.isActive = !!patch.isActive;
+  if (patch.password !== undefined && String(patch.password).trim().length >= 4) u.password = String(patch.password).trim();
+  if (patch.specialty !== undefined) u.specialty = String(patch.specialty).trim();
+  // Синхронизируем таблицу врачей: имя, специализация, активность
+  if (!Array.isArray(db.doctors)) db.doctors = [];
+  const docRecord = db.doctors.find((d) => d.id === id);
+  if (u.role === "doctor") {
+    if (docRecord) {
+      docRecord.name = u.name;
+      docRecord.specialty = u.specialty || docRecord.specialty;
+    } else {
+      db.doctors.push({ id, name: u.name, specialty: u.specialty || "" });
+    }
+  } else if (docRecord) {
+    // Рөл doctor емес болса — doctors тізімінен алып тастаймыз
+    db.doctors = db.doctors.filter((d) => d.id !== id);
+  }
   saveDb(db);
   return clone(u);
 }

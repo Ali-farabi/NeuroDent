@@ -10,7 +10,7 @@ import {
   searchPatients,
   getDoctors,
 } from "@/lib/api";
-import { Inbox, Banknote, CreditCard, AlertTriangle, Package, Search, PartyPopper, Phone, X, Check } from "lucide-react";
+import { Inbox, Banknote, CreditCard, AlertTriangle, Package, Search, PartyPopper, X } from "lucide-react";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
