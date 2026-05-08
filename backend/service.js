@@ -1,9 +1,38 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  createAuditLogRecord,
+  createFileRecord,
+  createNotificationRecord,
+  createInvoiceRecord,
+  createStockMovementRecord,
+  createSessionRecord,
+  deleteFileRecord,
+  deleteExpiredSessions,
+  deleteSessionRecord,
+  getFileRecord,
+  getInvoiceRecord,
+  getPriceItemRecord,
+  getSessionRecord,
+  initializeStore,
+  listAuditLogRecords,
+  listFileRecords,
+  listInvoiceRecords,
+  listNotificationRecords,
+  listPriceItemRecords,
+  listStockMovementRecords,
+  loadDbSnapshot,
+  markNotificationReadRecord,
+  persistDbSnapshot,
+  setPriceItemActiveRecord,
+  updateInvoicePaymentRecord,
+  upsertPriceItemRecord,
+} from "./storage.js";
 
 // NeuroDent — серверная бизнес-логика CRM стоматологической клиники.
-// Данные сохраняются backend-сервером в JSON-файл. Этот слой можно заменить
+// Данные сохраняются backend-сервером в SQLite. Этот слой можно заменить
 // на PostgreSQL без изменений во frontend API.
 //
 // СЛОВАРЬ ТЕРМИНОВ (для backend разработчика):
@@ -24,14 +53,15 @@ import { fileURLToPath } from "node:url";
 // assistant — ассистент: те же права что у врача
 // patient   — пациент: видит только свою медицинскую карту
 
+const clone = (data) => JSON.parse(JSON.stringify(data));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, "data");
-const DB_FILE = path.join(DATA_DIR, "db.json");
-
-const clone = (data) => JSON.parse(JSON.stringify(data));
+const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
+const DOCUMENTS_DIR = path.join(DATA_DIR, "documents");
 
 const TODAY = new Date().toISOString().slice(0, 10);
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function delay(ms = 600) {
   return new Promise((res) => setTimeout(res, ms));
@@ -89,6 +119,188 @@ function paymentsForPatient(patientId) {
   return (db.payments || []).filter((payment) => payment.patientId === patientId);
 }
 
+function visitsForPatient(patientId) {
+  return (db.visits || []).filter((visit) => visit.patientId === patientId);
+}
+
+function appointmentsForPatient(patientId) {
+  return (db.appointments || []).filter((appt) => appt.patientId === patientId);
+}
+
+function cleanPhone(phone) {
+  return String(phone || "").replace(/\D/g, "");
+}
+
+function publicUser(user) {
+  if (!user) return null;
+  const { passwordHash, passwordSalt, ...safeUser } = user;
+  return safeUser;
+}
+
+function patientAsUser(patient, phone = "") {
+  if (!patient) return null;
+  return {
+    id: patient.id,
+    patientId: patient.id,
+    role: "patient",
+    phone: phone || patient.phone,
+    name: patient.name,
+  };
+}
+
+function hashPassword(password, salt = randomBytes(16).toString("hex")) {
+  const hash = scryptSync(String(password), salt, 64).toString("hex");
+  return { passwordHash: hash, passwordSalt: salt };
+}
+
+function verifyPassword(user, password) {
+  if (!user?.passwordHash || !user?.passwordSalt) return false;
+  const candidate = scryptSync(String(password), user.passwordSalt, 64);
+  const stored = Buffer.from(user.passwordHash, "hex");
+  return stored.length === candidate.length && timingSafeEqual(stored, candidate);
+}
+
+function defaultPasswordForRole(role) {
+  if (role === "owner") return "1234";
+  if (role === "admin") return "admin";
+  if (role === "doctor") return "doctor";
+  if (role === "assistant") return "assistant";
+  return "";
+}
+
+function actorIdFromOptions(options = {}) {
+  return String(options?.actorUserId || options?.actor?.id || "");
+}
+
+function ensurePasswordHash(user, password) {
+  if (!user || user.passwordHash) return;
+  const defaults = new Set([defaultPasswordForRole(user.role), user.role].filter(Boolean));
+  if (!defaults.has(String(password))) return;
+  Object.assign(user, hashPassword(password));
+  saveDb();
+}
+
+function ensureSeedUserPasswords() {
+  let changed = false;
+  for (const user of db.users || []) {
+    if (user.passwordHash) continue;
+    const password = defaultPasswordForRole(user.role);
+    if (!password) continue;
+    Object.assign(user, hashPassword(password));
+    changed = true;
+  }
+  if (changed) saveDb();
+}
+
+function createSession(subjectType, subjectId) {
+  deleteExpiredSessions();
+  const token = randomBytes(32).toString("hex");
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+  createSessionRecord({ token, subjectType, subjectId, createdAt, expiresAt });
+  return { token, expiresAt };
+}
+
+function withSession(subjectType, subject) {
+  const session = createSession(subjectType, subject.id);
+  return {
+    ...subject,
+    token: session.token,
+    expiresAt: session.expiresAt,
+    user: subject,
+  };
+}
+
+function audit(action, entityType, entityId, details = {}, actorUserId = "") {
+  createAuditLogRecord({
+    actorUserId,
+    action,
+    entityType,
+    entityId,
+    createdAt: new Date().toISOString(),
+    details,
+  });
+}
+
+function safeFileName(name, fallback = "file") {
+  const raw = String(name || fallback).trim() || fallback;
+  return raw.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").slice(0, 140);
+}
+
+function extensionFromMime(mimeType) {
+  const type = String(mimeType || "").toLowerCase();
+  if (type.includes("png")) return ".png";
+  if (type.includes("jpeg") || type.includes("jpg")) return ".jpg";
+  if (type.includes("pdf")) return ".pdf";
+  if (type.includes("csv")) return ".csv";
+  if (type.includes("json")) return ".json";
+  return ".txt";
+}
+
+function writeStoredFile(directory, fileName, bytes) {
+  mkdirSync(directory, { recursive: true });
+  const id = genId("file");
+  const safeName = safeFileName(fileName, `${id}.bin`);
+  const hasExtension = path.extname(safeName);
+  const finalName = hasExtension ? `${id}_${safeName}` : `${id}_${safeName}.bin`;
+  const storagePath = path.join(directory, finalName);
+  writeFileSync(storagePath, bytes);
+  return { id, storagePath, fileName: safeName };
+}
+
+function latestFinalVisit(patientId) {
+  return visitsForPatient(patientId)
+    .filter((visit) => visit.isFinal)
+    .sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")))[0] || null;
+}
+
+function getVisit(visitId) {
+  return db.visits.find((visit) => visit.id === visitId) || null;
+}
+
+function serviceItemsForVisit(visit) {
+  if (!visit) return [];
+  const basePrice = estimateVisitCost(visit);
+  const services = [
+    {
+      code: visit.diagnosisCode || "ST-BASE",
+      name: visit.protocol?.diagnosisText || visit.diagnosis || "Стоматологический прием",
+      price: basePrice,
+      toothNumber: visit.toothNumber || "",
+    },
+  ];
+
+  if ((visit.materials || []).some((item) => String(item.name).toLowerCase().includes("ultracain"))) {
+    services.push({ code: "AN-01", name: "Анестезия", price: 3000, toothNumber: visit.toothNumber || "" });
+  }
+
+  return services;
+}
+
+function treatmentPlanForPatient(patientId) {
+  const visits = visitsForPatient(patientId).filter((visit) => visit.isFinal);
+  if (!visits.length) {
+    return [
+      {
+        id: genId("plan"),
+        toothNumber: "",
+        text: "Первичная диагностика и составление плана лечения",
+        status: "planned",
+      },
+    ];
+  }
+
+  return visits.slice(0, 5).map((visit) => ({
+    id: `plan_${visit.id}`,
+    toothNumber: visit.toothNumber || "",
+    text: visit.cariesType === "complicated"
+      ? "Контроль после эндодонтического лечения"
+      : "Контрольный осмотр через 6 месяцев",
+    status: "planned",
+    sourceVisitId: visit.id,
+  }));
+}
+
 function validateStatus(status) {
   const allowed = new Set(["scheduled", "arrived", "completed", "cancelled"]);
   if (!allowed.has(status)) throw new Error("Неверный статус записи");
@@ -97,6 +309,68 @@ function validateStatus(status) {
 function validatePaymentMethod(method) {
   const allowed = new Set(["cash", "card"]);
   if (!allowed.has(method)) throw new Error("Неверный метод оплаты");
+}
+
+function validateIsoDate(date, fieldName = "Дата") {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ""))) {
+    throw new Error(`${fieldName} должна быть в формате YYYY-MM-DD`);
+  }
+  const parsed = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+    throw new Error(`${fieldName} некорректна`);
+  }
+}
+
+function timeToMinutes(time) {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(time || ""));
+  if (!match) throw new Error("Время должно быть в формате HH:mm");
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function validateDuration(duration) {
+  if (!Number.isInteger(duration) || duration < 10 || duration > 240) {
+    throw new Error("Длительность визита должна быть от 10 до 240 минут");
+  }
+}
+
+function rangesOverlap(startA, endA, startB, endB) {
+  return startA < endB && startB < endA;
+}
+
+function appointmentBlocksSlot(appt) {
+  return appt.status !== "cancelled";
+}
+
+function assertAppointmentSlotAvailable({ doctorId, date, time, duration, excludeId = "" }) {
+  const start = timeToMinutes(time);
+  const end = start + duration;
+  if (end > 24 * 60) throw new Error("Визит не может выходить за пределы дня");
+  const conflict = (db.appointments || []).find((appt) => {
+    if (appt.id === excludeId) return false;
+    if (appt.doctorId !== doctorId || appt.date !== date) return false;
+    if (!appointmentBlocksSlot(appt)) return false;
+    const apptStart = timeToMinutes(appt.time);
+    const apptEnd = apptStart + Number(appt.duration || 30);
+    return rangesOverlap(start, end, apptStart, apptEnd);
+  });
+  if (conflict) throw new Error("У врача уже есть запись на это время");
+}
+
+function assertAppointmentTransition(appt, nextStatus) {
+  if (appt.status === nextStatus) return;
+  if (appt.status === "cancelled") throw new Error("Отмененную запись нельзя изменить");
+  if (appt.status === "completed") throw new Error("Завершенную запись нельзя изменить");
+  if (nextStatus === "completed") {
+    const visit = appt.visitId ? getVisit(appt.visitId) : null;
+    if (!visit?.isFinal) throw new Error("Нельзя завершить запись без завершенного визита");
+    return;
+  }
+  if (nextStatus === "arrived" && appt.status !== "scheduled") {
+    throw new Error("Пациент может прийти только по запланированной записи");
+  }
+  if (!["arrived", "cancelled"].includes(nextStatus)) {
+    throw new Error("Недопустимый переход статуса записи");
+  }
 }
 
 const initialDb = {
@@ -470,63 +744,74 @@ const initialDb = {
   ],
 };
 
-function readJsonDb() {
-  if (!existsSync(DB_FILE)) return null;
-  try {
-    return JSON.parse(readFileSync(DB_FILE, "utf8"));
-  } catch {
-    return null;
-  }
-}
-
-function writeJsonDb(data) {
-  mkdirSync(DATA_DIR, { recursive: true });
-  writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8");
-}
-
 function getDb() {
-  const data = readJsonDb() || clone(initialDb);
+  initializeStore(initialDb);
+  const data = loadDbSnapshot();
   if (!Array.isArray(data.users)) data.users = clone(initialDb.users);
-  writeJsonDb(data);
   return data;
 }
 
 function saveDb() {
-  writeJsonDb(db);
+  persistDbSnapshot(db);
 }
 
 const db = getDb();
+ensureSeedUserPasswords();
 
 // Вход в систему. Принимает телефон + пароль, возвращает роль и имя пользователя.
-// Демо пароли: "1234"=owner, "admin", "doctor", "assistant", "patient"
 // Backend: POST /auth/login → { token, user: { role, name, phone } }
 export async function login(phone, password) {
   await delay(800);
-  const cleanPhone = String(phone || "").replace(/\D/g, "");
-  if (cleanPhone.length < 10) throw new Error("Неверный номер телефона");
-  
-  if (password === "1234" || password === "owner")
-    return { role: "owner", phone: cleanPhone, name: "Владелец" };
-  if (password === "admin")
-    return { role: "admin", phone: cleanPhone, name: "Админ" };
-  if (password === "doctor")
-    return { role: "doctor", phone: cleanPhone, name: "Врач" };
-  if (password === "patient") {
-    const patient =
-      db.patients.find((p) => String(p.phone).replace(/\D/g, "") === cleanPhone) ||
-      db.patients[0];
-    return {
-      id: patient?.id || "",
-      patientId: patient?.id || "",
-      role: "patient",
-      phone: cleanPhone,
-      name: patient?.name || "Пациент",
-    };
-  }
-  if (password === "assistant")
-    return { role: "assistant", phone: cleanPhone, name: "Ассистент" };
+  const phoneDigits = cleanPhone(phone);
+  const rawPassword = String(password || "");
+  if (phoneDigits.length < 10) throw new Error("Неверный номер телефона");
 
-  throw new Error("Неверный пароль. Попробуйте: 1234, admin, doctor, assistant или patient");
+  const users = db.users || [];
+  let user = users.find((item) => cleanPhone(item.phone) === phoneDigits && item.isActive !== false);
+  if (user) {
+    ensurePasswordHash(user, rawPassword);
+    if (verifyPassword(user, rawPassword)) {
+      return withSession("user", publicUser(user));
+    }
+  }
+
+  throw new Error("Неверный телефон или пароль");
+}
+
+export async function getCurrentUser(token) {
+  await delay(100);
+  const session = getSessionRecord(token);
+  if (!session) return null;
+
+  if (session.subjectType === "user") {
+    const user = db.users.find((item) => item.id === session.subjectId && item.isActive !== false);
+    return user ? publicUser(user) : null;
+  }
+
+  if (session.subjectType === "patient") {
+    return patientAsUser(getPatient(session.subjectId));
+  }
+
+  return null;
+}
+
+export async function logout(token) {
+  await delay(100);
+  deleteSessionRecord(token);
+  return { ok: true };
+}
+
+export async function changePassword(userId, currentPassword, nextPassword) {
+  await delay(150);
+  const user = db.users.find((item) => item.id === userId && item.isActive !== false);
+  if (!user) throw new Error("Пользователь не найден");
+  if (!verifyPassword(user, currentPassword)) throw new Error("Текущий пароль неверный");
+  const password = String(nextPassword || "");
+  if (password.length < 4) throw new Error("Новый пароль слишком короткий");
+  Object.assign(user, hashPassword(password));
+  saveDb();
+  audit("change_password", "user", user.id, {}, user.id);
+  return { ok: true };
 }
 
 // Возвращает список всех врачей клиники.
@@ -551,7 +836,7 @@ export async function getSchedule(doctorId, date) {
 
 // Создаёт новую запись к врачу. Требует: врач, пациент, дата, время, длительность.
 // Backend: POST /appointments → Appointment
-export async function createAppointment(data) {
+export async function createAppointment(data, options = {}) {
   await delay();
   const doctorId = String(data?.doctorId || "");
   const patientId = String(data?.patientId || "");
@@ -562,6 +847,11 @@ export async function createAppointment(data) {
   if (!patientId) throw new Error("Выберите пациента");
   if (!date) throw new Error("Выберите дату");
   if (!time) throw new Error("Выберите время");
+  if (!getDoctor(doctorId)) throw new Error("Врач не найден");
+  if (!getPatient(patientId)) throw new Error("Пациент не найден");
+  validateIsoDate(date);
+  validateDuration(duration);
+  assertAppointmentSlotAvailable({ doctorId, date, time, duration });
   const appt = {
     id: genId("a"),
     doctorId,
@@ -574,6 +864,7 @@ export async function createAppointment(data) {
   };
   db.appointments.push(appt);
   saveDb();
+  audit("create", "appointment", appt.id, { doctorId, patientId, date, time }, actorIdFromOptions(options));
   return clone({ ...appt, patientName: getPatientName(patientId) });
 }
 
@@ -648,7 +939,7 @@ export async function getPatientById(id) {
 
 // Регистрирует нового пациента. Требует: имя, телефон, дата рождения.
 // Backend: POST /patients → Patient
-export async function createPatient(data) {
+export async function createPatient(data, options = {}) {
   await delay();
   const name = String(data?.name || "").trim();
   const phone = String(data?.phone || "").replace(/\D/g, "");
@@ -666,12 +957,13 @@ export async function createPatient(data) {
   };
   db.patients.push(newPatient);
   saveDb();
+  audit("create", "patient", newPatient.id, { name, phone }, actorIdFromOptions(options));
   return clone(newPatient);
 }
 
 // Обновляет данные пациента (имя, телефон, дата рождения).
 // Backend: PUT /patients/:id → Patient
-export async function updatePatient(id, patch) {
+export async function updatePatient(id, patch, options = {}) {
   await delay();
   const p = db.patients.find((x) => x.id === id);
   if (!p) throw new Error("Пациент не найден");
@@ -696,6 +988,7 @@ export async function updatePatient(id, patch) {
   p.phone = phone;
   p.birthDate = birthDate;
   saveDb();
+  audit("update", "patient", id, { patch }, actorIdFromOptions(options));
   return clone(p);
 }
 
@@ -719,27 +1012,29 @@ export async function getActiveAppointmentByPatient(patientId) {
 
 // Изменяет статус записи: scheduled → arrived → completed | cancelled
 // Backend: PATCH /appointments/:id/status { status } → Appointment
-export async function updateAppointmentStatus(appointmentId, status) {
+export async function updateAppointmentStatus(appointmentId, status, options = {}) {
   await delay(450);
   validateStatus(status);
   const appt = db.appointments.find((a) => a.id === appointmentId);
   if (!appt) throw new Error("Запись не найдена");
-  if (status === "completed" && !appt.visitId)
-    throw new Error("Нельзя завершить без визита");
+  assertAppointmentTransition(appt, status);
   appt.status = status;
   saveDb();
+  audit("update_status", "appointment", appointmentId, { status }, actorIdFromOptions(options));
   return clone(appt);
 }
 
 // Начинает визит — вызывается когда врач начинает принимать пациента.
 // Статус записи становится "arrived", создаётся новая запись визита.
 // Backend: POST /visits/start { appointmentId } → Visit
-export async function startVisit(appointmentId) {
+export async function startVisit(appointmentId, options = {}) {
   await delay(700);
   const appt = db.appointments.find((a) => a.id === appointmentId);
   if (!appt) throw new Error("Запись не найдена");
   if (appt.status === "cancelled") throw new Error("Запись отменена");
   if (appt.status === "completed") throw new Error("Визит уже завершён");
+  if (!getDoctor(appt.doctorId)) throw new Error("Врач не найден");
+  if (!getPatient(appt.patientId)) throw new Error("Пациент не найден");
   if (appt.visitId) {
     const existing = db.visits.find((v) => v.id === appt.visitId);
     if (existing) return clone(existing);
@@ -760,6 +1055,7 @@ export async function startVisit(appointmentId) {
   appt.visitId = visit.id;
   if (appt.status === "scheduled") appt.status = "arrived";
   saveDb();
+  audit("start", "visit", visit.id, { appointmentId }, actorIdFromOptions(options));
   return clone(visit);
 }
 
@@ -767,7 +1063,7 @@ export async function startVisit(appointmentId) {
 // ВАЖНО: автоматически списывает использованные материалы со склада (inventory).
 // visitData: { complaint, diagnosis, notes, diagnosisCode, cariesType, toothNumber, protocol, materials[] }
 // Backend: POST /visits/finish { appointmentId, visitData } → Visit
-export async function finishVisit(appointmentId, visitData) {
+export async function finishVisit(appointmentId, visitData, options = {}) {
   await delay(800);
   const appt = db.appointments.find((a) => a.id === appointmentId);
   if (!appt) throw new Error("Запись не найдена");
@@ -832,8 +1128,14 @@ export async function finishVisit(appointmentId, visitData) {
           db.inventory.find((i) =>
             name ? i.name.toLowerCase().includes(name) : false,
           );
-        if (item && item.quantity > 0) {
-          item.quantity = Math.max(0, item.quantity - qty);
+        if (item && qty > 0) {
+          await createStockMovement({
+            inventoryId: item.id,
+            type: "out",
+            quantity: qty,
+            reason: "Visit material",
+            visitId: visit.id,
+          }, options);
         }
       }
     } else {
@@ -842,28 +1144,53 @@ export async function finishVisit(appointmentId, visitData) {
       
       if (textToAnalyze.includes("имплант") || textToAnalyze.includes("straumann")) {
         const item = db.inventory.find(i => i.name.toLowerCase().includes("straumann"));
-        if (item && item.quantity > 0) item.quantity -= 1;
+        if (item) {
+          await createStockMovement({
+            inventoryId: item.id,
+            type: "out",
+            quantity: 1,
+            reason: "Visit material auto-detect",
+            visitId: visit.id,
+          }, options);
+        }
       }
       
       if (textToAnalyze.includes("пломб") || textToAnalyze.includes("filtek")) {
         const item = db.inventory.find(i => i.name.toLowerCase().includes("filtek"));
-        if (item && item.quantity > 0) item.quantity -= 1;
+        if (item) {
+          await createStockMovement({
+            inventoryId: item.id,
+            type: "out",
+            quantity: 1,
+            reason: "Visit material auto-detect",
+            visitId: visit.id,
+          }, options);
+        }
       }
 
       if (textToAnalyze.includes("анестези") || textToAnalyze.includes("ultracain")) {
         const item = db.inventory.find(i => i.name.toLowerCase().includes("ultracain"));
-        if (item && item.quantity > 0) item.quantity -= 1;
+        if (item) {
+          await createStockMovement({
+            inventoryId: item.id,
+            type: "out",
+            quantity: 1,
+            reason: "Visit material auto-detect",
+            visitId: visit.id,
+          }, options);
+        }
       }
     }
   }
 
   saveDb();
+  audit("finish", "visit", visit.id, { appointmentId, diagnosis: visit.diagnosis }, actorIdFromOptions(options));
   return clone(visit);
 }
 
 // Создаёт новый платёж. Требует: сумма, метод (cash/card), ID пациента.
 // Backend: POST /payments → Payment
-export async function createPayment(data) {
+export async function createPayment(data, options = {}) {
   await delay(650);
   const amount = Number(data?.amount);
   const method = String(data?.method || "");
@@ -873,6 +1200,12 @@ export async function createPayment(data) {
     throw new Error("Сумма должна быть больше 0");
   validatePaymentMethod(method);
   if (!patientId) throw new Error("Выберите пациента");
+  if (!getPatient(patientId)) throw new Error("Пациент не найден");
+  if (visitId) {
+    const visit = getVisit(visitId);
+    if (!visit) throw new Error("Визит не найден");
+    if (visit.patientId !== patientId) throw new Error("Визит не принадлежит пациенту");
+  }
   const payment = {
     id: genId("pay"),
     date: data?.date ? String(data.date) : TODAY,
@@ -882,8 +1215,10 @@ export async function createPayment(data) {
     amount,
     method,
   };
+  validateIsoDate(payment.date);
   db.payments.push(payment);
   saveDb();
+  audit("create", "payment", payment.id, { patientId, amount, method }, actorIdFromOptions(options));
   return clone(payment);
 }
 
@@ -1161,7 +1496,7 @@ export async function getInventoryItems() {
 
 // Добавляет новый материал на склад.
 // Backend: POST /inventory → InventoryItem
-export async function addInventoryItem(data) {
+export async function addInventoryItem(data, options = {}) {
   await delay(500);
   const name = String(data?.name || "").trim();
   const category = String(data?.category || "").trim();
@@ -1184,12 +1519,13 @@ export async function addInventoryItem(data) {
   if (!db.inventory) db.inventory = [];
   db.inventory.push(newItem);
   saveDb();
+  audit("create", "inventory", newItem.id, { name, category, quantity }, actorIdFromOptions(options));
   return clone(newItem);
 }
 
 // Изменяет количество материала на складе. delta может быть положительным (+) или отрицательным (-).
 // Backend: PATCH /inventory/:id/quantity { delta } → InventoryItem
-export async function updateInventoryQuantity(id, delta) {
+export async function updateInventoryQuantity(id, delta, options = {}) {
   await delay(300);
   if (!db.inventory) db.inventory = [];
   const item = db.inventory.find(x => x.id === id);
@@ -1200,6 +1536,7 @@ export async function updateInventoryQuantity(id, delta) {
   
   item.quantity = newQty;
   saveDb();
+  audit("update_quantity", "inventory", id, { delta, quantity: item.quantity }, actorIdFromOptions(options));
   return clone(item);
 }
 
@@ -1214,20 +1551,23 @@ export async function getUsers(query = "") {
   const list = (db.users || [])
     .filter(u => !q || u.name.toLowerCase().includes(q) || String(u.phone).includes(q) || (u.email || "").toLowerCase().includes(q))
     .sort((a, b) => (a.role === "owner" ? -1 : b.role === "owner" ? 1 : 0) || a.name.localeCompare(b.name));
-  return clone(list);
+  return clone(list.map(publicUser));
 }
 
 // Регистрирует нового сотрудника. Роль: owner | admin | doctor | assistant
 // Backend: POST /users → User
-export async function createUser(data) {
+export async function createUser(data, options = {}) {
   await delay(400);
   const name = String(data?.name || "").trim();
   const phone = String(data?.phone || "").replace(/\D/g, "");
   const email = String(data?.email || "").trim();
   const role = ROLES.includes(data?.role) ? data.role : "admin";
+  const password = String(data?.password || defaultPasswordForRole(role) || "1234");
   if (name.length < 2) throw new Error("Имя слишком короткое");
   if (phone.length < 10) throw new Error("Неверный номер телефона");
+  if (password.length < 4) throw new Error("Пароль слишком короткий");
   if (db.users.some(u => u.phone === phone)) throw new Error("Пользователь с таким телефоном уже есть");
+  const passwordFields = hashPassword(password);
   const newUser = {
     id: genId("u"),
     name,
@@ -1236,25 +1576,573 @@ export async function createUser(data) {
     role,
     isActive: true,
     createdAt: new Date().toISOString().slice(0, 10),
+    ...passwordFields,
   };
   db.users.push(newUser);
   saveDb();
-  return clone(newUser);
+  audit("create", "user", newUser.id, { name, phone, role }, actorIdFromOptions(options));
+  return clone(publicUser(newUser));
 }
 
 // Обновляет данные сотрудника (имя, телефон, email, роль, активность).
 // Backend: PUT /users/:id → User
-export async function updateUser(id, patch) {
+export async function updateUser(id, patch, options = {}) {
   await delay(400);
   const u = db.users.find(x => x.id === id);
   if (!u) throw new Error("Пользователь не найден");
-  if (patch.name !== undefined) u.name = String(patch.name).trim();
-  if (patch.phone !== undefined) u.phone = String(patch.phone).replace(/\D/g, "");
-  if (patch.email !== undefined) u.email = String(patch.email).trim();
-  if (patch.role !== undefined && ROLES.includes(patch.role)) u.role = patch.role;
-  if (patch.isActive !== undefined) u.isActive = !!patch.isActive;
-  if (u.name.length < 2) throw new Error("Имя слишком короткое");
-  if (u.phone.length < 10) throw new Error("Неверный номер телефона");
+  const next = {
+    ...u,
+    name: patch.name !== undefined ? String(patch.name).trim() : u.name,
+    phone: patch.phone !== undefined ? String(patch.phone).replace(/\D/g, "") : u.phone,
+    email: patch.email !== undefined ? String(patch.email).trim() : u.email,
+    role: patch.role !== undefined && ROLES.includes(patch.role) ? patch.role : u.role,
+    isActive: patch.isActive !== undefined ? !!patch.isActive : u.isActive,
+  };
+  if (patch.password !== undefined && String(patch.password).length < 4) throw new Error("Пароль слишком короткий");
+  if (next.name.length < 2) throw new Error("Имя слишком короткое");
+  if (next.phone.length < 10) throw new Error("Неверный номер телефона");
+  if (db.users.some((item) => item.id !== id && item.phone === next.phone)) {
+    throw new Error("Пользователь с таким телефоном уже есть");
+  }
+  const activeOwners = db.users
+    .map((item) => (item.id === id ? next : item))
+    .filter((item) => item.role === "owner" && item.isActive !== false).length;
+  if (activeOwners === 0) {
+    throw new Error("Нельзя отключить или понизить последнего владельца");
+  }
+  Object.assign(u, next);
+  if (patch.password !== undefined) Object.assign(u, hashPassword(String(patch.password)));
   saveDb();
-  return clone(u);
+  const auditPatch = { ...patch };
+  if (auditPatch.password !== undefined) auditPatch.password = "[redacted]";
+  audit("update", "user", id, { patch: auditPatch }, actorIdFromOptions(options));
+  return clone(publicUser(u));
+}
+
+export async function getPatientMedicalCard(patientId) {
+  await delay(250);
+  const patient = getPatient(patientId);
+  if (!patient) throw new Error("Пациент не найден");
+
+  const visits = visitsForPatient(patientId)
+    .sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")))
+    .map((visit) => ({
+      ...visit,
+      doctorName: getDoctorName(visit.doctorId),
+      services: serviceItemsForVisit(visit),
+    }));
+  const appointments = appointmentsForPatient(patientId)
+    .sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
+    .map((appt) => ({
+      ...appt,
+      doctorName: getDoctorName(appt.doctorId),
+    }));
+  const payments = paymentsForPatient(patientId);
+  const totalPaid = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const totalDue = visits.filter((visit) => visit.isFinal).reduce((sum, visit) => sum + estimateVisitCost(visit), 0);
+
+  return clone({
+    patient,
+    visits,
+    appointments,
+    payments,
+    totalPaid,
+    totalDue,
+    debt: Math.max(0, totalDue - totalPaid),
+    bonuses: Math.floor(totalPaid * 0.03),
+    treatmentPlan: treatmentPlanForPatient(patientId),
+    files: listFileRecords({ patientId }).map(({ storagePath, ...file }) => file),
+  });
+}
+
+export async function getVisitMaterials(visitId) {
+  await delay(150);
+  const visit = getVisit(visitId);
+  if (!visit) throw new Error("Визит не найден");
+  return clone(visit.materials || []);
+}
+
+export async function getVisitServices(visitId) {
+  await delay(150);
+  const visit = getVisit(visitId);
+  if (!visit) throw new Error("Визит не найден");
+  return clone(serviceItemsForVisit(visit));
+}
+
+export async function getPatientTreatmentPlan(patientId) {
+  await delay(150);
+  if (!getPatient(patientId)) throw new Error("Пациент не найден");
+  return clone(treatmentPlanForPatient(patientId));
+}
+
+export async function uploadFile(data, options = {}) {
+  await delay(150);
+  const patientId = String(data?.patientId || "");
+  const visitId = String(data?.visitId || "");
+  const fileName = safeFileName(data?.fileName || data?.name || "upload");
+  const mimeType = String(data?.mimeType || "application/octet-stream");
+  const base64 = String(data?.base64 || data?.data || "");
+
+  if (!patientId && !visitId) throw new Error("Нужно указать patientId или visitId");
+  if (patientId && !getPatient(patientId)) throw new Error("Пациент не найден");
+  if (visitId && !getVisit(visitId)) throw new Error("Визит не найден");
+  if (!base64) throw new Error("Файл не передан");
+
+  const cleanBase64 = base64.includes(",") ? base64.split(",").pop() : base64;
+  const bytes = Buffer.from(cleanBase64, "base64");
+  if (!bytes.length) throw new Error("Файл пустой");
+
+  const stored = writeStoredFile(UPLOADS_DIR, fileName, bytes);
+  const record = createFileRecord({
+    id: stored.id,
+    patientId,
+    visitId,
+    fileName: stored.fileName,
+    mimeType,
+    storagePath: stored.storagePath,
+    createdAt: new Date().toISOString(),
+    extra: { kind: data?.kind || "upload" },
+  });
+  audit("create", "file", record.id, { patientId, visitId, fileName: record.fileName }, actorIdFromOptions(options));
+  const { storagePath, ...safeRecord } = record;
+  return clone(safeRecord);
+}
+
+export async function getFiles({ patientId = "", visitId = "" } = {}) {
+  await delay(100);
+  const files = listFileRecords({ patientId, visitId }).map(({ storagePath, ...file }) => file);
+  return clone(files);
+}
+
+export async function getFileDownload(fileId) {
+  await delay(100);
+  const file = getFileRecord(fileId);
+  if (!file || !existsSync(file.storagePath)) throw new Error("Файл не найден");
+  return {
+    file: {
+      id: file.id,
+      patientId: file.patientId,
+      visitId: file.visitId,
+      fileName: file.fileName,
+      mimeType: file.mimeType,
+      createdAt: file.createdAt,
+    },
+    bytes: readFileSync(file.storagePath),
+  };
+}
+
+export async function deleteFile(fileId, options = {}) {
+  await delay(100);
+  const file = getFileRecord(fileId);
+  if (!file) throw new Error("Файл не найден");
+  if (existsSync(file.storagePath)) unlinkSync(file.storagePath);
+  deleteFileRecord(fileId);
+  audit("delete", "file", fileId, { fileName: file.fileName }, actorIdFromOptions(options));
+  return { ok: true };
+}
+
+export async function createPatientProtocolDocument(patientId, options = {}) {
+  await delay(250);
+  const text = await getPatientProtocol(patientId);
+  const patient = getPatient(patientId);
+  const createdAt = new Date().toISOString();
+  const bytes = Buffer.from(text, "utf8");
+  const stored = writeStoredFile(DOCUMENTS_DIR, `AI_Protocol_${patientId}.txt`, bytes);
+  const record = createFileRecord({
+    id: stored.id,
+    patientId,
+    visitId: latestFinalVisit(patientId)?.id || "",
+    fileName: stored.fileName,
+    mimeType: "text/plain; charset=utf-8",
+    storagePath: stored.storagePath,
+    createdAt,
+    extra: { kind: "ai-protocol", patientName: patient?.name || "" },
+  });
+  audit("create", "document", record.id, { patientId, type: "ai-protocol" }, actorIdFromOptions(options));
+  const { storagePath, ...safeRecord } = record;
+  return clone(safeRecord);
+}
+
+export async function signDocument(fileId, data = {}, options = {}) {
+  await delay(250);
+  const file = getFileRecord(fileId);
+  if (!file) throw new Error("Документ не найден");
+  const signatureId = genId("sign");
+  const notification = createNotificationRecord({
+    id: genId("notif"),
+    type: "document_signed",
+    title: "Документ подписан",
+    body: `${file.fileName} подписан через ЭЦП`,
+    role: "owner",
+    isRead: false,
+    createdAt: new Date().toISOString(),
+    extra: { fileId, signatureId },
+  });
+  audit("sign", "document", fileId, {
+    signatureId,
+    provider: data.provider || "egov",
+    notificationId: notification.id,
+  }, actorIdFromOptions(options));
+  return {
+    ok: true,
+    fileId,
+    signatureId,
+    provider: data.provider || "egov",
+    signedAt: new Date().toISOString(),
+  };
+}
+
+export async function getNotifications({ role = "", unreadOnly = false } = {}) {
+  await delay(100);
+  return clone(listNotificationRecords({ role, unreadOnly }));
+}
+
+export async function markNotificationRead(id, isRead = true) {
+  await delay(100);
+  const notification = markNotificationReadRecord(id, isRead);
+  if (!notification) throw new Error("Уведомление не найдено");
+  return clone(notification);
+}
+
+export async function generateNotifications() {
+  await delay(150);
+  const created = [];
+  const lowInventory = (db.inventory || []).filter((item) => Number(item.quantity) <= Number(item.minQuantity));
+  for (const item of lowInventory) {
+    created.push(createNotificationRecord({
+      id: `low_inventory_${item.id}`,
+      type: "low_inventory",
+      title: "Запасы на исходе",
+      body: `${item.name}: ${item.quantity} ${item.unit}`,
+      role: "owner",
+      isRead: false,
+      createdAt: new Date().toISOString(),
+      extra: { inventoryId: item.id },
+    }));
+  }
+
+  const tomorrow = shiftDate(TODAY, 1);
+  const scheduledTomorrow = (db.appointments || []).filter((appt) => appt.date === tomorrow && appt.status === "scheduled");
+  if (scheduledTomorrow.length) {
+    created.push(createNotificationRecord({
+      id: `unconfirmed_${tomorrow}`,
+      type: "unconfirmed_appointments",
+      title: "Есть неподтвержденные визиты",
+      body: `${scheduledTomorrow.length} записей на ${tomorrow} требуют подтверждения`,
+      role: "admin",
+      isRead: false,
+      createdAt: new Date().toISOString(),
+      extra: { date: tomorrow, count: scheduledTomorrow.length },
+    }));
+  }
+
+  return clone(created);
+}
+
+export async function getAuditLogs(query = {}) {
+  await delay(100);
+  return clone(listAuditLogRecords(query));
+}
+
+export async function sendPatientReminder(patientId, message = "", options = {}) {
+  await delay(150);
+  const patient = getPatient(patientId);
+  if (!patient) throw new Error("Пациент не найден");
+  const text = String(message || `Здравствуйте, ${patient.name}. Напоминаем о визите в NeuroDent.`);
+  const notification = createNotificationRecord({
+    id: genId("notif"),
+    type: "reminder_sent",
+    title: "Напоминание отправлено",
+    body: `${patient.name}: ${text}`,
+    role: "admin",
+    isRead: false,
+    createdAt: new Date().toISOString(),
+    extra: { patientId },
+  });
+  audit("send_reminder", "patient", patientId, { message: text, notificationId: notification.id }, actorIdFromOptions(options));
+  return {
+    ok: true,
+    patientId,
+    phone: patient.phone,
+    message: text,
+    notification,
+  };
+}
+
+function defaultPriceItems() {
+  return [
+    { code: "CONSULT", name: "Консультация стоматолога", category: "Диагностика", price: 5000 },
+    { code: "CARIES-SURFACE", name: "Лечение поверхностного кариеса", category: "Терапия", price: 15000 },
+    { code: "CARIES-MEDIUM", name: "Лечение среднего кариеса", category: "Терапия", price: 22000 },
+    { code: "CARIES-DEEP", name: "Лечение глубокого кариеса", category: "Терапия", price: 30000 },
+    { code: "ENDO", name: "Эндодонтическое лечение", category: "Эндодонтия", price: 45000 },
+    { code: "ANESTHESIA", name: "Анестезия", category: "Анестезия", price: 3000 },
+    { code: "HYGIENE", name: "Профессиональная гигиена", category: "Гигиена", price: 18000 },
+    { code: "ORTHO-PLAN", name: "Ортодонтическая диагностика", category: "Ортодонтия", price: 25000 },
+  ];
+}
+
+function ensureDefaultPriceList() {
+  const existing = listPriceItemRecords({});
+  if (existing.length) return;
+  const now = new Date().toISOString();
+  for (const item of defaultPriceItems()) {
+    upsertPriceItemRecord({
+      id: genId("price"),
+      ...item,
+      isActive: true,
+      createdAt: now,
+    });
+  }
+}
+
+export async function getPriceItems(query = "", activeOnly = false) {
+  await delay(120);
+  ensureDefaultPriceList();
+  return clone(listPriceItemRecords({ query, activeOnly }));
+}
+
+export async function createPriceItem(data, options = {}) {
+  await delay(150);
+  const code = String(data?.code || "").trim().toUpperCase();
+  const name = String(data?.name || "").trim();
+  const category = String(data?.category || "").trim();
+  const price = Number(data?.price);
+  if (!code) throw new Error("Укажите код услуги");
+  if (name.length < 2) throw new Error("Название услуги слишком короткое");
+  if (!Number.isFinite(price) || price < 0) throw new Error("Цена должна быть положительным числом");
+  if (getPriceItemRecord(code)) throw new Error("Услуга с таким кодом уже есть");
+  const item = upsertPriceItemRecord({
+    id: genId("price"),
+    code,
+    name,
+    category,
+    price,
+    isActive: data?.isActive !== false,
+    createdAt: new Date().toISOString(),
+  });
+  audit("create", "price_item", item.id, { code, name, price }, actorIdFromOptions(options));
+  return clone(item);
+}
+
+export async function updatePriceItem(id, patch, options = {}) {
+  await delay(150);
+  const existing = getPriceItemRecord(id);
+  if (!existing) throw new Error("Услуга не найдена");
+  const nextCode = patch?.code !== undefined ? String(patch.code).trim().toUpperCase() : existing.code;
+  const nextName = patch?.name !== undefined ? String(patch.name).trim() : existing.name;
+  const nextPrice = patch?.price !== undefined ? Number(patch.price) : existing.price;
+  const duplicate = getPriceItemRecord(nextCode);
+  if (!nextCode) throw new Error("Укажите код услуги");
+  if (nextName.length < 2) throw new Error("Название услуги слишком короткое");
+  if (!Number.isFinite(nextPrice) || nextPrice < 0) throw new Error("Цена должна быть положительным числом");
+  if (duplicate && duplicate.id !== existing.id) throw new Error("Услуга с таким кодом уже есть");
+  const item = upsertPriceItemRecord({
+    ...existing,
+    code: nextCode,
+    name: nextName,
+    category: patch?.category !== undefined ? String(patch.category).trim() : existing.category,
+    price: nextPrice,
+    isActive: patch?.isActive !== undefined ? !!patch.isActive : existing.isActive,
+    createdAt: existing.createdAt,
+  });
+  audit("update", "price_item", item.id, { patch }, actorIdFromOptions(options));
+  return clone(item);
+}
+
+export async function setPriceItemActive(id, isActive, options = {}) {
+  await delay(120);
+  const item = setPriceItemActiveRecord(id, isActive);
+  if (!item) throw new Error("Услуга не найдена");
+  audit(isActive ? "activate" : "deactivate", "price_item", id, {}, actorIdFromOptions(options));
+  return clone(item);
+}
+
+function invoiceStatus(total, paid) {
+  if (paid <= 0) return "open";
+  if (paid >= total) return "paid";
+  return "partial";
+}
+
+function normalizeInvoiceItems(items = []) {
+  ensureDefaultPriceList();
+  return items.map((raw) => {
+    const priceItem = raw.priceItemId || raw.code
+      ? getPriceItemRecord(raw.priceItemId || raw.code)
+      : null;
+    const quantity = Number(raw.quantity || 1);
+    const unitPrice = raw.unitPrice !== undefined ? Number(raw.unitPrice) : Number(priceItem?.price || 0);
+    const name = String(raw.name || priceItem?.name || "").trim();
+    if (!name) throw new Error("У позиции счета нет названия");
+    if (!Number.isFinite(quantity) || quantity <= 0) throw new Error("Количество должно быть больше 0");
+    if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new Error("Цена позиции некорректна");
+    return {
+      id: genId("inv_item"),
+      priceItemId: priceItem?.id || raw.priceItemId || "",
+      name,
+      quantity,
+      unitPrice,
+      total: quantity * unitPrice,
+    };
+  });
+}
+
+export async function createInvoice(data, options = {}) {
+  await delay(180);
+  const patientId = String(data?.patientId || "");
+  const visitId = data?.visitId ? String(data.visitId) : "";
+  if (!getPatient(patientId)) throw new Error("Пациент не найден");
+  if (visitId) {
+    const visit = getVisit(visitId);
+    if (!visit) throw new Error("Визит не найден");
+    if (visit.patientId !== patientId) throw new Error("Визит не принадлежит пациенту");
+  }
+  const items = normalizeInvoiceItems(data?.items || []);
+  if (!items.length) throw new Error("Добавьте хотя бы одну позицию счета");
+  const subtotal = items.reduce((sum, item) => sum + item.total, 0);
+  const discount = Number(data?.discount || 0);
+  if (!Number.isFinite(discount) || discount < 0) throw new Error("Скидка некорректна");
+  const total = Math.max(0, subtotal - discount);
+  const requestedPaid = Number(data?.paid || 0);
+  if (!Number.isFinite(requestedPaid) || requestedPaid < 0) throw new Error("Оплаченная сумма некорректна");
+  const paid = Math.min(total, requestedPaid);
+  const now = new Date().toISOString();
+  const invoice = createInvoiceRecord(
+    {
+      id: genId("invoice"),
+      patientId,
+      visitId,
+      date: data?.date ? String(data.date) : now.slice(0, 10),
+      status: invoiceStatus(total, paid),
+      subtotal,
+      discount,
+      total,
+      paid,
+      createdAt: now,
+    },
+    items,
+  );
+  if (paid > 0) {
+    await createPayment({
+      date: invoice.date,
+      amount: paid,
+      method: data?.method || "cash",
+      patientId,
+      visitId: visitId || null,
+    }, options);
+  }
+  audit("create", "invoice", invoice.id, { patientId, visitId, total }, actorIdFromOptions(options));
+  return clone(invoice);
+}
+
+export async function getInvoices(query = {}) {
+  await delay(140);
+  return clone(listInvoiceRecords(query));
+}
+
+export async function getInvoice(id) {
+  await delay(100);
+  const invoice = getInvoiceRecord(id);
+  if (!invoice) throw new Error("Счет не найден");
+  return clone(invoice);
+}
+
+export async function payInvoice(id, data = {}, options = {}) {
+  await delay(180);
+  const invoice = getInvoiceRecord(id);
+  if (!invoice) throw new Error("Счет не найден");
+  const amount = Number(data.amount);
+  const method = String(data.method || "cash");
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("Сумма должна быть больше 0");
+  validatePaymentMethod(method);
+  const remaining = Math.max(0, Number(invoice.total || 0) - Number(invoice.paid || 0));
+  if (remaining <= 0) throw new Error("Счет уже оплачен");
+  const appliedAmount = Math.min(amount, remaining);
+  const paid = Math.min(invoice.total, Number(invoice.paid || 0) + appliedAmount);
+  const updated = updateInvoicePaymentRecord(id, paid, invoiceStatus(invoice.total, paid));
+  await createPayment({
+    date: data.date || new Date().toISOString().slice(0, 10),
+    amount: appliedAmount,
+    method,
+    patientId: invoice.patientId,
+    visitId: invoice.visitId || null,
+  }, options);
+  audit("pay", "invoice", id, { amount: appliedAmount, requestedAmount: amount, method, paid }, actorIdFromOptions(options));
+  return clone(updated);
+}
+
+export async function createStockMovement(data, options = {}) {
+  await delay(160);
+  const inventoryId = String(data?.inventoryId || data?.id || "");
+  const type = String(data?.type || "").trim();
+  const quantity = Number(data?.quantity);
+  const reason = String(data?.reason || "").trim();
+  const visitId = data?.visitId ? String(data.visitId) : "";
+  const item = db.inventory.find((entry) => entry.id === inventoryId);
+  if (!item) throw new Error("Материал не найден");
+  if (visitId && !getVisit(visitId)) throw new Error("Визит не найден");
+  if (!["in", "out", "adjustment"].includes(type)) throw new Error("Неверный тип движения склада");
+  if (!Number.isFinite(quantity) || (type === "adjustment" ? quantity < 0 : quantity <= 0)) {
+    throw new Error(type === "adjustment" ? "Остаток не может быть отрицательным" : "Количество должно быть больше 0");
+  }
+
+  const signedDelta = type === "in" ? quantity : type === "out" ? -quantity : quantity - Number(item.quantity || 0);
+  const nextQuantity = Number(item.quantity || 0) + signedDelta;
+  if (nextQuantity < 0) throw new Error("Недостаточно на складе");
+  item.quantity = nextQuantity;
+  saveDb();
+  const movement = createStockMovementRecord({
+    id: genId("stock"),
+    inventoryId,
+    type,
+    quantity: type === "adjustment" ? signedDelta : quantity,
+    balanceAfter: item.quantity,
+    reason,
+    visitId,
+    actorUserId: actorIdFromOptions(options),
+    createdAt: new Date().toISOString(),
+  });
+  audit("create", "stock_movement", movement.id, { inventoryId, type, quantity, balanceAfter: item.quantity }, actorIdFromOptions(options));
+  return clone(movement);
+}
+
+export async function getStockMovements(query = {}) {
+  await delay(120);
+  return clone(listStockMovementRecords(query));
+}
+
+export async function getPeriodReport({ dateFrom, dateTo } = {}) {
+  await delay(180);
+  const from = String(dateFrom || TODAY);
+  const to = String(dateTo || from);
+  validateIsoDate(from, "Дата начала");
+  validateIsoDate(to, "Дата окончания");
+  if (from > to) throw new Error("Дата начала не может быть позже даты окончания");
+  const payments = db.payments.filter((payment) => payment.date >= from && payment.date <= to);
+  const appointments = db.appointments.filter((appt) => appt.date >= from && appt.date <= to);
+  const visits = db.visits.filter((visit) => {
+    const date = String(visit.startedAt || "").slice(0, 10);
+    return date >= from && date <= to;
+  });
+  const invoices = listInvoiceRecords({ dateFrom: from, dateTo: to });
+  const totalRevenue = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const invoiceTotal = invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
+  const invoicePaid = invoices.reduce((sum, invoice) => sum + Number(invoice.paid || 0), 0);
+  const byMethod = payments.reduce((acc, payment) => {
+    acc[payment.method] = (acc[payment.method] || 0) + Number(payment.amount || 0);
+    return acc;
+  }, {});
+  return clone({
+    dateFrom: from,
+    dateTo: to,
+    totalRevenue,
+    paymentsCount: payments.length,
+    appointmentsCount: appointments.length,
+    completedVisits: visits.filter((visit) => visit.isFinal).length,
+    invoiceTotal,
+    invoicePaid,
+    invoiceDebt: Math.max(0, invoiceTotal - invoicePaid),
+    byMethod,
+    invoices,
+  });
 }

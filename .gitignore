@@ -1,2 +1,2 @@
-backend/data/*.json
+backend/data/
 node_modules/
