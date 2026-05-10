@@ -6,7 +6,7 @@ const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 
 export const metadata = {
   title: "NeuroDent",
-  description: "Стоматологиялық клиника CRM жүйесі",
+  description: "CRM-система стоматологической клиники",
 };
 
 export default function RootLayout({ children }) {

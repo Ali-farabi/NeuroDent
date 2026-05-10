@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useState, useEffect, useRef, Suspense, useCallback } from "react";
+import { useState, useEffect, useRef, Suspense, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   searchPatients,
@@ -186,6 +186,37 @@ const CARIES_HINTS: Record<CariesType, string> = {
   complicated: "Осложнённый кариес — требуется эндодонтическое лечение (пульпит/периодонтит).",
 };
 
+const AI_SUGGESTIONS: Record<string, { material: string; anesthesia: string; time: string }> = {
+  "K02.0": { material: "Флюорид-лак / Icon (реминерализация)", anesthesia: "Без анестезии", time: "~20 мин" },
+  "K02.1": { material: "Filtek Z250", anesthesia: "Ultracain D-S forte", time: "~45 мин" },
+  "K02.2": { material: "Vitrebond + Filtek", anesthesia: "Ultracain D-S forte", time: "~40 мин" },
+  "K04.0": { material: "Эндодонтический набор + MTA", anesthesia: "Septanest forte", time: "~90 мин" },
+  "K04.4": { material: "Эндодонтический набор", anesthesia: "Septanest forte", time: "~60 мин" },
+  "K04.5": { material: "Эндодонтический набор + гуттаперча", anesthesia: "Septanest forte", time: "~75 мин" },
+  "K05.0": { material: "Хлоргексидин 0.05% + Метрогил Дента", anesthesia: "Без анестезии", time: "~30 мин" },
+  "K05.3": { material: "Ультразвуковой скейлер + Vector", anesthesia: "Аппликационная", time: "~60 мин" },
+};
+
+function getPrescription(code: string): { drug: string; dose: string; schedule: string }[] {
+  if (code.startsWith("K04")) {
+    return [
+      { drug: "Амоксициллин 500мг", dose: "500мг", schedule: "3 раза в день, 5 дней" },
+      { drug: "Кетанов 10мг", dose: "10мг", schedule: "При боли, не более 3 раз/день" },
+      { drug: "Хлоргексидин 0.05%", dose: "Полоскание", schedule: "3 раза в день после еды" },
+    ];
+  }
+  if (code.startsWith("K05")) {
+    return [
+      { drug: "Метрогил Дента гель", dose: "Аппликации на десна", schedule: "2 раза в день, 7 дней" },
+      { drug: "Хлоргексидин 0.05%", dose: "Полоскание", schedule: "3 раза в день после еды" },
+    ];
+  }
+  return [
+    { drug: "Нурофен 400мг", dose: "400мг", schedule: "При боли, не более 3 раз/день" },
+    { drug: "Хлоргексидин 0.05%", dose: "Полоскание", schedule: "3 раза в день после еды" },
+  ];
+}
+
 const SURFACE_DEFS = [
   { key: "M", label: "М — Медиальная" },
   { key: "D", label: "Д — Дистальная" },
@@ -213,27 +244,25 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
 function PatientSelectPage() {
   const router = useRouter();
   const [allPatients, setAllPatients] = useState<Patient[]>([]);
-  const [filtered, setFiltered] = useState<Patient[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     searchPatients("").then((list: Patient[]) => {
       setAllPatients(list);
-      setFiltered(list);
       setLoading(false);
     });
   }, []);
 
-  useEffect(() => {
+  const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    setFiltered(allPatients.filter((p) => !q || p.name.toLowerCase().includes(q) || String(p.phone).includes(q)));
+    return allPatients.filter((p) => !q || p.name.toLowerCase().includes(q) || String(p.phone).includes(q));
   }, [search, allPatients]);
 
   return (
     <div className="p-3 flex flex-col gap-3">
       <header>
-        <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">AI Clinical Assistant</h1>
+        <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Core AI Layer</h1>
         <p className="text-sm text-gray-500 mt-1">Автопротоколирование, МКБ-10 и анализ истории</p>
       </header>
 
@@ -241,7 +270,7 @@ function PatientSelectPage() {
         <Stethoscope className="w-12 h-12 shrink-0 text-gray-700 opacity-90" strokeWidth={1.2} />
         <div className="min-w-0">
           <h2 className="text-xl font-extrabold text-gray-900 tracking-tight mb-2">Выберите пациента для приема</h2>
-          <p className="text-sm text-gray-500 leading-relaxed">Чтобы AI-ассистент начал слушать и писать протокол, выберите пациента из базы.</p>
+          <p className="text-sm text-gray-500 leading-relaxed">Чтобы AI модуль начал слушать и писать протокол, выберите пациента из базы.</p>
         </div>
       </div>
 
@@ -408,7 +437,7 @@ function IcdTree({ activeCode, onSelect }: { activeCode: string; onSelect: (code
 }
 
 // ─── Surface Popup ────────────────────────────────────────────────────────────
-function SurfacePopup({ tooth, surfaces, onToggle, onClose }: {
+function SurfacePopup({ surfaces, onToggle, onClose }: {
   tooth: number;
   surfaces: string[];
   onToggle: (key: string) => void;
@@ -497,6 +526,25 @@ function AiCorePage({ patientId }: { patientId: string }) {
   // Toast
   const [toast, setToast] = useState<string | null>(null);
 
+  // Visit timer
+  const [visitStarted, setVisitStarted] = useState(false);
+  const [visitTimer, setVisitTimer] = useState(0);
+  const visitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Dynamic materials
+  const [materials, setMaterials] = useState([
+    { code: "ultracain", name: "Ultracain D-S forte 1.7ml", qty: 1, unit: "амп" },
+    { code: "filtek", name: "Filtek Z250 (шприц)", qty: 1, unit: "шт" },
+  ]);
+
+  // Prescription & Before/After
+  const [showPrescription, setShowPrescription] = useState(false);
+  const [beforeAfterMode, setBeforeAfterMode] = useState(false);
+  const beforeFileRef = useRef<HTMLInputElement>(null);
+  const afterFileRef = useRef<HTMLInputElement>(null);
+  const [beforeImage, setBeforeImage] = useState<string | null>(null);
+  const [afterImage, setAfterImage] = useState<string | null>(null);
+
   // Load data
   useEffect(() => {
     if (!patientId) return;
@@ -519,6 +567,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
   useEffect(() => {
     if (!loading && patientData) {
       const url = "/images/examplecoreai.png";
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setImages([{ id: "default", url }]);
       setActiveImage(url);
     }
@@ -527,10 +576,20 @@ function AiCorePage({ patientId }: { patientId: string }) {
   // Cleanup URLs
   useEffect(() => () => urlsRef.current.forEach((u) => URL.revokeObjectURL(u)), []);
 
+  // Visit timer
+  useEffect(() => {
+    if (visitStarted && !visitFinished) {
+      visitTimerRef.current = setInterval(() => setVisitTimer((t) => t + 1), 1000);
+    } else if (visitTimerRef.current) {
+      clearInterval(visitTimerRef.current);
+    }
+    return () => { if (visitTimerRef.current) clearInterval(visitTimerRef.current); };
+  }, [visitStarted, visitFinished]);
+
   // Recording timer
   useEffect(() => {
     if (isRecording) {
-      setRecordingTime(0);
+      setRecordingTime(0); // eslint-disable-line react-hooks/set-state-in-effect
       timerRef.current = setInterval(() => setRecordingTime((t) => t + 1), 1000);
     } else if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -547,6 +606,26 @@ function AiCorePage({ patientId }: { patientId: string }) {
   }, [toast]);
 
   const showToast = useCallback((msg: string) => setToast(msg), []);
+
+  const patientAge = useMemo(() => {
+    if (!patientData?.birthDate) return null;
+    const birth = new Date(patientData.birthDate);
+    const now = new Date();
+    let age = now.getFullYear() - birth.getFullYear();
+    if (now.getMonth() < birth.getMonth() || (now.getMonth() === birth.getMonth() && now.getDate() < birth.getDate())) age--;
+    return age;
+  }, [patientData]);
+
+  const riskLevel = useMemo(() => {
+    if (visits.some((v) => v.diagnosisCode?.startsWith("K04"))) return "Высокий";
+    if (visits.some((v) => v.diagnosisCode?.startsWith("K03") || v.diagnosisCode === "K02.1")) return "Средний";
+    return "Низкий";
+  }, [visits]);
+  const riskBadge = riskLevel === "Высокий"
+    ? "bg-red-50 text-red-600 border-red-200"
+    : riskLevel === "Средний"
+    ? "bg-amber-50 text-amber-600 border-amber-200"
+    : "bg-blue-50 text-blue-700 border-blue-200";
 
   function startRecording() {
     transcriptRef.current = "";
@@ -633,10 +712,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
       cariesType,
       toothNumber: selectedTooth ? String(selectedTooth) : "",
       protocol: { complaints, anamnesis, objective, diagnosisText, treatment },
-      materials: [
-        { code: "ultracain", name: "Ultracain D-S forte 1.7ml", qty: 1, unit: "амп" },
-        { code: "filtek", name: "Filtek Z250 (шприц)", qty: 1, unit: "шт" },
-      ],
+      materials: materials.map((m) => ({ code: m.code, name: m.name, qty: m.qty, unit: m.unit })),
     };
   }
 
@@ -646,7 +722,9 @@ function AiCorePage({ patientId }: { patientId: string }) {
     try {
       await finishVisit(activeAppointment.id, readVisitData());
       setVisitFinished(true);
-      showToast("Автосписание со склада: Ultracain (1), Filtek Z250 (1)");
+      const matList = materials.map((m) => `${m.name} (${m.qty})`).join(", ");
+      showToast(`Автосписание со склада: ${matList}`);
+      setShowPrescription(true);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Ошибка");
     } finally {
@@ -705,7 +783,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
         <div className="flex flex-col gap-1">
           <h1 className="flex items-center gap-2 text-[22px] font-extrabold tracking-tight text-gray-900 m-0">
             <img src="/images/Medimetricslogotype.png" alt="Neurodent" className="w-[34px] h-[34px]" />
-            <span>AI Clinical Assistant</span>
+            <span>Core AI Layer</span>
           </h1>
           <p className="text-[13px] text-gray-500 m-0">Автопротоколирование, МКБ-10, тип кариеса и зубная формула</p>
         </div>
@@ -735,6 +813,18 @@ function AiCorePage({ patientId }: { patientId: string }) {
               </>
             )}
           </button>
+          {!visitStarted ? (
+            <button
+              className="px-3.5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+              onClick={() => setVisitStarted(true)}
+            >
+              ▶ Начать прием
+            </button>
+          ) : (
+            <span className="px-3.5 py-2 text-sm font-medium text-white bg-gray-700 rounded-lg flex items-center gap-2 tabular-nums">
+              ⏱ {String(Math.floor(visitTimer / 60)).padStart(2, "0")}:{String(visitTimer % 60).padStart(2, "0")}
+            </span>
+          )}
         </div>
       </div>
 
@@ -757,21 +847,33 @@ function AiCorePage({ patientId }: { patientId: string }) {
       {/* ─── PROTOCOL TAB ─── */}
       {activeTab === "protocol" && (
         <div className="p-5 max-w-[1200px] mx-auto flex flex-col gap-5">
+          {/* Allergy Banner */}
+          {(patientData as Patient & { allergies?: string }).allergies && (
+            <div className="flex items-center gap-3 px-4 py-3 bg-red-600 text-white rounded-xl font-semibold text-sm shadow-lg">
+              <AlertTriangle size={20} className="shrink-0" />
+              <span>⚠ АЛЛЕРГИЯ: {(patientData as Patient & { allergies?: string }).allergies} — проверить перед анестезией!</span>
+            </div>
+          )}
+
           {/* Patient info */}
           <div className="flex justify-between items-end flex-wrap gap-4">
             <div>
               <div className="text-base font-bold text-gray-900 mb-0.5">{patientData.name}</div>
-              <div className="text-xs text-gray-500">Взрослый &bull; {patientData.phone}</div>
+              <div className="text-xs text-gray-500">
+                {patientAge != null ? `${patientAge} лет` : "Взрослый"} &bull; {patientData.phone}
+              </div>
             </div>
             <div className="flex gap-2 items-center flex-wrap">
-              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
-                <Bot size={12} /> Риск: Низкий
+              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border flex items-center gap-1 ${riskBadge}`}>
+                <Bot size={12} /> Риск: {riskLevel}
               </span>
-              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 flex items-center gap-1">
-                <AlertTriangle size={12} /> Жалоба: боль в 1.6
-              </span>
+              {complaints.trim() && (
+                <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 flex items-center gap-1">
+                  <AlertTriangle size={12} /> {complaints.length > 35 ? complaints.slice(0, 35) + "…" : complaints}
+                </span>
+              )}
               <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-600 border border-sky-200 flex items-center gap-1">
-                <Info size={12} /> МКБ-10: K02.1
+                <Info size={12} /> МКБ-10: {diagnosisCode || "—"}
               </span>
             </div>
           </div>
@@ -782,7 +884,14 @@ function AiCorePage({ patientId }: { patientId: string }) {
               <Sparkles size={12} /> AI-Summary пациента
             </div>
             <div className="text-[13px] text-gray-700 leading-relaxed">
-              Аллергий нет. Последний визит 6 месяцев назад (чистка). В прошлом лечился пульпит зуба 46. Возможна чувствительность эмали.
+              {(() => {
+                const p = patientData as Patient & { allergies?: string };
+                const allergyText = p.allergies ? `⚠ Аллергия: ${p.allergies}.` : "Аллергий нет.";
+                const visitText = visits.length > 0
+                  ? `Визитов: ${visits.length}. Последний: ${visits[0].diagnosis || visits[0].diagnosisCode || "без диагноза"} (зуб ${visits[0].toothNumber || "—"}).`
+                  : "Завершённых визитов нет.";
+                return `${allergyText} ${visitText}`;
+              })()}
             </div>
           </div>
 
@@ -932,6 +1041,14 @@ function AiCorePage({ patientId }: { patientId: string }) {
                       <option value="K02.2">K02.2 — Кариес цемента</option>
                       <option value="K04.0">K04.0 — Острый пульпит</option>
                     </select>
+                    {AI_SUGGESTIONS[diagnosisCode] && (
+                      <div className="mt-1.5 p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-[11px] flex flex-col gap-1">
+                        <div className="font-bold text-blue-600 flex items-center gap-1"><Sparkles size={11} /> AI-рекомендация</div>
+                        <div><span className="text-gray-500">Материал:</span> {AI_SUGGESTIONS[diagnosisCode].material}</div>
+                        <div><span className="text-gray-500">Анестезия:</span> {AI_SUGGESTIONS[diagnosisCode].anesthesia}</div>
+                        <div><span className="text-gray-500">Время:</span> {AI_SUGGESTIONS[diagnosisCode].time}</div>
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-[11px] text-gray-500">Тип кариеса</label>
@@ -956,6 +1073,14 @@ function AiCorePage({ patientId }: { patientId: string }) {
                 </div>
 
                 <div className="flex flex-col gap-2 mt-2">
+                  {visitFinished && (
+                    <button
+                      className="w-full py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition flex items-center justify-center gap-2"
+                      onClick={() => setShowPrescription(true)}
+                    >
+                      <FileText size={14} /> Выписать рецепт (Форма 107-1/у)
+                    </button>
+                  )}
                   {visitFinished ? (
                     <div className="text-center py-4 bg-green-50 rounded-lg text-green-600 font-semibold flex items-center justify-center gap-2">
                       <CheckCircle2 size={18} /> Прием завершен и материалы списаны
@@ -1006,6 +1131,49 @@ function AiCorePage({ patientId }: { patientId: string }) {
       {activeTab === "images" && (
         <div className="p-6 max-w-full mx-auto flex flex-col gap-5">
           <input type="file" ref={fileRef} accept="image/*" className="hidden" onChange={handleImageUpload} />
+          <input type="file" ref={beforeFileRef} accept="image/*" className="hidden" onChange={(e) => {
+            const f = e.target.files?.[0]; if (!f) return;
+            const url = URL.createObjectURL(f); urlsRef.current.push(url); setBeforeImage(url); e.target.value = "";
+          }} />
+          <input type="file" ref={afterFileRef} accept="image/*" className="hidden" onChange={(e) => {
+            const f = e.target.files?.[0]; if (!f) return;
+            const url = URL.createObjectURL(f); urlsRef.current.push(url); setAfterImage(url); e.target.value = "";
+          }} />
+
+          <div className="flex items-center gap-2">
+            <button
+              className={`px-3.5 py-1.5 text-xs font-medium rounded-full border transition ${!beforeAfterMode ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"}`}
+              onClick={() => setBeforeAfterMode(false)}
+            >Галерея</button>
+            <button
+              className={`px-3.5 py-1.5 text-xs font-medium rounded-full border transition ${beforeAfterMode ? "bg-purple-600 text-white border-purple-600" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"}`}
+              onClick={() => setBeforeAfterMode(true)}
+            >До / После</button>
+          </div>
+
+          {beforeAfterMode ? (
+            <div className="flex gap-4">
+              <div className="flex-1 flex flex-col gap-2">
+                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider text-center">ДО</div>
+                <div
+                  className="flex flex-col items-center justify-center min-h-[200px] border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 cursor-pointer hover:border-purple-400 hover:bg-purple-50/30 transition overflow-hidden"
+                  onClick={() => beforeFileRef.current?.click()}
+                >
+                  {beforeImage ? <img src={beforeImage} alt="До" className="w-full h-auto max-h-[300px] object-contain" /> : <><Upload size={20} className="text-gray-400 mb-1" /><span className="text-xs text-gray-400">Загрузить фото ДО</span></>}
+                </div>
+              </div>
+              <div className="flex-1 flex flex-col gap-2">
+                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider text-center">ПОСЛЕ</div>
+                <div
+                  className="flex flex-col items-center justify-center min-h-[200px] border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 cursor-pointer hover:border-purple-400 hover:bg-purple-50/30 transition overflow-hidden"
+                  onClick={() => afterFileRef.current?.click()}
+                >
+                  {afterImage ? <img src={afterImage} alt="После" className="w-full h-auto max-h-[300px] object-contain" /> : <><Upload size={20} className="text-gray-400 mb-1" /><span className="text-xs text-gray-400">Загрузить фото ПОСЛЕ</span></>}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
           <div
             className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 text-gray-400 cursor-pointer hover:border-blue-500 hover:bg-blue-50/30 hover:text-blue-500 transition"
             onClick={() => fileRef.current?.click()}
@@ -1013,7 +1181,11 @@ function AiCorePage({ patientId }: { patientId: string }) {
             <Upload size={24} />
             <span className="text-sm font-medium">Прикрепить фото</span>
           </div>
-          <div className="text-center text-[15px] font-semibold text-gray-900">Август 2022</div>
+          <div className="text-center text-[15px] font-semibold text-gray-900">
+            {activeAppointment?.date
+              ? new Date(activeAppointment.date).toLocaleDateString("ru-RU", { month: "long", year: "numeric" })
+              : new Date().toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}
+          </div>
           <div className="w-full max-w-[560px] mx-auto rounded-xl overflow-hidden bg-gray-50 border border-gray-200">
             <div className={`w-full overflow-hidden mb-2.5 ${!activeImage ? "flex items-center justify-center pt-5" : ""}`}>
               {!activeImage ? (
@@ -1051,25 +1223,36 @@ function AiCorePage({ patientId }: { patientId: string }) {
             <button className="px-4 py-2 text-[13px] font-medium bg-red-600 text-white border-none rounded-lg hover:bg-red-700 transition cursor-pointer">Удалить полностью карточку</button>
             <button className="px-5 py-2 text-[13px] font-medium bg-blue-600 text-white border-none rounded-lg hover:bg-blue-700 transition cursor-pointer ml-auto">Сохранить</button>
           </div>
+            </>
+          )}
         </div>
       )}
 
       {/* ─── MATERIALS TAB ─── */}
       {activeTab === "materials" && (
         <div className="p-5 bg-white border border-gray-200 rounded-xl shadow-sm">
-          <h3 className="text-base font-bold text-gray-900 mt-0 mb-1.5">Материалы (AI)</h3>
-          <p className="text-[13px] text-gray-500 mb-2.5">Пока статический список. В будущем будет связан со складом.</p>
+          <h3 className="text-base font-bold text-gray-900 mt-0 mb-1.5">Материалы визита</h3>
+          <p className="text-[13px] text-gray-500 mb-2.5">Будут списаны со склада при завершении приема.</p>
           <div className="flex flex-col gap-2 mt-1">
-            {[
-              { name: "Ultracain D-S forte 1.7ml", meta: "Анестезия • 1 амп." },
-              { name: "Filtek Z250", meta: "Пломбировочный материал • 1 шт." },
-              { name: "Коффердам / матрицы / клинья", meta: "Расходники" },
-            ].map((m, i) => (
-              <div key={i} className="flex items-center gap-2 justify-between text-xs px-2.5 py-2 rounded-md bg-gray-50">
-                <span className="flex-1">{m.name}</span>
-                <span className="text-[11px] text-gray-500">{m.meta}</span>
+            {materials.map((m, i) => (
+              <div key={m.code} className="flex items-center gap-2 justify-between text-xs px-2.5 py-2 rounded-md bg-gray-50">
+                <span className="flex-1 font-medium">{m.name}</span>
+                <div className="flex items-center gap-2">
+                  <button type="button" className="w-5 h-5 rounded border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center text-xs" onClick={() => setMaterials((p) => p.map((x, j) => j === i ? { ...x, qty: Math.max(1, x.qty - 1) } : x))}>−</button>
+                  <span className="min-w-[20px] text-center font-semibold">{m.qty}</span>
+                  <button type="button" className="w-5 h-5 rounded border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center text-xs" onClick={() => setMaterials((p) => p.map((x, j) => j === i ? { ...x, qty: x.qty + 1 } : x))}>+</button>
+                  <span className="text-[11px] text-gray-400">{m.unit}</span>
+                  <button type="button" className="text-red-400 hover:text-red-600 text-xs ml-1" onClick={() => setMaterials((p) => p.filter((_, j) => j !== i))}>✕</button>
+                </div>
               </div>
             ))}
+            <button
+              type="button"
+              className="mt-1 px-3 py-2 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition"
+              onClick={() => setMaterials((p) => [...p, { code: `mat_${Date.now()}`, name: "Новый материал", qty: 1, unit: "шт" }])}
+            >
+              + Добавить материал
+            </button>
           </div>
         </div>
       )}
@@ -1138,6 +1321,39 @@ function AiCorePage({ patientId }: { patientId: string }) {
         </div>
       )}
 
+      {/* Prescription Modal */}
+      {showPrescription && (
+        <Modal title="Рецепт (Форма 107-1/у)" onClose={() => setShowPrescription(false)}>
+          <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+              <div><span className="font-semibold text-gray-700">Пациент:</span> {patientData.name}</div>
+              <div><span className="font-semibold text-gray-700">Дата:</span> {new Date().toLocaleDateString("ru-RU")}</div>
+              <div><span className="font-semibold text-gray-700">Диагноз:</span> {diagnosisCode || "—"}</div>
+              <div><span className="font-semibold text-gray-700">Врач:</span> {activeAppointment?.doctorName || "—"}</div>
+            </div>
+            <div className="h-px bg-gray-200" />
+            <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Rp: Назначения</div>
+            <div className="flex flex-col gap-2">
+              {getPrescription(diagnosisCode).map((rx, i) => (
+                <div key={i} className="px-3 py-2.5 bg-gray-50 rounded-lg text-xs flex flex-col gap-0.5">
+                  <div className="font-semibold text-gray-900">{rx.drug}</div>
+                  <div className="text-gray-500">{rx.dose} — {rx.schedule}</div>
+                </div>
+              ))}
+            </div>
+            <div className="text-[11px] text-gray-400 border border-dashed border-gray-300 rounded-lg p-2.5">
+              Принимайте препараты строго по назначению врача. Не изменяйте дозировку самостоятельно.
+            </div>
+            <button
+              className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition text-sm flex items-center justify-center gap-2"
+              onClick={() => { showToast("Рецепт сохранен в карту пациента"); setShowPrescription(false); }}
+            >
+              <FileDown size={14} /> Сохранить и распечатать
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {/* Modal */}
       {modal && (
         <Modal title={modal.title} onClose={() => setModal(null)}>
@@ -1182,7 +1398,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
               </div>
               <div className="mb-4">
                 <label className="text-xs font-semibold block mb-2">Пароль от хранилища ключей:</label>
-                <input type="password" className="w-full px-3 py-2 border border-gray-200 bg-white text-sm rounded-lg" placeholder="Введите пароль..." defaultValue="123456" />
+                <input type="password" className="w-full px-3 py-2 border border-gray-200 bg-white text-sm rounded-lg" placeholder="Введите пароль..." />
               </div>
               <button
                 className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition"

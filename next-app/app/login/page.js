@@ -49,7 +49,7 @@ export default function LoginPage() {
         gridTemplateColumns: "600px 1fr",
         background: "var(--bg)",
       }}>
-      {/* Sol жақ — форма */}
+      {/* Левая часть — форма */}
       <div style={{
         background: "var(--surface)",
         display: "grid",
@@ -134,14 +134,13 @@ export default function LoginPage() {
               • <code>1234</code> — Владелец (доступ ко всему)<br />
               • <code>admin</code> — Админ (Расписание, Пациенты, Касса)<br />
               • <code>doctor</code> — Врач (AI, Расписание, Пациенты)<br />
-              • <code>assistant</code> — Ассистент<br />
               • <code>patient</code> — Пациент (только «Моя медкарта»)
             </div>
           </form>
         </div>
       </div>
 
-      {/* Оң жақ — фон сурет */}
+      {/* Правая часть — фоновое изображение */}
       <div
         className="auth-right-panel"
         style={{
