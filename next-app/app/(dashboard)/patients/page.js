@@ -445,42 +445,71 @@ function PatientListInner() {
     }
   }
 
+  // Calculate age from birthDate
+  function calculateAge(birthDate) {
+    if (!birthDate) return "—";
+    const birth = new Date(birthDate);
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+    return age;
+  }
+
+  // Get avatar initials
+  function getInitials(name) {
+    return name?.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) || "??";
+  }
+
+  // Get avatar color based on name
+  function getAvatarColor(name) {
+    const colors = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
+    let hash = 0;
+    for (let i = 0; i < (name?.length || 0); i++) {
+      hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
+  }
+
   return (
     <div style={{ padding: 0 }}>
       <style>{`
-        .pat-actions { display: flex; align-items: center; gap: 6px; padding-right: 14px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
-        .pat-btn-text { display: inline; }
-        @media (max-width: 480px) {
-          .pat-actions { gap: 4px; padding-right: 8px; }
-          .pat-btn-text { display: none; }
-          .pat-actions button { padding: 6px 8px !important; }
-        }
-        @media (max-width: 360px) {
-          .pat-actions { flex-direction: column; align-items: flex-end; padding: 8px; }
-        }
+        .pat-table { width: 100%; border-collapse: collapse; }
+        .pat-table th { text-align: left; padding: 12px 16px; fontSize: 12px; fontWeight: 600; color: var(--muted); borderBottom: 1px solid var(--border); background: var(--surface-2); }
+        .pat-table td { padding: 12px 16px; borderBottom: 1px solid var(--border); fontSize: 13px; }
+        .pat-table tr:hover { background: var(--hover); }
+        .pat-table tr:last-child td { borderBottom: none; }
+        .pat-avatar { width: 36px; height: 36px; borderRadius: 50%; display: flex; alignItems: center; justifyContent: center; color: #fff; fontSize: 13px; fontWeight: 600; }
+        .pat-action-btn { width: 32px; height: 32px; border: none; background: transparent; cursor: pointer; borderRadius: 6px; display: inline-flex; alignItems: center; justify-content: center; color: var(--muted); transition: all 0.15s; }
+        .pat-action-btn:hover { background: var(--surface-2); color: var(--text); }
+        .pat-action-btn.delete:hover { background: #fef2f2; color: var(--danger); }
       `}</style>
 
-      {/* Toolbar */}
+      {/* Header */}
       <div style={{
-        display: "flex", gap: 10, alignItems: "center",
-        background: "var(--surface)", border: "1px solid var(--border)",
-        borderBottom: "none", padding: "12px 16px",
-        position: "sticky", top: 0, zIndex: 10,
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        padding: "16px 20px", background: "var(--surface)",
+        borderBottom: "1px solid var(--border)",
       }}>
-        <input
-          value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Поиск по имени или телефону..."
-          style={{ ...inputStyle, flex: 1 }}
-        />
-        {canCreate && (
-          <button onClick={() => setModal({ mode: "create" })} style={btnPrimary}>
-            + Создать
-          </button>
-        )}
+        <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: "var(--text)" }}>Пациенты</h1>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <input
+            value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Поиск..."
+            style={{ ...inputStyle, width: 200, padding: "8px 12px" }}
+          />
+          {canCreate && (
+            <button onClick={() => setModal({ mode: "create" })} style={btnPrimary}>
+              + Добавить пациента
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* List */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", overflow: "hidden" }}>
+      {/* Table */}
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderTop: "none", overflowX: "auto" }}>
         {loading && (
           <div style={{ padding: "48px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
             Загрузка пациентов...
@@ -497,51 +526,59 @@ function PatientListInner() {
             <div style={{ color: "var(--muted)", fontSize: 13 }}>Пациенты не найдены</div>
           </div>
         )}
-        {!loading && patients.map((p, i) => (
-          <div key={p.id} style={{
-            display: "flex", alignItems: "center", gap: 0,
-            borderBottom: i < patients.length - 1 ? "1px solid var(--border)" : "none",
-            transition: "background 0.1s",
-          }}
-            onMouseEnter={e => e.currentTarget.style.background = "var(--hover)"}
-            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-          >
-            {/* Blue indicator */}
-            <div style={{ width: 3, alignSelf: "stretch", background: "var(--primary)", flexShrink: 0 }} />
-
-            {/* Info */}
-            <div style={{ flex: 1, minWidth: 0, padding: "13px 16px" }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{p.name}</div>
-              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-                {p.phone}{p.birthDate ? ` · ${fmtDate(p.birthDate)}` : ""}
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="pat-actions">
-              {canAI && (
-                <button onClick={() => router.push(`/ai?patient=${p.id}`)} style={{ ...btnOutline, color: "var(--primary)", borderColor: "#bfdbfe", background: "var(--active)" }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
-                  </svg>
-                  <span className="pat-btn-text">AI-Прием</span>
-                </button>
-              )}
-              <button onClick={() => openModal("view", p.id)} style={btnOutline}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                </svg>
-                <span className="pat-btn-text">Просмотр</span>
-              </button>
-              <button onClick={() => openModal("edit", p.id)} style={btnOutline}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                </svg>
-                <span className="pat-btn-text">Изменить</span>
-              </button>
-            </div>
-          </div>
-        ))}
+        {!loading && !error && patients.length > 0 && (
+          <table className="pat-table">
+            <thead>
+              <tr>
+                <th style={{ width: 60 }}>ID</th>
+                <th>Пациент</th>
+                <th style={{ width: 80 }}>Возраст</th>
+                <th>Диагноз</th>
+                <th>Телефон</th>
+                <th style={{ width: 100, textAlign: "right" }}>Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              {patients.map((p) => (
+                <tr key={p.id}>
+                  <td style={{ color: "var(--muted)" }}>#{p.id}</td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div className="pat-avatar" style={{ background: getAvatarColor(p.name) }}>
+                        {getInitials(p.name)}
+                      </div>
+                      <span style={{ fontWeight: 500, color: "var(--text)" }}>{p.name}</span>
+                    </div>
+                  </td>
+                  <td style={{ color: "var(--muted)" }}>{calculateAge(p.birthDate)}</td>
+                  <td style={{ color: "var(--muted)" }}>—</td>
+                  <td style={{ color: "var(--text)" }}>{p.phone}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <div style={{ display: "inline-flex", gap: 4 }}>
+                      {canAI && (
+                        <button onClick={() => router.push(`/ai?patient=${p.id}`)} className="pat-action-btn" title="AI-Прием">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+                          </svg>
+                        </button>
+                      )}
+                      <button onClick={() => openModal("view", p.id)} className="pat-action-btn" title="Просмотр">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                        </svg>
+                      </button>
+                      <button onClick={() => openModal("edit", p.id)} className="pat-action-btn" title="Редактировать">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* Modals */}
