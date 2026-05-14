@@ -29,6 +29,8 @@ export default function DashboardLayout({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isAiPage = pathname.startsWith("/ai");
+  const isReportPage = pathname.startsWith("/report");
 
   useEffect(() => {
     if (loading) return;
@@ -49,13 +51,14 @@ export default function DashboardLayout({ children }) {
         role={user.role}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        onLogout={() => { logout(); router.replace("/login"); }}
       />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <Header
-          user={user}
-          onBurger={() => setSidebarOpen((v) => !v)}
-          onLogout={() => { logout(); router.replace("/login"); }}
-        />
+        {!isAiPage && !isReportPage && (
+          <Header
+            onBurger={() => setSidebarOpen((v) => !v)}
+          />
+        )}
         <main style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
           {children}
         </main>

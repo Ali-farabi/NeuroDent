@@ -1,13 +1,6 @@
 "use client";
 
-export default function Header({ user, onLogout, onSearch, onBurger }) {
-  const roleLabel = {
-    owner: "Владелец",
-    admin: "Админ",
-    doctor: "Врач",
-    patient: "Пациент",
-  }[user?.role] || "Гость";
-
+export default function Header({ onSearch, onBurger, hideSearch = false }) {
   return (
     <>
       <style>{`
@@ -37,7 +30,7 @@ export default function Header({ user, onLogout, onSearch, onBurger }) {
         padding: "0 16px",
         display: "flex",
         alignItems: "center",
-        justifyContent: "space-between",
+        justifyContent: "flex-start",
         gap: 12,
         flexShrink: 0,
       }}>
@@ -50,43 +43,23 @@ export default function Header({ user, onLogout, onSearch, onBurger }) {
               <line x1="4" y1="18" x2="20" y2="18" />
             </svg>
           </button>
-          <input
-            className="header-search"
-            type="text"
-            placeholder="Поиск пациента..."
-            onChange={(e) => onSearch?.(e.target.value)}
-            style={{
-              width: "min(380px, 40vw)",
-              padding: "8px 12px",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-sm)",
-              background: "var(--surface)",
-              color: "var(--text)",
-              fontSize: 13,
-            }}
-          />
-        </div>
-
-        {/* Правая часть */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-          <div style={{
-            display: "inline-flex", alignItems: "center", gap: 6,
-            color: "rgba(11,18,32,0.75)", fontSize: 13, fontWeight: 500,
-            padding: "6px 10px", borderRadius: "var(--radius-sm)",
-            background: "var(--surface-2)", border: "1px solid var(--border)",
-          }}>
-            {roleLabel}
-          </div>
-          <button
-            onClick={onLogout}
-            style={{
-              padding: "7px 14px", borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--border)", background: "var(--surface)",
-              color: "var(--text)", fontWeight: 500, fontSize: 13, cursor: "pointer",
-            }}
-          >
-            Выйти
-          </button>
+          {!hideSearch && (
+            <input
+              className="header-search"
+              type="text"
+              placeholder="Поиск пациента..."
+              onChange={(e) => onSearch?.(e.target.value)}
+              style={{
+                width: "min(380px, 40vw)",
+                padding: "8px 12px",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                background: "var(--surface)",
+                color: "var(--text)",
+                fontSize: 13,
+              }}
+            />
+          )}
         </div>
       </header>
     </>

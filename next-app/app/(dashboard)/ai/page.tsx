@@ -25,7 +25,6 @@ import {
   ChevronLeft,
   Search,
   ArrowUpFromLine,
-  Stethoscope,
   FileDown,
 } from "lucide-react";
 
@@ -260,62 +259,61 @@ function PatientSelectPage() {
   }, [search, allPatients]);
 
   return (
-    <div className="p-3 flex flex-col gap-3">
-      <header>
-        <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Core AI Layer</h1>
-        <p className="text-sm text-gray-500 mt-1">Автопротоколирование, МКБ-10 и анализ истории</p>
-      </header>
+    <div className="min-h-full bg-white px-8 py-7 lg:px-11 lg:py-9">
+      <div className="max-w-[1140px]">
+        <header className="mb-12">
+          <h1 className="text-[30px] leading-tight font-semibold text-gray-950 tracking-[-0.01em]">Core AI Layer</h1>
+          <p className="mt-1 text-[18px] leading-7 text-gray-500">Автопротоколирование, МКБ-10 и анализ истории</p>
+        </header>
 
-      <div className="flex items-start gap-5 p-6 bg-white border border-gray-200 shadow-sm">
-        <Stethoscope className="w-12 h-12 shrink-0 text-gray-700 opacity-90" strokeWidth={1.2} />
-        <div className="min-w-0">
-          <h2 className="text-xl font-extrabold text-gray-900 tracking-tight mb-2">Выберите пациента для приема</h2>
-          <p className="text-sm text-gray-500 leading-relaxed">Чтобы AI модуль начал слушать и писать протокол, выберите пациента из базы.</p>
-        </div>
-      </div>
+        <section className="rounded-xl border border-gray-200 bg-white px-3 py-5 shadow-[0_1px_5px_rgba(15,23,42,0.12)]">
+          <div className="px-1">
+            <h2 className="text-[26px] leading-tight font-semibold tracking-[-0.01em] text-blue-600">Выберите пациента для приема</h2>
+            <p className="mt-1 text-[15px] leading-6 text-gray-600">Чтобы Core AI Layer начал слушать и писать протокол, выберите пациента из базы.</p>
+          </div>
+        </section>
 
-      <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={20} />
+        <div className="relative mt-[18px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={22} strokeWidth={1.8} />
         <input
           type="text"
-          className="w-full h-[52px] pl-12 pr-5 text-[15px] border border-gray-200 bg-white text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/20 transition rounded-lg"
-          placeholder="Поиск по имени или телефону..."
+          className="h-[42px] w-full rounded-xl border border-gray-200 bg-white pl-11 pr-4 text-[15px] text-gray-900 shadow-[0_1px_4px_rgba(15,23,42,0.11)] transition placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-[3px] focus:ring-blue-500/15"
+          placeholder=""
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           autoComplete="off"
         />
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Найденные пациенты</h3>
-        <div className="flex flex-col gap-3 max-h-[420px] overflow-y-auto">
-          {loading ? (
-            <div className="py-12 text-center text-sm text-gray-400 bg-white border border-gray-200 rounded-lg">Загрузка...</div>
-          ) : filtered.length === 0 ? (
-            <div className="py-12 text-center text-sm text-gray-400 bg-white border border-gray-200 rounded-lg">Пациенты не найдены</div>
-          ) : (
-            filtered.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center justify-between gap-5 px-5 py-4 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 hover:border-blue-100 transition group"
-                onClick={() => router.push(`/ai?patient=${p.id}`)}
-              >
-                <div className="min-w-0">
-                  <div className="font-bold text-[15px] text-gray-900">{p.name}</div>
-                  <div className="text-[13px] text-gray-500">
-                    Зарегистрирован: {p.createdAt || "—"} &bull; {p.phone}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="shrink-0 px-5 py-2.5 text-sm font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 hover:border-blue-400 transition"
-                >
-                  Выбрать
-                </button>
-              </div>
-            ))
-          )}
         </div>
+
+        <section className="mt-9">
+          <h3 className="mb-4 text-[16px] font-medium text-blue-600">Найденные пациенты</h3>
+          <div className="flex max-h-[420px] flex-col gap-3 overflow-y-auto pr-1">
+            {loading ? (
+              <div className="rounded-xl border border-gray-200 bg-white py-12 text-center text-sm text-gray-400 shadow-[0_1px_4px_rgba(15,23,42,0.1)]">Загрузка...</div>
+            ) : filtered.length === 0 ? (
+              <div className="rounded-xl border border-gray-200 bg-white py-12 text-center text-sm text-gray-400 shadow-[0_1px_4px_rgba(15,23,42,0.1)]">Пациенты не найдены</div>
+            ) : (
+              filtered.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="flex min-h-[72px] w-full items-center justify-between gap-5 rounded-xl border border-gray-200 bg-white px-3 py-3 text-left shadow-[0_1px_5px_rgba(15,23,42,0.11)] transition hover:border-blue-100 hover:bg-gray-50"
+                  onClick={() => router.push(`/ai?patient=${p.id}`)}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-[15px] font-semibold text-gray-950">{p.name}</span>
+                    <span className="mt-1 block truncate text-[11px] text-gray-400">
+                      Зарегистрирован: {p.createdAt || "—"} * {p.phone}
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-lg bg-blue-600 px-[18px] py-2 text-[11px] font-medium text-white shadow-sm transition hover:bg-blue-700">
+                    Выбрать
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </section>
       </div>
     </div>
   );
@@ -364,7 +362,7 @@ function ToothBtn({ n, status, isSelected, bite, onClick }: {
       <img
         src={TOOTH_IMG[status] || TOOTH_IMG.normal}
         alt={`Зуб ${n}`}
-        className="w-[52px] h-[52px] object-cover object-[center_20%] rounded-md mix-blend-multiply transition-all duration-200"
+        className="w-[44px] h-[44px] object-cover object-[center_20%] rounded-md mix-blend-multiply transition-all duration-200"
         style={imgStyle}
       />
       <span className="text-[10px] text-gray-400" style={numStyle}>{n}</span>
@@ -383,19 +381,19 @@ function IcdTree({ activeCode, onSelect }: { activeCode: string; onSelect: (code
   const q = search.toLowerCase().trim();
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50 p-2.5 max-h-[460px] flex flex-col gap-2">
+    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm max-h-[680px] flex flex-col gap-4">
       <div className="relative">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
         <input
           type="text"
-          className="w-full h-8 pl-8 pr-2.5 text-xs rounded-md border border-gray-200 bg-white focus:outline-none focus:border-blue-500"
+          className="w-full h-10 pl-9 pr-3 text-sm rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
           placeholder="Поиск по МКБ-10..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           autoComplete="off"
         />
       </div>
-      <div className="flex-1 overflow-y-auto pr-1 text-xs">
+      <div className="flex-1 overflow-y-auto pr-1 text-sm">
         {ICD_GROUPS.map((group) => {
           const matchItems = group.items.filter((i) => !q || i.label.toLowerCase().includes(q));
           if (q && !group.title.toLowerCase().includes(q) && matchItems.length === 0) return null;
@@ -404,7 +402,7 @@ function IcdTree({ activeCode, onSelect }: { activeCode: string; onSelect: (code
             <div key={group.code} className="rounded-md p-1">
               <button
                 type="button"
-                className="w-full flex items-center gap-1 border-none bg-transparent cursor-pointer text-xs px-1 py-0.5 text-left text-gray-900 hover:bg-gray-100 rounded"
+                className="w-full flex items-center gap-2 border-none bg-transparent cursor-pointer text-sm px-1 py-1.5 text-left text-gray-700 hover:bg-gray-50 rounded-lg"
                 onClick={() => setOpenGroups((p) => ({ ...p, [group.code]: !p[group.code] }))}
               >
                 <span className="text-[10px] text-gray-400">{isOpen ? "▼" : "▶"}</span>
@@ -418,7 +416,7 @@ function IcdTree({ activeCode, onSelect }: { activeCode: string; onSelect: (code
                       type="button"
                       className={`border-none rounded px-1.5 py-1 text-left cursor-pointer transition text-xs ${
                         activeCode === item.code
-                          ? "bg-blue-100 text-blue-700"
+                          ? "bg-blue-600 text-white"
                           : "bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900"
                       }`}
                       onClick={() => onSelect(item.code, item.label)}
@@ -777,11 +775,11 @@ function AiCorePage({ patientId }: { patientId: string }) {
   ];
 
   return (
-    <div className="p-3 flex flex-col gap-3">
+    <div className="min-h-full bg-[#f6f8fb] flex flex-col">
       {/* Header */}
-      <div className="flex justify-between items-end gap-3 flex-wrap">
+      <div className="flex justify-between items-center gap-3 flex-wrap bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex flex-col gap-1">
-          <h1 className="flex items-center gap-2 text-[22px] font-extrabold tracking-tight text-gray-900 m-0">
+            <h1 className="flex items-center gap-2 text-[22px] font-extrabold tracking-tight text-gray-900 m-0">
             <img src="/images/Medimetricslogotype.png" alt="Neurodent" className="w-[34px] h-[34px]" />
             <span>Core AI Layer</span>
           </h1>
@@ -796,8 +794,8 @@ function AiCorePage({ patientId }: { patientId: string }) {
             Сменить пациента
           </button>
           <button
-            className={`px-3.5 py-2 text-sm font-medium text-white rounded-lg flex items-center gap-2 transition shadow-lg ${
-              isRecording ? "bg-red-600 shadow-red-500/30" : "bg-red-500 hover:bg-red-600 shadow-red-500/30"
+            className={`px-4 py-2.5 text-sm font-semibold text-white rounded-full flex items-center gap-2 transition shadow-sm ${
+              isRecording ? "bg-red-600 shadow-red-500/25" : "bg-blue-600 hover:bg-blue-700 shadow-blue-500/20"
             }`}
             onClick={isRecording ? stopRecording : startRecording}
           >
@@ -809,7 +807,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
             ) : (
               <>
                 <Mic size={14} />
-                Слушать прием (Запись голоса)
+                Слушать прием
               </>
             )}
           </button>
@@ -829,13 +827,13 @@ function AiCorePage({ patientId }: { patientId: string }) {
       </div>
 
       {/* Tabs */}
-      <div className="inline-flex items-center flex-wrap gap-1 p-1 bg-white rounded-full border border-gray-200">
+      <div className="flex items-center flex-wrap gap-6 bg-white border-b border-gray-200 px-6">
         {tabs.map((t) => (
           <button
             key={t.key}
             type="button"
-            className={`px-3.5 py-1.5 text-xs font-medium rounded-full border-none cursor-pointer transition ${
-              activeTab === t.key ? "bg-blue-600 text-white" : "bg-transparent text-gray-500 hover:bg-gray-100"
+            className={`px-0 py-3 text-sm font-medium border-b-2 cursor-pointer transition ${
+              activeTab === t.key ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-900"
             } ${t.key === "add" ? "font-bold" : ""}`}
             onClick={() => setActiveTab(t.key)}
           >
@@ -846,7 +844,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
 
       {/* ─── PROTOCOL TAB ─── */}
       {activeTab === "protocol" && (
-        <div className="p-5 max-w-[1200px] mx-auto flex flex-col gap-5">
+        <div className="w-full max-w-[1280px] mx-auto p-6 flex flex-col gap-5">
           {/* Allergy Banner */}
           {(patientData as Patient & { allergies?: string }).allergies && (
             <div className="flex items-center gap-3 px-4 py-3 bg-red-600 text-white rounded-xl font-semibold text-sm shadow-lg">
@@ -856,7 +854,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
           )}
 
           {/* Patient info */}
-          <div className="flex justify-between items-end flex-wrap gap-4">
+          <div className="w-full bg-white border border-gray-200 rounded-2xl p-5 shadow-sm flex justify-between items-end flex-wrap gap-4">
             <div>
               <div className="text-base font-bold text-gray-900 mb-0.5">{patientData.name}</div>
               <div className="text-xs text-gray-500">
@@ -879,7 +877,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
           </div>
 
           {/* AI Summary */}
-          <div className="w-full bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+          <div className="w-full bg-blue-50/60 border border-blue-100 rounded-2xl p-4 shadow-sm">
             <div className="text-[11px] font-bold text-blue-600 uppercase mb-2 flex items-center gap-1">
               <Sparkles size={12} /> AI-Summary пациента
             </div>
@@ -896,7 +894,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
           </div>
 
           {/* Tooth Formula */}
-          <div className="w-full bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+          <div className="w-full bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
             <div className="flex justify-between items-center mb-3 gap-3 flex-wrap">
               <div className="font-bold text-sm text-gray-900">Зубная формула</div>
               <div className="flex gap-1.5 flex-wrap">
@@ -993,7 +991,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
           </div>
 
           {/* AI Protocol + ICD */}
-          <div className="w-full bg-white border-2 border-blue-100 rounded-xl p-5 shadow-[0_8px_30px_rgba(37,99,235,0.08)]">
+          <div className="w-full bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2">
                 {isRecording && <span className="inline-block w-3.5 h-3.5 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin" />}
@@ -1007,34 +1005,34 @@ function AiCorePage({ patientId }: { patientId: string }) {
               </span>
             </div>
 
-            <div className="grid grid-cols-[1.4fr_1.2fr] gap-4 items-start max-[992px]:grid-cols-1">
+            <div className="grid grid-cols-[minmax(0,1fr)_360px] gap-5 items-start max-[1100px]:grid-cols-1">
               {/* Form */}
               <div className="flex flex-col gap-2.5">
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] text-gray-500">Диагноз</label>
-                  <input className="w-full px-3 py-2 border border-gray-200 bg-white text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:outline-none transition rounded-lg" value={diagnosisText} onChange={(e) => setDiagnosisText(e.target.value)} />
+                  <input className="w-full px-3 py-2 border border-gray-200 bg-gray-50 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:outline-none transition rounded-xl" value={diagnosisText} onChange={(e) => setDiagnosisText(e.target.value)} />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] text-gray-500">Жалобы</label>
-                  <textarea className="w-full px-3 py-2 border border-gray-200 bg-white text-sm resize-y min-h-[72px] leading-relaxed focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:outline-none transition rounded-lg" rows={2} value={complaints} onChange={(e) => setComplaints(e.target.value)} />
+                  <textarea className="w-full px-3 py-2 border border-gray-200 bg-gray-50 text-sm resize-y min-h-[56px] leading-relaxed focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:outline-none transition rounded-xl" rows={2} value={complaints} onChange={(e) => setComplaints(e.target.value)} />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] text-gray-500">Анамнез</label>
-                  <textarea className="w-full px-3 py-2 border border-gray-200 bg-white text-sm resize-y min-h-[72px] leading-relaxed focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:outline-none transition rounded-lg" rows={2} value={anamnesis} onChange={(e) => setAnamnesis(e.target.value)} />
+                  <textarea className="w-full px-3 py-2 border border-gray-200 bg-gray-50 text-sm resize-y min-h-[56px] leading-relaxed focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:outline-none transition rounded-xl" rows={2} value={anamnesis} onChange={(e) => setAnamnesis(e.target.value)} />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] text-gray-500">Объективно</label>
-                  <textarea className="w-full px-3 py-2 border border-gray-200 bg-white text-sm resize-y min-h-[72px] leading-relaxed focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:outline-none transition rounded-lg" rows={3} value={objective} onChange={(e) => setObjective(e.target.value)} />
+                  <textarea className="w-full px-3 py-2 border border-gray-200 bg-gray-50 text-sm resize-y min-h-[64px] leading-relaxed focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:outline-none transition rounded-xl" rows={2} value={objective} onChange={(e) => setObjective(e.target.value)} />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] text-gray-500">Лечение</label>
-                  <textarea className="w-full px-3 py-2 border border-gray-200 bg-white text-sm resize-y min-h-[72px] leading-relaxed focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:outline-none transition rounded-lg" rows={3} value={treatment} onChange={(e) => setTreatment(e.target.value)} />
+                  <textarea className="w-full px-3 py-2 border border-gray-200 bg-gray-50 text-sm resize-y min-h-[64px] leading-relaxed focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:outline-none transition rounded-xl" rows={2} value={treatment} onChange={(e) => setTreatment(e.target.value)} />
                 </div>
 
                 <div className="grid grid-cols-[1.1fr_1.3fr] gap-2 max-[992px]:grid-cols-1">
                   <div className="flex flex-col gap-1">
                     <label className="text-[11px] text-gray-500">МКБ-10</label>
-                    <select className="w-full h-8 px-2.5 text-xs border border-gray-200 bg-white rounded-lg focus:border-blue-500 focus:outline-none" value={diagnosisCode} onChange={(e) => setDiagnosisCode(e.target.value)}>
+                    <select className="w-full h-10 px-3 text-sm border border-gray-200 bg-gray-50 rounded-xl focus:border-blue-500 focus:outline-none" value={diagnosisCode} onChange={(e) => setDiagnosisCode(e.target.value)}>
                       <option value="">Не выбрано</option>
                       <option value="K02.0">K02.0 — Кариес эмали</option>
                       <option value="K02.1">K02.1 — Кариес дентина</option>
@@ -1129,7 +1127,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
 
       {/* ─── IMAGES TAB ─── */}
       {activeTab === "images" && (
-        <div className="p-6 max-w-full mx-auto flex flex-col gap-5">
+        <div className="w-full max-w-[1180px] mx-auto p-6 flex flex-col gap-5">
           <input type="file" ref={fileRef} accept="image/*" className="hidden" onChange={handleImageUpload} />
           <input type="file" ref={beforeFileRef} accept="image/*" className="hidden" onChange={(e) => {
             const f = e.target.files?.[0]; if (!f) return;
@@ -1140,89 +1138,127 @@ function AiCorePage({ patientId }: { patientId: string }) {
             const url = URL.createObjectURL(f); urlsRef.current.push(url); setAfterImage(url); e.target.value = "";
           }} />
 
-          <div className="flex items-center gap-2">
-            <button
-              className={`px-3.5 py-1.5 text-xs font-medium rounded-full border transition ${!beforeAfterMode ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"}`}
-              onClick={() => setBeforeAfterMode(false)}
-            >Галерея</button>
-            <button
-              className={`px-3.5 py-1.5 text-xs font-medium rounded-full border transition ${beforeAfterMode ? "bg-purple-600 text-white border-purple-600" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"}`}
-              onClick={() => setBeforeAfterMode(true)}
-            >До / После</button>
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div>
+              <h2 className="m-0 text-lg font-semibold text-gray-950">Изображения приема</h2>
+              <p className="m-0 mt-1 text-sm text-gray-500">Снимки, фото до/после и документы, прикрепленные к текущему визиту.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={`px-3.5 py-2 text-sm font-medium rounded-xl border transition ${!beforeAfterMode ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
+                onClick={() => setBeforeAfterMode(false)}
+              >
+                Галерея
+              </button>
+              <button
+                type="button"
+                className={`px-3.5 py-2 text-sm font-medium rounded-xl border transition ${beforeAfterMode ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
+                onClick={() => setBeforeAfterMode(true)}
+              >
+                До / После
+              </button>
+              <button
+                type="button"
+                className="px-3.5 py-2 text-sm font-medium rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                onClick={() => fileRef.current?.click()}
+              >
+                <Upload size={16} /> Загрузить
+              </button>
+            </div>
           </div>
 
           {beforeAfterMode ? (
-            <div className="flex gap-4">
-              <div className="flex-1 flex flex-col gap-2">
-                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider text-center">ДО</div>
+            <div className="grid grid-cols-2 gap-4 max-[900px]:grid-cols-1">
+              <div className="flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider">До лечения</div>
                 <div
-                  className="flex flex-col items-center justify-center min-h-[200px] border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 cursor-pointer hover:border-purple-400 hover:bg-purple-50/30 transition overflow-hidden"
+                  className="flex flex-col items-center justify-center min-h-[280px] border border-dashed border-gray-300 rounded-2xl bg-gray-50 cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 transition overflow-hidden"
                   onClick={() => beforeFileRef.current?.click()}
                 >
-                  {beforeImage ? <img src={beforeImage} alt="До" className="w-full h-auto max-h-[300px] object-contain" /> : <><Upload size={20} className="text-gray-400 mb-1" /><span className="text-xs text-gray-400">Загрузить фото ДО</span></>}
+                  {beforeImage ? <img src={beforeImage} alt="До" className="w-full h-auto max-h-[360px] object-contain" /> : <><Upload size={22} className="text-gray-400 mb-2" /><span className="text-sm text-gray-400">Загрузить фото до лечения</span></>}
                 </div>
               </div>
-              <div className="flex-1 flex flex-col gap-2">
-                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider text-center">ПОСЛЕ</div>
+              <div className="flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider">После лечения</div>
                 <div
-                  className="flex flex-col items-center justify-center min-h-[200px] border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 cursor-pointer hover:border-purple-400 hover:bg-purple-50/30 transition overflow-hidden"
+                  className="flex flex-col items-center justify-center min-h-[280px] border border-dashed border-gray-300 rounded-2xl bg-gray-50 cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 transition overflow-hidden"
                   onClick={() => afterFileRef.current?.click()}
                 >
-                  {afterImage ? <img src={afterImage} alt="После" className="w-full h-auto max-h-[300px] object-contain" /> : <><Upload size={20} className="text-gray-400 mb-1" /><span className="text-xs text-gray-400">Загрузить фото ПОСЛЕ</span></>}
+                  {afterImage ? <img src={afterImage} alt="После" className="w-full h-auto max-h-[360px] object-contain" /> : <><Upload size={22} className="text-gray-400 mb-2" /><span className="text-sm text-gray-400">Загрузить фото после лечения</span></>}
                 </div>
               </div>
             </div>
           ) : (
             <>
-          <div
-            className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 text-gray-400 cursor-pointer hover:border-blue-500 hover:bg-blue-50/30 hover:text-blue-500 transition"
-            onClick={() => fileRef.current?.click()}
-          >
-            <Upload size={24} />
-            <span className="text-sm font-medium">Прикрепить фото</span>
-          </div>
-          <div className="text-center text-[15px] font-semibold text-gray-900">
-            {activeAppointment?.date
-              ? new Date(activeAppointment.date).toLocaleDateString("ru-RU", { month: "long", year: "numeric" })
-              : new Date().toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}
-          </div>
-          <div className="w-full max-w-[560px] mx-auto rounded-xl overflow-hidden bg-gray-50 border border-gray-200">
-            <div className={`w-full overflow-hidden mb-2.5 ${!activeImage ? "flex items-center justify-center pt-5" : ""}`}>
-              {!activeImage ? (
-                <span className="text-[13px] text-gray-400">Нет изображений</span>
-              ) : (
-                <img src={activeImage} alt="ОПТГ" className="w-full h-auto max-h-[360px] object-contain block" />
-              )}
-            </div>
-            <div className="flex flex-wrap gap-2 justify-center mb-2.5">
-              {images.map((img) => (
-                <div key={img.id} className="relative inline-block">
-                  <img
-                    src={img.url}
-                    alt="thumb"
-                    className={`w-24 h-16 object-cover rounded-md border cursor-pointer bg-gray-50 ${
-                      activeImage === img.url ? "border-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.2)]" : "border-gray-200"
-                    }`}
-                    onClick={() => setActiveImage(img.url)}
-                  />
-                  <button
-                    type="button"
-                    className="absolute -top-1.5 -right-1.5 w-[18px] h-[18px] rounded-full border-none bg-black/65 text-white text-xs flex items-center justify-center cursor-pointer hover:bg-red-600 transition"
-                    onClick={() => handleDeleteImage(img.id)}
-                  >
-                    &times;
-                  </button>
+              <div
+                className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-blue-300 bg-blue-50/25 p-8 text-blue-600 cursor-pointer hover:bg-blue-50 transition"
+                onClick={() => fileRef.current?.click()}
+              >
+                <Upload size={28} />
+                <div className="text-center">
+                  <div className="text-base font-semibold">Прикрепить изображение</div>
+                  <div className="mt-1 text-sm text-blue-500/80">ОПТГ, КТ, фото полости рта или документ</div>
                 </div>
-              ))}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2.5 items-center pt-2 border-t border-gray-200">
-            <button className="px-4 py-2 text-[13px] font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition">Назад</button>
-            <button className="px-4 py-2 text-[13px] font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition">Назначить повторный прием</button>
-            <button className="px-4 py-2 text-[13px] font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition flex items-center gap-1.5"><FileText size={14} /> Распечатать</button>
-            <button className="px-4 py-2 text-[13px] font-medium bg-red-600 text-white border-none rounded-lg hover:bg-red-700 transition cursor-pointer">Удалить полностью карточку</button>
-            <button className="px-5 py-2 text-[13px] font-medium bg-blue-600 text-white border-none rounded-lg hover:bg-blue-700 transition cursor-pointer ml-auto">Сохранить</button>
-          </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {["Все", "ОПТГ", "КТ", "Фото", "Документы"].map((label, index) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className={`px-3 py-1.5 rounded-full border text-xs font-medium transition ${index === 0 ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h3 className="m-0 text-sm font-semibold text-gray-950">
+                    {activeAppointment?.date
+                      ? new Date(activeAppointment.date).toLocaleDateString("ru-RU", { month: "long", year: "numeric" })
+                      : new Date().toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}
+                  </h3>
+                  <span className="text-xs text-gray-400">{images.length} файл(а)</span>
+                </div>
+
+                {images.length === 0 ? (
+                  <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-gray-100 bg-gray-50 text-sm text-gray-400">
+                    Пока нет изображений для этого приема
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-[minmax(0,1.2fr)_260px] gap-4 max-[900px]:grid-cols-1">
+                    <div className="flex min-h-[360px] items-center justify-center rounded-2xl bg-gray-50 border border-gray-100 overflow-hidden">
+                      {activeImage ? (
+                        <img src={activeImage} alt="Активное изображение" className="w-full h-auto max-h-[520px] object-contain block" />
+                      ) : (
+                        <span className="text-sm text-gray-400">Выберите изображение</span>
+                      )}
+                    </div>
+                    <div className="grid content-start gap-3">
+                      {images.map((img) => (
+                        <div key={img.id} className={`relative rounded-xl border p-2 transition ${activeImage === img.url ? "border-blue-500 bg-blue-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}>
+                          <button type="button" className="block w-full text-left" onClick={() => setActiveImage(img.url)}>
+                            <img src={img.url} alt="Миниатюра" className="h-24 w-full rounded-lg object-cover bg-gray-50" />
+                            <div className="mt-2 text-xs font-medium text-gray-700">Изображение визита</div>
+                            <div className="text-[11px] text-gray-400">Прикреплено к Core AI</div>
+                          </button>
+                          <button
+                            type="button"
+                            className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-white bg-black/60 text-sm text-white transition hover:bg-red-600"
+                            onClick={() => handleDeleteImage(img.id)}
+                            aria-label="Удалить изображение"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </section>
             </>
           )}
         </div>

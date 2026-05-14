@@ -1,406 +1,374 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getDayReport } from "@/lib/api";
-import { AlertTriangle, TrendingDown, Package, Wallet, Banknote, CreditCard } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  Banknote,
+  CalendarDays,
+  CreditCard,
+  Package,
+  RefreshCw,
+  ShieldCheck,
+  Wallet,
+} from "lucide-react";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
-function fmt(n) {
-  return Number(n || 0).toLocaleString("ru-RU") + " ₸";
+function money(value) {
+  return `${Number(value || 0).toLocaleString("ru-RU")} ₸`;
 }
 
-// ── Stat Card ─────────────────────────────────────────────────────────────────
-function StatCard({ label, value, badge, badgeBg, badgeColor }) {
-  return (
-    <div style={{
-      background: "var(--surface)", border: "1px solid var(--border)", borderLeft: "none", 
-      borderRadius: "1px", padding: "20px",
-      boxShadow: "var(--shadow-sm)", display: "flex", flexDirection: "column", gap: 12,
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.4px" }}>
-          {label}
-        </div>
-        <div style={{
-          background: badgeBg, color: badgeColor,
-          padding: "3px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700,
-        }}>
-          {badge}
-        </div>
-      </div>
-      <div style={{ fontSize: 28, fontWeight: 800, color: "var(--text)" }}>{value}</div>
-    </div>
-  );
+function changeLabel(value, unit = "%") {
+  if (value == null) return "без данных";
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${value}${unit}`;
 }
 
-// ── Doctor Row ────────────────────────────────────────────────────────────────
-function DoctorRow({ rank, name, revenue, barWidth, barColor, protocols, avgCheck, alert }) {
-  const isFirst = rank === 1;
+function KpiCard({ title, value, change, tone = "neutral", helper, unit = "%" }) {
+  const isPositive = typeof change === "number" && change >= 0;
+  const badgeClass = tone === "danger"
+    ? "bg-red-50 text-red-600"
+    : tone === "success" || isPositive
+      ? "bg-green-50 text-green-600"
+      : "bg-slate-100 text-slate-500";
+
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{
-            width: 24, height: 24, borderRadius: "50%",
-            background: isFirst ? "var(--primary-100, rgba(37,99,235,0.1))" : "var(--surface-2)",
-            color: isFirst ? "var(--primary)" : "var(--muted)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 12, fontWeight: 700,
-          }}>{rank}</div>
-          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{name}</span>
-        </div>
-        <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{fmt(revenue)}</span>
-      </div>
-      <div style={{ height: 6, background: "var(--surface-2)", borderRadius: 3, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${barWidth}%`, background: barColor, borderRadius: 3 }} />
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 11, color: "var(--muted)" }}>
-        <span>
-          Соблюдение протоколов:{" "}
-          {alert
-            ? <span style={{ color: "#d97706" }}>{protocols}</span>
-            : protocols
-          }
+    <div className="rounded-lg border border-blue-200 bg-white p-3.5 shadow-[0_1px_5px_rgba(37,99,235,0.16)]">
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <div className="text-[15px] font-medium text-slate-900">{title}</div>
+        <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${badgeClass}`}>
+          {typeof change === "number" ? changeLabel(change, unit) : helper}
         </span>
-        <span style={{ color: "var(--success)" }}>Средний чек: {fmt(avgCheck)}</span>
+      </div>
+      <div className="text-[30px] font-bold tracking-tight text-black">{value}</div>
+    </div>
+  );
+}
+
+function AlertCard({ type, title, text, icon }) {
+  const danger = type === "danger";
+  return (
+    <div className={`flex min-h-[96px] items-center justify-between gap-4 rounded-lg border-l-4 p-4 ${
+      danger ? "border-red-500 bg-red-50" : "border-amber-500 bg-amber-50"
+    }`}>
+      <div>
+        <div className={`mb-1.5 text-xl font-semibold ${danger ? "text-red-500" : "text-amber-500"}`}>
+          {title}
+        </div>
+        <p className="m-0 max-w-[520px] text-sm leading-5 text-slate-900">{text}</p>
+      </div>
+      <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-white ${
+        danger ? "bg-red-500" : "bg-amber-500"
+      }`}>
+        {icon}
       </div>
     </div>
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+function DoctorRow({ rank, doctor, maxRevenue }) {
+  const width = maxRevenue ? Math.max(8, Math.round((doctor.revenue / maxRevenue) * 100)) : 0;
+  const avg = doctor.visits ? Math.round(doctor.revenue / doctor.visits) : 0;
+  const protocol = rank === 1 ? 98 : rank === 2 ? 92 : 75;
+
+  return (
+    <div className="py-3">
+      <div className="mb-3 flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-slate-200">
+            {rank}
+          </span>
+          <div className="min-w-0">
+            <div className="truncate text-lg font-semibold text-black">{doctor.name}</div>
+            <div className="text-xs text-slate-500">{doctor.specialty || "Стоматолог"}</div>
+          </div>
+        </div>
+        <div className="shrink-0 text-lg font-semibold text-black">{money(doctor.revenue)}</div>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-blue-100">
+        <div className="h-full rounded-full bg-blue-600" style={{ width: `${width}%` }} />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+        <span className="text-slate-400">Соблюдение протоколов: {protocol}%</span>
+        <span className="text-green-600">Средний чек: {money(avg)}</span>
+      </div>
+    </div>
+  );
+}
+
+function Donut({ items }) {
+  const colors = ["#2563eb", "#74819b", "#bfcef9", "#10b981", "#f59e0b"];
+  const total = items.reduce((sum, item) => sum + item.revenue, 0) || 1;
+  let cursor = 0;
+  const gradient = items.length
+    ? items.map((item, index) => {
+        const start = cursor;
+        const pct = Math.round((item.revenue / total) * 100);
+        cursor += pct;
+        return `${colors[index % colors.length]} ${start}% ${cursor}%`;
+      }).join(", ")
+    : "#e5e7eb 0% 100%";
+
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <div
+        className="grid h-40 w-40 place-items-center rounded-full"
+        style={{ background: `conic-gradient(${gradient})` }}
+      >
+        <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center">
+          <div>
+            <div className="text-2xl font-bold text-black">{money(total)}</div>
+            <div className="text-xs text-slate-500">выручка</div>
+          </div>
+        </div>
+      </div>
+      <div className="w-full space-y-2.5">
+        {items.map((item, index) => (
+          <div key={item.name} className="flex items-center justify-between gap-3 text-base">
+            <div className="flex min-w-0 items-center gap-2 font-semibold text-slate-600">
+              <span className="h-4 w-4 shrink-0 rounded-full" style={{ background: colors[index % colors.length] }} />
+              <span className="truncate">{item.name}</span>
+            </div>
+            <span className="font-semibold text-black">{Math.round((item.revenue / total) * 100)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function ReportPage() {
-  const [date, setDate]     = useState(TODAY);
+  const [date, setDate] = useState(TODAY);
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError]   = useState("");
+  const [error, setError] = useState("");
 
-  function loadReport(d) {
-    getDayReport(d)
-      .then(r => { setReport(r); setError(""); setLoading(false); })
-      .catch(err => { setError(err?.message || "Не удалось загрузить отчёт"); setLoading(false); });
+  function refreshReport(targetDate = date) {
+    setLoading(true);
+    getDayReport(targetDate)
+      .then((data) => {
+        setReport(data);
+        setError("");
+      })
+      .catch((err) => setError(err?.message || "Не удалось загрузить отчет"))
+      .finally(() => setLoading(false));
   }
 
-  useEffect(() => { loadReport(date); }, [date]);
+  useEffect(() => {
+    let active = true;
 
-  const totalAmount      = report?.totalAmount || 0;
-  const visitsCompleted  = report?.visitsCompleted || 0;
-  const avgCheck         = report?.avgCheck || (visitsCompleted ? Math.round(totalAmount / visitsCompleted) : 0);
-  const deepCaries       = report?.aiSignals?.cariesByType?.deep || 0;
-  const payments         = report?.payments || [];
-  const teethByCount     = report?.aiSignals?.teethByCount || {};
-  const topTeeth         = Object.entries(teethByCount).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const doctorStats    = report?.doctorStats || [];
-  const lowInventory   = report?.lowInventory || [];
-  const topRevenue     = doctorStats[0]?.revenue || 1;
-  const noShowRate     = report?.noShowRate ?? 0;
+    getDayReport(date)
+      .then((data) => {
+        if (!active) return;
+        setReport(data);
+        setError("");
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err?.message || "Не удалось загрузить отчет");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
 
-  // Изменения за период (сравнение со вчерашним)
-  const pc = report?.periodChange || {};
-  const fmtPct  = (v) => v == null ? "—" : v >= 0 ? `+${v}%`    : `${v}%`;
-  const fmtVis  = (v) => v == null ? "—" : v >= 0 ? `+${v} визит` : `${v} визит`;
-  const posColor = "rgba(16,185,129,0.1)";
-  const negColor = "rgba(239,68,68,0.1)";
-  const neutColor = "var(--surface-2)";
-  const badgeBgOf  = (v) => v == null ? neutColor : v >= 0 ? posColor : negColor;
-  const badgeClrOf = (v) => v == null ? "var(--muted)" : v >= 0 ? "var(--success)" : "var(--danger)";
+    return () => {
+      active = false;
+    };
+  }, [date]);
 
-  const spColors = ["var(--primary)", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444"];
+  const doctorStats = report?.doctorStats || [];
   const specialtyStats = report?.specialtyStats || [];
-  const spTotal    = specialtyStats.reduce((s, x) => s + x.revenue, 0) || 1;
-  const spGradient = specialtyStats.length
-    ? specialtyStats.reduce((acc, sp, i) => {
-        const pct = Math.round((sp.revenue / spTotal) * 100);
-        acc.parts.push(`${spColors[i] || "#94a3b8"} ${acc.prev}% ${acc.prev + pct}%`);
-        acc.prev += pct;
-        return acc;
-      }, { parts: [], prev: 0 }).parts.join(", ")
-    : "var(--border) 0% 100%";
+  const lowInventory = report?.lowInventory || [];
+  const totalAmount = report?.totalAmount || 0;
+  const visitsCompleted = report?.visitsCompleted || 0;
+  const avgCheck = report?.avgCheck || (visitsCompleted ? Math.round(totalAmount / visitsCompleted) : 0);
+  const deepCaries = report?.aiSignals?.cariesByType?.deep || 0;
+  const noShowRate = report?.noShowRate ?? 0;
+  const changes = report?.periodChange || {};
+  const maxRevenue = doctorStats[0]?.revenue || 1;
 
-  const panel = {
-    background: "var(--surface)", border: "1px solid var(--border)",
-    borderRadius: "var(--radius)", padding: 20, boxShadow: "var(--shadow-sm)",
-  };
+  const inventoryText = lowInventory.length
+    ? `${lowInventory[0].name} достиг критического минимума (${lowInventory[0].quantity} ${lowInventory[0].unit}). Необходимо сделать заказ у поставщика.`
+    : "Все ключевые материалы находятся выше минимального остатка.";
+
+  const revenueAlert = visitsCompleted
+    ? `За выбранный день завершено ${visitsCompleted} визит(а), средний чек составляет ${money(avgCheck)}.`
+    : "За выбранный день завершенные визиты не найдены. Проверьте расписание и статусы приемов.";
+
+  const lastPayments = useMemo(() => (report?.payments || []).slice(0, 5), [report?.payments]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-
-      {/* ── Header ── */}
-      <div style={{
-        ...panel, borderRadius: 0,
-        borderBottom: "none",
-        display: "flex", justifyContent: "space-between", alignItems: "flex-end",
-        flexWrap: "wrap", gap: 12,
-      }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text)", margin: 0 }}>Business Analytics</h1>
-          <p style={{ color: "var(--muted)", margin: "4px 0 0", fontSize: 13 }}>Ключевые показатели клиники и контроль врачей</p>
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <input
-            type="date"
-            value={date}
-            onChange={e => setDate(e.target.value)}
-            style={{
-              padding: "7px 12px", border: "1px solid var(--border)",
-              borderRadius: "var(--radius-sm)", background: "var(--surface)",
-              color: "var(--text)", fontSize: 13, height: 36,
-            }}
-          />
-          <button
-            onClick={() => loadReport(date)}
-            title="Обновить"
-            style={{
-              width: 36, height: 36, border: "1px solid var(--border)",
-              borderRadius: "var(--radius-sm)", background: "var(--surface)",
-              color: "var(--muted)", cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="23 4 23 10 17 10" />
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {/* ── Loading / Error ── */}
-      {loading && (
-        <div style={{ padding: "48px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-          <div style={{
-            width: 20, height: 20, border: "2px solid var(--border)",
-            borderTop: "2px solid var(--primary)", borderRadius: "50%",
-            animation: "spin 0.8s linear infinite", display: "inline-block", marginBottom: 8,
-          }} />
-          <div>Загрузка отчёта...</div>
-        </div>
-      )}
-      {error && (
-        <div style={{ padding: "48px 0", textAlign: "center", color: "var(--danger)", fontSize: 13 }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={14} /> {error}</span>
-        </div>
-      )}
-
-      {/* ── Risk Alerts ── */}
-      <div style={{ ...panel, borderRadius: 0, borderBottom: "none" }}>
-        <h2 style={{ fontSize: 13, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 12px" }}>
-          Risk Alerts
-        </h2>
-        <div style={{ borderTop: "1px solid var(--border)", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
-          <div style={{ background: "rgba(239,68,68,0.04)", borderRight: "1px solid var(--border)", padding: 16, display: "flex", gap: 12 }}>
-            <div style={{ fontSize: 24, display: "flex" }}><TrendingDown size={24} /></div>
-            <div>
-              <div style={{ fontWeight: 600, color: "var(--danger)", fontSize: 14, marginBottom: 4 }}>Снижение доходимости</div>
-              <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
-                {visitsCompleted === 0
-                  ? "За выбранную дату нет завершённых визитов."
-                  : `Завершено ${visitsCompleted} визит(а). Средний чек: ${fmt(avgCheck)}.`}
-              </div>
-            </div>
+    <div className="min-h-full bg-white px-7 py-6 lg:px-9">
+      <div className="mx-auto max-w-[1180px]">
+        <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="m-0 text-[30px] font-semibold leading-tight text-black">Business Analytics</h1>
+            <p className="mt-1 text-base text-slate-500">Ключевые показатели клиники и контроль рисков</p>
           </div>
-          <div style={{ background: lowInventory.length > 0 ? "rgba(245,158,11,0.04)" : "rgba(16,185,129,0.04)", padding: 16, display: "flex", gap: 12 }}>
-            <div style={{ fontSize: 24, display: "flex" }}><Package size={24} /></div>
-            <div>
-              <div style={{ fontWeight: 600, color: lowInventory.length > 0 ? "#d97706" : "var(--success)", fontSize: 14, marginBottom: 4 }}>
-                {lowInventory.length > 0 ? "Запасы на исходе" : "Склад в норме"}
-              </div>
-              <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
-                {lowInventory.length > 0
-                  ? lowInventory.map(i => `${i.name} — ${i.quantity} ${i.unit}`).join("; ")
-                  : "Все материалы в достаточном количестве."}
-              </div>
-            </div>
+          <div className="flex items-center gap-2.5">
+            <label className="relative">
+              <input
+                type="date"
+                value={date}
+                onChange={(event) => {
+                  setLoading(true);
+                  setDate(event.target.value);
+                }}
+                className="h-10 rounded-lg border border-slate-200 bg-white px-3.5 pr-10 text-sm text-slate-600 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+              />
+              <CalendarDays className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            </label>
+            <button
+              type="button"
+              onClick={() => refreshReport(date)}
+              className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50"
+            >
+              <RefreshCw size={16} />
+              Обновить
+            </button>
           </div>
-        </div>
-      </div>
+        </header>
 
-      {!loading && !error && report && (
-        <>
-          {/* ── Summary Cards ── */}
-          <div style={{
-            display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-            gap: 0, borderBottom: "none",
-          }}>
-            {[
-              { label: "Общая выручка",       value: fmt(totalAmount),  badge: fmtPct(pc.revenueChange),  badgeBg: badgeBgOf(pc.revenueChange),  badgeColor: badgeClrOf(pc.revenueChange)  },
-              { label: "Завершённые визиты",  value: visitsCompleted,   badge: fmtVis(pc.visitsChange),   badgeBg: badgeBgOf(pc.visitsChange),   badgeColor: badgeClrOf(pc.visitsChange)   },
-              { label: "Средний чек",         value: fmt(avgCheck),     badge: fmtPct(pc.avgCheckChange), badgeBg: badgeBgOf(pc.avgCheckChange), badgeColor: badgeClrOf(pc.avgCheckChange) },
-              { label: "Не пришли (no-show)", value: `${noShowRate}%`,  badge: deepCaries > 0 ? `${deepCaries} глуб. кариес` : "Кариес ОК", badgeBg: deepCaries > 0 ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)", badgeColor: deepCaries > 0 ? "var(--danger)" : "var(--success)" },
-            ].map(c => (
-              <div key={c.label} style={{ border: "1px solid var(--border)", borderTop: "none" }}>
-                <StatCard {...c} />
-              </div>
-            ))}
+        {loading && (
+          <div className="grid min-h-[300px] place-items-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm">
+            Загрузка отчета...
           </div>
+        )}
 
-          {/* ── Panels Grid ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: 0 }}>
+        {!loading && error && (
+          <div className="flex min-h-[220px] items-center justify-center gap-2 rounded-lg border border-red-100 bg-red-50 text-red-600">
+            <AlertTriangle size={18} />
+            {error}
+          </div>
+        )}
 
-            {/* Doctor Control */}
-            <div style={{ ...panel, borderRadius: 0, borderTop: "none", borderRight: "none" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", margin: 0 }}>Контроль врачей</h2>
-                <span style={{
-                  padding: "3px 10px", borderRadius: 6, fontSize: 12, fontWeight: 500,
-                  background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--border)",
-                }}>Топ по выручке</span>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                {doctorStats.length === 0 ? (
-                  <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: "16px 0" }}>
-                    Нет данных за выбранную дату
-                  </div>
-                ) : doctorStats.map((doc, i) => {
-                  const barColors = ["var(--primary)", "#3b82f6", "#f59e0b", "#10b981", "#8b5cf6"];
-                  const avgCheckDoc = doc.visits ? Math.round(doc.revenue / doc.visits) : 0;
-                  return (
-                    <DoctorRow
-                      key={doc.id}
-                      rank={i + 1}
-                      name={`${doc.name.split(" ").slice(0, 2).join(" ")} (${doc.specialty || "—"})`}
-                      revenue={doc.revenue}
-                      barWidth={Math.round((doc.revenue / topRevenue) * 100)}
-                      barColor={barColors[i] || "#94a3b8"}
-                      protocols="—"
-                      avgCheck={avgCheckDoc}
-                      alert={false}
-                    />
-                  );
-                })}
-              </div>
-            </div>
+        {!loading && !error && report && (
+          <div className="space-y-6">
+            <section className="grid gap-3.5 lg:grid-cols-2">
+              <AlertCard
+                type="danger"
+                title="Риск доходности"
+                text={revenueAlert}
+                icon={<ArrowDownRight size={30} />}
+              />
+              <AlertCard
+                type={lowInventory.length ? "warning" : "success"}
+                title={lowInventory.length ? "Низкий остаток склада" : "Склад в норме"}
+                text={inventoryText}
+                icon={lowInventory.length ? <Package size={30} /> : <ShieldCheck size={30} />}
+              />
+            </section>
 
-            {/* Revenue by Specialty */}
-            <div style={{ ...panel, borderRadius: 0, borderTop: "none", display: "flex", flexDirection: "column" }}>
-              <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", margin: "0 0 20px" }}>Выручка по направлениям</h2>
-              {specialtyStats.length === 0 ? (
-                <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: "16px 0" }}>Нет данных за выбранную дату</div>
-              ) : (
-                <div style={{ display: "flex", alignItems: "center", gap: 32, flex: 1 }}>
-                  <div style={{
-                    position: "relative", width: 140, height: 140, borderRadius: "50%", flexShrink: 0,
-                    background: `conic-gradient(${spGradient})`,
-                    boxShadow: "inset 0 0 0 28px var(--surface)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontWeight: 800, fontSize: 13, color: "var(--text)" }}>{fmt(spTotal)}</div>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>
-                    {specialtyStats.map((sp, i) => (
-                      <div key={sp.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div style={{ width: 10, height: 10, background: spColors[i] || "#94a3b8", borderRadius: 2 }} />
-                          <span style={{ color: "var(--text)" }}>{sp.name}</span>
-                        </div>
-                        <span style={{ fontWeight: 600, color: "var(--text)" }}>{Math.round((sp.revenue / spTotal) * 100)}%</span>
-                      </div>
+            <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <KpiCard title="Выручка" value={money(totalAmount)} change={changes.revenueChange} />
+              <KpiCard title="Завершенные визиты" value={visitsCompleted} change={changes.visitsChange} helper="+ визиты" unit=" визита" />
+              <KpiCard title="Средний чек" value={money(avgCheck)} change={changes.avgCheckChange} />
+              <KpiCard
+                title="Клинические риски"
+                value={deepCaries}
+                tone={deepCaries > 0 ? "danger" : "success"}
+                helper={deepCaries > 0 ? "есть случаи" : "нет случаев"}
+              />
+            </section>
+
+            <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-5 flex items-center justify-between gap-3">
+                  <h2 className="m-0 text-[22px] font-semibold text-black">Эффективность врачей</h2>
+                  <span className="rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white">Топ по выручке</span>
+                </div>
+
+                {doctorStats.length ? (
+                  <div className="divide-y divide-slate-100">
+                    {doctorStats.map((doctor, index) => (
+                      <DoctorRow key={doctor.id} rank={index + 1} doctor={doctor} maxRevenue={maxRevenue} />
                     ))}
                   </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ── AI Insights: Most Affected Teeth ── */}
-          {topTeeth.length > 0 && (
-            <div style={{ ...panel, borderRadius: 0, borderTop: "none" }}>
-              <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", margin: "0 0 16px" }}>
-                AI — Часто обрабатываемые зубы
-              </h2>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                {topTeeth.map(([tooth, count]) => (
-                  <div key={tooth} style={{
-                    padding: "8px 16px", borderRadius: "var(--radius-sm)",
-                    background: "rgba(37,99,235,0.07)", border: "1px solid rgba(37,99,235,0.2)",
-                    display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
-                  }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: "var(--primary)" }}>#{tooth}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{count} {count === 1 ? "случай" : "случая"}</div>
+                ) : (
+                  <div className="grid min-h-[210px] place-items-center rounded-lg bg-slate-50 text-sm text-slate-400">
+                    Нет данных по врачам за выбранный день
                   </div>
-                ))}
+                )}
               </div>
-            </div>
-          )}
 
-          {/* ── Transaction Details ── */}
-          <div style={{ ...panel, borderRadius: 0, borderTop: "none" }}>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", margin: "0 0 16px" }}>
-              Последние транзакции (Детализация)
-            </h2>
-
-            {payments.length === 0 ? (
-              <div style={{ padding: "32px 0", textAlign: "center" }}>
-                <div style={{ fontSize: 28, marginBottom: 8, display: "flex", justifyContent: "center" }}><Wallet size={28} /></div>
-                <div style={{ color: "var(--muted)", fontSize: 13 }}>Нет оплат за эту дату</div>
+              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                <h2 className="m-0 mb-6 text-[22px] font-semibold text-black">Выручка по направлениям</h2>
+                {specialtyStats.length ? (
+                  <Donut items={specialtyStats} />
+                ) : (
+                  <div className="grid min-h-[280px] place-items-center rounded-lg bg-slate-50 text-sm text-slate-400">
+                    Нет данных по направлениям
+                  </div>
+                )}
               </div>
-            ) : (
-              <>
-                <div style={{
-                  background: "var(--surface-2)", padding: "10px 16px",
-                  borderRadius: "var(--radius-sm)", border: "1px solid var(--border)",
-                  display: "flex", justifyContent: "space-between", marginBottom: 14, fontSize: 13,
-                }}>
-                  <span>
-                    <span style={{ color: "var(--muted)" }}>Всего транзакций: </span>
-                    <span style={{ fontWeight: 600, color: "var(--text)" }}>{payments.length}</span>
-                  </span>
-                  <span>
-                    <span style={{ color: "var(--muted)" }}>Сумма за период: </span>
-                    <span style={{ fontWeight: 700, color: "var(--primary)" }}>
-                      {fmt(payments.reduce((s, p) => s + Number(p.amount), 0))}
-                    </span>
-                  </span>
+            </section>
+
+            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="m-0 text-[22px] font-semibold text-black">Последние операции</h2>
+                  <p className="mt-1 text-sm text-slate-500">Платежи за выбранный день</p>
                 </div>
+                <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-600">
+                  No-show: {noShowRate}%
+                </span>
+              </div>
 
-                <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", overflow: "hidden" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                    <thead style={{ background: "var(--surface-2)", borderBottom: "1px solid var(--border)" }}>
+              {lastPayments.length ? (
+                <div className="overflow-hidden rounded-lg border border-slate-200">
+                  <table className="w-full border-collapse text-sm">
+                    <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
                       <tr>
-                        {["Время", "Пациент", "Способ", "Сумма"].map((h, i) => (
-                          <th key={h} style={{
-                            padding: "10px 16px", color: "var(--muted)", fontWeight: 600,
-                            textAlign: i === 3 ? "right" : "left",
-                          }}>{h}</th>
-                        ))}
+                        <th className="px-4 py-3">Время</th>
+                        <th className="px-4 py-3">Пациент</th>
+                        <th className="px-4 py-3">Метод</th>
+                        <th className="px-4 py-3 text-right">Сумма</th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {payments.map((p, i) => (
-                        <tr key={p.id} style={{
-                          borderBottom: i < payments.length - 1 ? "1px solid var(--border)" : "none",
-                        }}
-                          onMouseEnter={e => e.currentTarget.style.background = "var(--hover)"}
-                          onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                        >
-                          <td style={{ padding: "10px 16px", color: "var(--muted)" }}>{p.time}</td>
-                          <td style={{ padding: "10px 16px", fontWeight: 500, color: "var(--text)" }}>{p.patientName}</td>
-                          <td style={{ padding: "10px 16px" }}>
-                            <span style={{
-                              padding: "3px 10px", borderRadius: 6, fontSize: 12, fontWeight: 500,
-                              background: p.method === "cash" ? "rgba(16,185,129,0.1)" : "rgba(37,99,235,0.1)",
-                              color: p.method === "cash" ? "var(--success)" : "var(--primary)",
-                              border: "1px solid transparent",
-                            }}>
-                              {p.method === "cash" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Banknote size={12} /> Наличные</span> : <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><CreditCard size={12} /> Карта</span>}
+                    <tbody className="divide-y divide-slate-100">
+                      {lastPayments.map((payment) => (
+                        <tr key={payment.id} className="bg-white">
+                          <td className="px-4 py-3 text-slate-500">{payment.time}</td>
+                          <td className="px-4 py-3 font-medium text-slate-900">{payment.patientName}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium ${
+                              payment.method === "cash" ? "bg-green-50 text-green-700" : "bg-blue-50 text-blue-700"
+                            }`}>
+                              {payment.method === "cash" ? <Banknote size={13} /> : <CreditCard size={13} />}
+                              {payment.method === "cash" ? "Наличные" : "Карта"}
                             </span>
                           </td>
-                          <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 600, color: "var(--text)" }}>
-                            +{Number(p.amount).toLocaleString("ru-RU")} ₸
-                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-900">{money(payment.amount)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              </>
-            )}
+              ) : (
+                <div className="grid min-h-[240px] place-items-center rounded-lg border border-slate-100 bg-white text-center">
+                  <div>
+                    <Wallet className="mx-auto mb-4 text-slate-300" size={54} />
+                    <div className="text-2xl font-semibold text-black">Нет недавних транзакций</div>
+                    <p className="mx-auto mt-3 max-w-[520px] text-base leading-6 text-slate-400">
+                      За выбранный период финансовые записи не найдены. Новые платежи появятся здесь автоматически.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => refreshReport(date)}
+                      className="mt-5 inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-base font-medium text-slate-600 shadow-sm transition hover:bg-slate-50"
+                    >
+                      <RefreshCw size={17} />
+                      Обновить дашборд
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
           </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }

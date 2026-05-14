@@ -4,7 +4,7 @@ function delay(ms = 600) {
 
 const clone = (data) => JSON.parse(JSON.stringify(data));
 const TODAY = new Date().toISOString().slice(0, 10);
-const DB_VERSION = "6"; // increment to force localStorage reset
+const DB_VERSION = "7"; // increment to force localStorage reset
 
 function shiftDate(isoDate, days) {
   const d = new Date(`${isoDate}T00:00:00`);
@@ -83,24 +83,35 @@ const initialDb = {
   ],
   appointments: [
     // d1 Сейткали — Терапевт
-    { id: "a1",  doctorId: "d1", date: TODAY, time: "09:00", duration: 30, patientId: "p1", status: "completed",  visitId: null },
+    { id: "a1",  doctorId: "d1", date: TODAY, time: "09:00", duration: 30, patientId: "p1", status: "completed",  visitId: "vToday1" },
     { id: "a2",  doctorId: "d1", date: TODAY, time: "10:00", duration: 60, patientId: "p2", status: "arrived",    visitId: null },
     { id: "a7",  doctorId: "d1", date: TODAY, time: "14:00", duration: 45, patientId: "p3", status: "scheduled",  visitId: null },
     // d2 Жумабаев — Хирург
-    { id: "a3",  doctorId: "d2", date: TODAY, time: "09:00", duration: 45, patientId: "p4", status: "completed",  visitId: null },
+    { id: "a3",  doctorId: "d2", date: TODAY, time: "09:00", duration: 45, patientId: "p4", status: "completed",  visitId: "vToday2" },
     { id: "a3b", doctorId: "d2", date: TODAY, time: "11:30", duration: 45, patientId: "p3", status: "scheduled",  visitId: null },
     // d3 Нурланова — Ортодонт
     { id: "a6",  doctorId: "d3", date: TODAY, time: "10:30", duration: 90, patientId: "p2", status: "arrived",    visitId: null },
     { id: "a8",  doctorId: "d3", date: TODAY, time: "13:00", duration: 30, patientId: "p1", status: "cancelled",  visitId: null },
     // d4 Касымов — Пародонтолог
-    { id: "a4b", doctorId: "d4", date: TODAY, time: "09:30", duration: 60, patientId: "p7", status: "completed",  visitId: null },
+    { id: "a4b", doctorId: "d4", date: TODAY, time: "09:30", duration: 60, patientId: "p7", status: "completed",  visitId: "vToday3" },
     { id: "a4c", doctorId: "d4", date: TODAY, time: "12:00", duration: 30, patientId: "p8", status: "scheduled",  visitId: null },
     // d5 Бекова — Эндодонт
-    { id: "a10", doctorId: "d5", date: TODAY, time: "09:00", duration: 45, patientId: "p5", status: "completed",  visitId: null },
+    { id: "a10", doctorId: "d5", date: TODAY, time: "09:00", duration: 45, patientId: "p5", status: "completed",  visitId: "vToday4" },
     { id: "a10b",doctorId: "d5", date: TODAY, time: "11:00", duration: 60, patientId: "p6", status: "arrived",    visitId: null },
     // d6 Абилов — Ортопед
     { id: "a6b", doctorId: "d6", date: TODAY, time: "10:00", duration: 60, patientId: "p9", status: "arrived",    visitId: null },
     { id: "a6c", doctorId: "d6", date: TODAY, time: "14:30", duration: 30, patientId: "p10",status: "scheduled",  visitId: null },
+    // Алдағы 1 аптаға арналған mock-жазбалар
+    { id: "af1", doctorId: "d1", date: shiftDate(TODAY, 1), time: "09:30", duration: 45, patientId: "p6", status: "scheduled", visitId: null },
+    { id: "af2", doctorId: "d2", date: shiftDate(TODAY, 1), time: "11:00", duration: 60, patientId: "p8", status: "scheduled", visitId: null },
+    { id: "af3", doctorId: "d3", date: shiftDate(TODAY, 2), time: "10:00", duration: 90, patientId: "p4", status: "scheduled", visitId: null },
+    { id: "af4", doctorId: "d4", date: shiftDate(TODAY, 2), time: "14:00", duration: 45, patientId: "p10", status: "scheduled", visitId: null },
+    { id: "af5", doctorId: "d5", date: shiftDate(TODAY, 3), time: "09:00", duration: 45, patientId: "p2", status: "scheduled", visitId: null },
+    { id: "af6", doctorId: "d6", date: shiftDate(TODAY, 3), time: "13:30", duration: 60, patientId: "p7", status: "scheduled", visitId: null },
+    { id: "af7", doctorId: "d1", date: shiftDate(TODAY, 4), time: "12:00", duration: 30, patientId: "p9", status: "scheduled", visitId: null },
+    { id: "af8", doctorId: "d3", date: shiftDate(TODAY, 5), time: "15:00", duration: 60, patientId: "p5", status: "scheduled", visitId: null },
+    { id: "af9", doctorId: "d2", date: shiftDate(TODAY, 6), time: "10:30", duration: 45, patientId: "p1", status: "scheduled", visitId: null },
+    { id: "af10", doctorId: "d4", date: shiftDate(TODAY, 7), time: "16:00", duration: 30, patientId: "p3", status: "scheduled", visitId: null },
     // Прошлые дни (history)
     { id: "a5",  doctorId: "d2", date: shiftDate(TODAY, -3), time: "09:00", duration: 30, patientId: "p1", status: "completed", visitId: "v2" },
     { id: "a9",  doctorId: "d3", date: shiftDate(TODAY, -5), time: "08:30", duration: 30, patientId: "p3", status: "completed", visitId: "v4" },
@@ -108,6 +119,38 @@ const initialDb = {
     { id: "a4",  doctorId: "d1", date: shiftDate(TODAY, -1), time: "15:00", duration: 30, patientId: "p3", status: "completed", visitId: "v1" },
   ],
   visits: [
+    {
+      id: "vToday1", appointmentId: "a1", doctorId: "d1", patientId: "p1",
+      startedAt: `${TODAY}T09:00:00`, finishedAt: `${TODAY}T09:28:00`,
+      complaint: "Профилактический осмотр", diagnosis: "Кариес дентина", notes: "Проведено терапевтическое лечение",
+      isFinal: true, diagnosisCode: "K02.1", cariesType: "deep", toothNumber: "16",
+      protocol: { complaints: "Боль при холодной пище", anamnesis: "Жалобы 2 дня", objective: "Кариозная полость зуба 16", diagnosisText: "K02.1 — кариес дентина", treatment: "Анестезия, препарирование, световая пломба" },
+      materials: [{ code: "ultracain", name: "Ultracain D-S forte 1.7ml", qty: 1, unit: "амп" }, { code: "filtek", name: "Filtek Z250", qty: 1, unit: "шт" }],
+    },
+    {
+      id: "vToday2", appointmentId: "a3", doctorId: "d2", patientId: "p4",
+      startedAt: `${TODAY}T09:00:00`, finishedAt: `${TODAY}T09:42:00`,
+      complaint: "Боль в области 48 зуба", diagnosis: "Ретинированный зуб", notes: "Хирургическая консультация и удаление",
+      isFinal: true, diagnosisCode: "K01.1", cariesType: "complicated", toothNumber: "48",
+      protocol: { complaints: "Боль при жевании", anamnesis: "Повторные жалобы", objective: "Воспаление в области 48", diagnosisText: "K01.1 — ретинированный зуб", treatment: "Удаление, медикаментозная обработка" },
+      materials: [{ code: "ultracain", name: "Ultracain D-S forte 1.7ml", qty: 2, unit: "амп" }],
+    },
+    {
+      id: "vToday3", appointmentId: "a4b", doctorId: "d4", patientId: "p7",
+      startedAt: `${TODAY}T09:30:00`, finishedAt: `${TODAY}T10:22:00`,
+      complaint: "Кровоточивость десен", diagnosis: "Гингивит", notes: "Пародонтологическая чистка",
+      isFinal: true, diagnosisCode: "K05.1", cariesType: "surface", toothNumber: "31",
+      protocol: { complaints: "Кровоточивость десен", anamnesis: "Жалобы 1 месяц", objective: "Налет и воспаление десен", diagnosisText: "K05.1 — хронический гингивит", treatment: "Профгигиена, полировка" },
+      materials: [{ code: "chlorhexidine", name: "Хлоргексидин 0.05%", qty: 1, unit: "шт" }],
+    },
+    {
+      id: "vToday4", appointmentId: "a10", doctorId: "d5", patientId: "p5",
+      startedAt: `${TODAY}T09:00:00`, finishedAt: `${TODAY}T09:40:00`,
+      complaint: "Ноющая боль после пломбы", diagnosis: "Пульпит", notes: "Эндодонтическое лечение",
+      isFinal: true, diagnosisCode: "K04.0", cariesType: "medium", toothNumber: "36",
+      protocol: { complaints: "Ноющая боль", anamnesis: "Пломба установлена ранее", objective: "Болезненность при зондировании", diagnosisText: "K04.0 — пульпит", treatment: "Обработка каналов, временная пломба" },
+      materials: [{ code: "biodentine", name: "Biodentine", qty: 1, unit: "шт" }],
+    },
     {
       id: "v1", appointmentId: "a4", doctorId: "d1", patientId: "p3",
       startedAt: `${shiftDate(TODAY, -1)}T15:00:00`, finishedAt: `${shiftDate(TODAY, -1)}T15:25:00`,
@@ -142,11 +185,15 @@ const initialDb = {
     },
   ],
   payments: [
+    { id: "payToday1", date: TODAY, time: "09:35", patientId: "p1", visitId: "vToday1", amount: 35000, method: "card" },
+    { id: "payToday2", date: TODAY, time: "09:50", patientId: "p4", visitId: "vToday2", amount: 85000, method: "cash" },
+    { id: "payToday3", date: TODAY, time: "10:30", patientId: "p7", visitId: "vToday3", amount: 28000, method: "card" },
+    { id: "payToday4", date: TODAY, time: "09:45", patientId: "p5", visitId: "vToday4", amount: 42000, method: "card" },
     { id: "pay1", date: shiftDate(TODAY, -1), time: "15:30", patientId: "p3", visitId: "v1", amount: 5000, method: "cash" },
     { id: "pay2", date: shiftDate(TODAY, -3), time: "09:45", patientId: "p1", visitId: "v2", amount: 18000, method: "card" },
     { id: "pay3", date: shiftDate(TODAY, -2), time: "11:35", patientId: "p2", visitId: "v3", amount: 7500, method: "cash" },
     { id: "pay4", date: shiftDate(TODAY, -5), time: "09:20", patientId: "p3", visitId: "v4", amount: 3000, method: "card" },
-    { id: "pay5", date: TODAY, time: "10:15", patientId: "p4", visitId: null, amount: 25000, method: "card" },
+    { id: "pay5", date: TODAY, time: "10:15", patientId: "p4", visitId: "vToday2", amount: 25000, method: "card" },
   ],
   inventory: [
     { id: "inv1", name: "Имплант Straumann BLT", category: "Имплантология", quantity: 15, unit: "шт", minQuantity: 5 },

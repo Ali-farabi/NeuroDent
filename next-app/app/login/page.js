@@ -9,147 +9,371 @@ import { useAuth } from "@/lib/AuthContext";
 export default function LoginPage() {
   const router = useRouter();
   const { saveUser } = useAuth();
-  const [phone, setPhone] = useState("87001112233");
+  const [mode, setMode] = useState("login");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [accepted, setAccepted] = useState(false);
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e) {
+  async function handleLogin(e) {
     e.preventDefault();
-    setError("");
+    setMessage("");
+
     if (!phone || !password) {
-      setError("Введите телефон и пароль");
+      setMessage("Введите телефон и пароль");
       return;
     }
+
     setLoading(true);
     try {
       const user = await login(phone, password);
       saveUser(user);
       router.push("/report");
     } catch (err) {
-      setError(err?.message || "Ошибка входа");
+      setMessage(err?.message || "Ошибка входа");
     } finally {
       setLoading(false);
     }
   }
 
+  function handleRegister(e) {
+    e.preventDefault();
+    setMessage("");
+
+    if (!fullName || !phone || !password) {
+      setMessage("Заполните все обязательные поля");
+      return;
+    }
+
+    if (!accepted) {
+      setMessage("Подтвердите согласие с условиями");
+      return;
+    }
+
+    setMode("login");
+    setMessage("Регистрация будет подключена после интеграции backend API");
+  }
+
+  const isLogin = mode === "login";
+
   return (
-    <>
+    <main className="auth-shell">
       <style>{`
-        @media (max-width: 640px) {
-          .auth-grid { grid-template-columns: 1fr !important; }
-          .auth-right-panel { display: none !important; }
+        .auth-shell {
+          min-height: 100vh;
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 40px 24px;
+          overflow: hidden;
+          background-color: #d9dcd8;
+        }
+
+        .auth-shell::before {
+          content: "";
+          position: absolute;
+          inset: -50vh 0;
+          width: 100vw;
+          background-image: url('/images/backround.png');
+          background-size: 100vw auto;
+          background-position: center 76%;
+          background-repeat: no-repeat;
+        }
+
+        .auth-shell::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+        }
+
+        .auth-brand {
+          position: absolute;
+          top: 28px;
+          left: 42px;
+          display: inline-flex;
+          align-items: center;
+          gap: 12px;
+          color: #2563eb;
+          font-size: 26px;
+          font-weight: 800;
+          letter-spacing: 0;
+          z-index: 2;
+        }
+
+        .auth-card {
+          width: min(100%, 445px);
+          padding: 38px 50px 36px;
+          border-radius: 18px;
+          background: rgba(255, 255, 255, 0.97);
+          box-shadow: 0 18px 50px rgba(15, 23, 42, 0.1);
+          z-index: 1;
+        }
+
+        .auth-title {
+          margin: 0;
+          color: #030712;
+          font-size: 28px;
+          line-height: 1.12;
+          font-weight: 800;
+          text-align: center;
+          letter-spacing: 0;
+        }
+
+        .auth-title span,
+        .auth-link {
+          color: #2563eb;
+        }
+
+        .auth-subtitle {
+          margin: 14px 0 20px;
+          color: #7a7f87;
+          font-size: 12px;
+          text-align: center;
+        }
+
+        .auth-link {
+          border: 0;
+          padding: 0;
+          background: transparent;
+          cursor: pointer;
+          font-weight: 500;
+        }
+
+        .auth-form {
+          display: grid;
+          gap: 10px;
+        }
+
+        .auth-input {
+          width: 100%;
+          height: 38px;
+          padding: 0 12px;
+          border: 1px solid #d1d5db;
+          border-radius: 7px;
+          background: #fbfbfc;
+          color: #111827;
+          font-size: 12px;
+          outline: none;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+        }
+
+        .auth-input::placeholder {
+          color: #b8bec7;
+        }
+
+        .auth-input:focus {
+          border-color: #2563eb;
+          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+          background: #fff;
+        }
+
+        .auth-row {
+          display: flex;
+          align-items: flex-start;
+          gap: 9px;
+          color: #111827;
+          font-size: 10px;
+          line-height: 1.35;
+        }
+
+        .auth-row input {
+          width: 16px;
+          height: 16px;
+          margin: 1px 0 0;
+          accent-color: #2563eb;
+        }
+
+        .auth-submit {
+          height: 38px;
+          margin-top: 10px;
+          border: 0;
+          border-radius: 7px;
+          background: #2563eb;
+          color: #fff;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background 0.15s ease, opacity 0.15s ease;
+        }
+
+        .auth-submit:hover {
+          background: #1d4ed8;
+        }
+
+        .auth-submit:disabled {
+          cursor: not-allowed;
+          opacity: 0.72;
+        }
+
+        .auth-message {
+          min-height: 0;
+          color: #dc2626;
+          font-size: 11px;
+          text-align: center;
+        }
+
+        .auth-google {
+          height: 34px;
+          border: 1px solid #9ca3af;
+          border-radius: 5px;
+          background: #fff;
+          color: #1f2937;
+          font-size: 11px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+
+        .auth-demo {
+          display: none;
+          margin: 10px 0 0;
+          color: #6b7280;
+          font-size: 12px;
+          line-height: 1.55;
+          text-align: center;
+        }
+
+        .auth-demo code {
+          color: #111827;
+          font-weight: 700;
+        }
+
+        @media (max-width: 760px) {
+          .auth-shell {
+            padding: 96px 18px 28px;
+          }
+
+          .auth-shell::before {
+            width: 100vw;
+            background-size: auto 120vh;
+            background-position: 42% center;
+          }
+
+          .auth-shell::after {
+            display: block;
+          }
+
+          .auth-brand {
+            left: 20px;
+            top: 20px;
+            font-size: 22px;
+          }
+
+          .auth-card {
+            padding: 34px 24px;
+            border-radius: 18px;
+          }
+
+          .auth-title {
+            font-size: 25px;
+          }
+
+          .auth-subtitle {
+            font-size: 15px;
+          }
         }
       `}</style>
-    <div
-      className="auth-grid"
-      style={{
-        minHeight: "100vh",
-        display: "grid",
-        gridTemplateColumns: "600px 1fr",
-        background: "var(--bg)",
-      }}>
-      {/* Левая часть — форма */}
-      <div style={{
-        background: "var(--surface)",
-        display: "grid",
-        placeItems: "center",
-        padding: 28,
-        position: "relative",
-      }}>
-        {/* Logo */}
-        <div style={{ position: "absolute", left: 28, top: 22, display: "flex", alignItems: "center", gap: 8 }}>
-          <Image src="/images/Medimetricslogotype.png" alt="NeuroDent" width={40} height={36} />
-          <span style={{ fontSize: 22, fontWeight: 800, color: "var(--primary)" }}>Neurodent</span>
-        </div>
 
-        {/* Форма */}
-        <div style={{ width: "min(400px, 100%)", padding: 22 }}>
-          <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>Вход в систему</div>
-
-          <form onSubmit={handleSubmit} style={{ display: "grid", gap: 10 }}>
-            <label style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--muted)" }}>
-              Телефон (любые 10 цифр)
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="8700..."
-                required
-                style={{
-                  padding: "9px 12px",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius-sm)",
-                  fontSize: 14,
-                  color: "var(--text)",
-                  background: "var(--surface)",
-                }}
-              />
-            </label>
-
-            <label style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--muted)" }}>
-              Пароль
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••"
-                required
-                style={{
-                  padding: "9px 12px",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius-sm)",
-                  fontSize: 14,
-                  color: "var(--text)",
-                  background: "var(--surface)",
-                }}
-              />
-            </label>
-
-            {error && (
-              <div style={{ color: "var(--danger)", fontSize: 13 }}>{error}</div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                marginTop: 8,
-                padding: "10px 0",
-                background: loading ? "var(--primary-100)" : "var(--primary)",
-                color: loading ? "var(--primary)" : "#fff",
-                border: "none",
-                borderRadius: "var(--radius-sm)",
-                fontWeight: 600,
-                fontSize: 14,
-                cursor: loading ? "not-allowed" : "pointer",
-                transition: "background 0.15s ease",
-              }}
-            >
-              {loading ? "Входим..." : "Войти"}
-            </button>
-
-            <div style={{ marginTop: 8, color: "var(--muted)", fontSize: 12, lineHeight: 1.6 }}>
-              <b>Демо-пароли для проверки ролей:</b><br />
-              • <code>1234</code> — Владелец (доступ ко всему)<br />
-              • <code>admin</code> — Админ (Расписание, Пациенты, Касса)<br />
-              • <code>doctor</code> — Врач (AI, Расписание, Пациенты)<br />
-              • <code>patient</code> — Пациент (только «Моя медкарта»)
-            </div>
-          </form>
-        </div>
+      <div className="auth-brand" aria-label="NeuroDent">
+        <Image
+          src="/images/Medimetricslogotype.png"
+          alt=""
+          width={44}
+          height={40}
+          priority
+          style={{ width: 44, height: "auto" }}
+        />
+        <span>Neurodent</span>
       </div>
 
-      {/* Правая часть — фоновое изображение */}
-      <div
-        className="auth-right-panel"
-        style={{
-          backgroundImage: "url('/images/imgbag.jpg')",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-        }}
-      />
-    </div>
-    </>
+      <section className="auth-card" aria-label={isLogin ? "Вход в Neurodent" : "Регистрация в Neurodent"}>
+        <h1 className="auth-title">
+          {isLogin ? (
+            <>
+              Войдите в <span>Neurodent</span>
+            </>
+          ) : (
+            "Регистрация"
+          )}
+        </h1>
+
+        <p className="auth-subtitle">
+          {isLogin ? "Впервые в Neurodent? " : "Уже являетесь пользователем Neurodent? "}
+          <button className="auth-link" type="button" onClick={() => { setMode(isLogin ? "register" : "login"); setMessage(""); }}>
+            {isLogin ? "Зарегистрируйтесь бесплатно" : "Войти"}
+          </button>
+        </p>
+
+        <form className="auth-form" onSubmit={isLogin ? handleLogin : handleRegister} noValidate>
+          {!isLogin && (
+            <input
+              className="auth-input"
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Полное имя"
+              autoComplete="name"
+            />
+          )}
+
+          <input
+            className="auth-input"
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="Номер телефона *"
+            autoComplete="tel"
+          />
+
+          <input
+            className="auth-input"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Пароль (+8 символов)"
+            autoComplete={isLogin ? "current-password" : "new-password"}
+          />
+
+          {isLogin && (
+            <button className="auth-link" type="button" style={{ justifySelf: "start", fontSize: 12 }}>
+              Забыли пароль?
+            </button>
+          )}
+
+          <label className="auth-row">
+            <input
+              type="checkbox"
+              checked={accepted}
+              onChange={(e) => setAccepted(e.target.checked)}
+            />
+            <span>
+              Я согласен с <span className="auth-link">Положениями и условиями Neurodent</span> и признаю{" "}
+              <span className="auth-link">Политику конфиденциальности</span>.
+            </span>
+          </label>
+
+          <div className="auth-message" role="status" aria-live="polite">{message}</div>
+
+          <button className="auth-submit" type="submit" disabled={loading}>
+            {loading ? "Входим..." : isLogin ? "Войти" : "Зарегистрироваться"}
+          </button>
+
+          {!isLogin && (
+            <button className="auth-google" type="button">
+              Продолжить с учетной записью Google
+            </button>
+          )}
+        </form>
+
+        {isLogin && (
+          <p className="auth-demo">
+            Demo password: <code>1234</code>, <code>admin</code>, <code>doctor</code>, <code>patient</code>
+          </p>
+        )}
+      </section>
+    </main>
   );
 }
