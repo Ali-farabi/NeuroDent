@@ -4,7 +4,7 @@ function delay(ms = 600) {
 
 const clone = (data) => JSON.parse(JSON.stringify(data));
 const TODAY = new Date().toISOString().slice(0, 10);
-const DB_VERSION = "7"; // increment to force localStorage reset
+const DB_VERSION = "8"; // increment to force localStorage reset
 
 function shiftDate(isoDate, days) {
   const d = new Date(`${isoDate}T00:00:00`);
@@ -67,15 +67,15 @@ const initialDb = {
     { id: "d6", name: "Абилов Тимур Сейткалиевич", specialty: "Ортопед-стоматолог" },
   ],
   // patients: центр всех страниц — appointment, visit, payment, CRM — всё связано через patient.id
-  // channel — показывает канал связи в CRM (WhatsApp / Instagram / Телефон)
+  // channel — показывает канал связи в CRM (WhatsApp / Телефон)
   // lastMessage — текст последнего сообщения в CRM (backend: JOIN из таблицы crm_messages)
   patients: [
     { id: "p1",  name: "Иван Иванов",      phone: "87001112233", birthDate: "2001-04-10", createdAt: "2023-03-02", email: "ivan@mail.ru",      address: "Алматы, Абай 10",        balance: 0,      allergies: "Аллергия на лидокаин", bonusPoints: 320, channel: "WhatsApp",  lastMessage: "Здравствуйте! Можно записаться к хирургу?", lastMessageTime: "10:42" },
-    { id: "p2",  name: "Анна Петрова",     phone: "87009998877", birthDate: "1998-11-05", createdAt: "2023-11-10", email: "anna@gmail.com",    address: "Алматы, Достык 5",       balance: 0,      allergies: null,                   bonusPoints: 85,  channel: "Instagram", lastMessage: "Сколько стоит имплант?",                    lastMessageTime: "Вчера" },
+    { id: "p2",  name: "Анна Петрова",     phone: "87009998877", birthDate: "1998-11-05", createdAt: "2023-11-10", email: "anna@gmail.com",    address: "Алматы, Достык 5",       balance: 0,      allergies: null,                   bonusPoints: 85,  channel: "WhatsApp", lastMessage: "Сколько стоит имплант?",                    lastMessageTime: "Вчера" },
     { id: "p3",  name: "Дамир Алиев",      phone: "87005556677", birthDate: "2005-02-01", createdAt: "2024-01-15", email: "damir@mail.ru",     address: "Алматы, Сейфуллин 34",   balance: 0,      allergies: null,                   bonusPoints: 175, channel: "WhatsApp",  lastMessage: "Спасибо, буду вовремя.",                    lastMessageTime: "Вчера" },
     { id: "p4",  name: "Айгерим Бекова",   phone: "87712345678", birthDate: "1995-07-22", createdAt: "2024-02-10", email: "",                  address: "Алматы, Тимирязев 42",   balance: -8000,  allergies: "Пенициллин",            bonusPoints: 0,   channel: "WhatsApp",  lastMessage: "Когда можно к ортодонту?",                  lastMessageTime: "Пн"    },
     { id: "p5",  name: "Нурлан Сеитов",    phone: "87001234567", birthDate: "1988-03-15", createdAt: "2024-03-05", email: "nurlan@inbox.ru",   address: "Алматы, Розыбакиев 15",  balance: 0,      allergies: null,                   bonusPoints: 210, channel: "Телефон",   lastMessage: null,                                         lastMessageTime: null    },
-    { id: "p6",  name: "Мадина Касымова",  phone: "87759876543", birthDate: "2000-12-30", createdAt: "2024-03-18", email: "madina@mail.kz",    address: "Алматы, Навои 25",       balance: 0,      allergies: null,                   bonusPoints: 50,  channel: "Instagram", lastMessage: "Добрый день!",                               lastMessageTime: "Пт"    },
+    { id: "p6",  name: "Мадина Касымова",  phone: "87759876543", birthDate: "2000-12-30", createdAt: "2024-03-18", email: "madina@mail.kz",    address: "Алматы, Навои 25",       balance: 0,      allergies: null,                   bonusPoints: 50,  channel: "WhatsApp", lastMessage: "Добрый день!",                               lastMessageTime: "Пт"    },
     { id: "p7",  name: "Арман Жумабаев",   phone: "87013334455", birthDate: "1992-09-08", createdAt: "2024-04-01", email: "",                  address: "Алматы, Байтурсынов 8",  balance: -5000,  allergies: "Артикаин",              bonusPoints: 130, channel: "WhatsApp",  lastMessage: "Можно перенести на пятницу?",               lastMessageTime: "Чт"    },
     { id: "p8",  name: "Зарина Абилова",   phone: "87027778899", birthDate: "2003-05-17", createdAt: "2024-04-10", email: "zarina@gmail.com",  address: "Алматы, Саина 88",       balance: 0,      allergies: null,                   bonusPoints: 0,   channel: "WhatsApp",  lastMessage: null,                                         lastMessageTime: null    },
     { id: "p9",  name: "Серик Нурланов",   phone: "87051112233", birthDate: "1979-11-04", createdAt: "2024-04-15", email: "",                  address: "Алматы, Рыскулова 20",   balance: 0,      allergies: null,                   bonusPoints: 440, channel: "Телефон",   lastMessage: null,                                         lastMessageTime: null    },
@@ -239,7 +239,27 @@ export async function searchPatients(query = "") {
   await delay(400);
   const db = getDb();
   const q = String(query).trim().toLowerCase();
-  return clone(db.patients.filter((p) => !q || p.name.toLowerCase().includes(q) || String(p.phone).includes(q)));
+  const enriched = db.patients.map((p) => {
+    const appointments = db.appointments
+      .filter((a) => a.patientId === p.id)
+      .sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
+    const lastCompleted = appointments.find((a) => a.visitId);
+    const nextAppointment = [...appointments]
+      .filter((a) => a.date >= TODAY && ["scheduled", "arrived"].includes(a.status))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))[0];
+    const lastVisit = lastCompleted ? db.visits.find((v) => v.id === lastCompleted.visitId) : null;
+
+    return {
+      ...p,
+      lastVisitDate: lastCompleted?.date || "",
+      lastVisitTime: lastCompleted?.time || "",
+      lastDiagnosis: lastVisit?.diagnosis || "",
+      nextAppointmentDate: nextAppointment?.date || "",
+      nextAppointmentTime: nextAppointment?.time || "",
+    };
+  });
+
+  return clone(enriched.filter((p) => !q || p.name.toLowerCase().includes(q) || String(p.phone).includes(q)));
 }
 
 export async function getPatientById(id) {
@@ -380,7 +400,7 @@ export async function createPayment(data) {
   const method = String(data?.method || "");
   const patientId = String(data?.patientId || "");
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("Сумма должна быть больше 0");
-  if (!["cash", "card"].includes(method)) throw new Error("Неверный метод оплаты");
+  if (!["cash", "card", "kaspi"].includes(method)) throw new Error("Неверный метод оплаты");
   if (!patientId) throw new Error("Выберите пациента");
   const payment = {
     id: genId("pay"),
@@ -390,6 +410,8 @@ export async function createPayment(data) {
     visitId: data?.visitId ? String(data.visitId) : null,
     amount,
     method,
+    doctorId: data?.doctorId ? String(data.doctorId) : null,
+    note: data?.note ? String(data.note).trim() : "",
   };
   db.payments.push(payment);
   saveDb(db);
@@ -672,7 +694,10 @@ export async function getAllVisits(filters = {}) {
     const q = String(filters.query).toLowerCase();
     list = list.filter((v) =>
       v.patientName.toLowerCase().includes(q) ||
+      (v.doctorName || "").toLowerCase().includes(q) ||
+      (v.specialty || "").toLowerCase().includes(q) ||
       (v.diagnosis || "").toLowerCase().includes(q) ||
+      (v.diagnosisCode || "").toLowerCase().includes(q) ||
       (v.complaint || "").toLowerCase().includes(q)
     );
   }

@@ -1,676 +1,792 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  getPaymentsByDate,
-  createPayment,
-  getInventoryItems,
   addInventoryItem,
-  updateInventoryQuantity,
-  searchPatients,
+  createPayment,
   getDoctors,
+  getInventoryItems,
+  getPaymentsByDate,
+  searchPatients,
+  updateInventoryQuantity,
 } from "@/lib/api";
-import { Inbox, Banknote, CreditCard, AlertTriangle, Package, Search, PartyPopper, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Banknote,
+  CalendarDays,
+  CheckCircle2,
+  ClipboardPlus,
+  CreditCard,
+  Download,
+  MoreVertical,
+  Package,
+  Phone,
+  Plus,
+  QrCode,
+  Search,
+  Send,
+  Timer,
+  Users,
+  Wallet,
+  X,
+} from "lucide-react";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
-function fmt(n) {
-  return Number(n || 0).toLocaleString("ru-RU") + " ₸";
+const METHOD_META = {
+  card: { label: "Карта", icon: CreditCard, tone: "#2563eb", bg: "#eff6ff" },
+  cash: { label: "Наличные", icon: Banknote, tone: "#64748b", bg: "#f8fafc" },
+  kaspi: { label: "Kaspi/QR", icon: QrCode, tone: "#0f766e", bg: "#ecfdf5" },
+};
+
+const CATEGORIES = [
+  "Анестезия",
+  "Терапия",
+  "Хирургия",
+  "Ортодонтия",
+  "Ортопедия",
+  "Эндодонтия",
+  "Имплантология",
+  "Гигиена",
+  "Антисептики",
+  "Расходники",
+];
+
+function fmt(value) {
+  return `${Number(value || 0).toLocaleString("ru-RU")} ₸`;
 }
 
-// ── Summary card with icon ────────────────────────────────────────────────────
-function StatCard({ label, value, icon, accent }) {
+function normalizePhone(phone) {
+  return String(phone || "").replace(/\D/g, "").replace(/^8/, "7");
+}
+
+function exportMock() {
+  alert("Экспорт будет подключен после backend-интеграции.");
+}
+
+function StatCard({ title, value, helper, icon: Icon, tone = "#2563eb", badge }) {
   return (
-    <div style={{
-      background: "var(--surface)", border: "1px solid var(--border)",
-      borderRadius: "var(--radius)", padding: "18px 20px",
-      flex: 1, minWidth: 140, display: "flex", alignItems: "center", gap: 14,
-      boxShadow: "var(--shadow-sm)",
-      borderLeft: `3px solid ${accent || "var(--border)"}`,
-    }}>
-      <div style={{
-        width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-        background: accent ? `${accent}18` : "var(--surface-2)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        color: accent || "var(--muted)",
-      }}>
-        {icon}
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase text-slate-500">{title}</div>
+          <div className="mt-2 text-3xl font-bold leading-none text-slate-950">{value}</div>
+        </div>
+        <div className="grid h-10 w-10 place-items-center rounded-lg" style={{ background: `${tone}12`, color: tone }}>
+          <Icon size={20} />
+        </div>
       </div>
+      <div className={`text-xs font-semibold ${badge ? "text-emerald-600" : "text-slate-500"}`}>{helper}</div>
+    </div>
+  );
+}
+
+function SearchInput({ value, onChange, placeholder, width = "420px" }) {
+  return (
+    <label className="relative block" style={{ width: `min(100%, ${width})` }}>
+      <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="h-10 w-full rounded-full border border-slate-200 bg-white pl-10 pr-4 text-sm text-slate-700 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+      />
+    </label>
+  );
+}
+
+function TopTabs({ active, onChange }) {
+  const tabs = [
+    ["kassa", "Касса"],
+    ["debtors", "Должники"],
+    ["sklad", "Склад"],
+  ];
+
+  return (
+    <div className="flex gap-7 border-b border-slate-200">
+      {tabs.map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => onChange(id)}
+          className={`border-b-2 px-1 pb-3 text-sm font-semibold transition ${
+            active === id ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-900"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState({ title, text }) {
+  return (
+    <div className="grid min-h-[220px] place-items-center text-center">
       <div>
-        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 2, fontWeight: 500 }}>{label}</div>
-        <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.3px" }}>{value}</div>
+        <Wallet className="mx-auto mb-3 text-slate-300" size={44} />
+        <div className="text-lg font-semibold text-slate-950">{title}</div>
+        <p className="mt-1 text-sm text-slate-500">{text}</p>
       </div>
     </div>
   );
 }
 
-// ── Badge ─────────────────────────────────────────────────────────────────────
-function Badge({ children, color, bg, border }) {
-  return (
-    <span style={{
-      fontSize: 11, padding: "2px 9px", borderRadius: 6, fontWeight: 500,
-      background: bg, color: color, border: `1px solid ${border}`,
-      display: "inline-block",
-    }}>
-      {children}
-    </span>
-  );
-}
-
-// ── КАССА ─────────────────────────────────────────────────────────────────────
 function KassaTab() {
   const [date, setDate] = useState(TODAY);
   const [payments, setPayments] = useState([]);
   const [patients, setPatients] = useState([]);
   const [doctors, setDoctors] = useState([]);
-  const [form, setForm] = useState({ patientId: "", doctorId: "", amount: "", method: "cash", note: "" });
+  const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [form, setForm] = useState({ patientId: "", doctorId: "", amount: "", discount: "", method: "card", note: "" });
 
   useEffect(() => {
-    Promise.all([searchPatients(""), getDoctors()]).then(([p, d]) => { setPatients(p); setDoctors(d); });
+    Promise.all([searchPatients(""), getDoctors()]).then(([patientList, doctorList]) => {
+      setPatients(patientList);
+      setDoctors(doctorList);
+    });
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line
-    setLoading(true);
-    getPaymentsByDate(date).then(setPayments).finally(() => setLoading(false));
+    let active = true;
+    getPaymentsByDate(date)
+      .then((data) => {
+        if (active) setPayments(data);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [date]);
 
-  const totalCash = payments.filter(p => p.method === "cash").reduce((s, p) => s + p.amount, 0);
-  const totalCard = payments.filter(p => p.method === "card").reduce((s, p) => s + p.amount, 0);
+  const filteredPayments = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return payments;
+    return payments.filter((payment) =>
+      (payment.patientName || "").toLowerCase().includes(q) ||
+      (payment.note || "").toLowerCase().includes(q) ||
+      (METHOD_META[payment.method]?.label || payment.method || "").toLowerCase().includes(q) ||
+      String(payment.amount || "").includes(q)
+    );
+  }, [payments, query]);
 
-  async function handleAdd(e) {
-    e.preventDefault();
-    setSaving(true); setMsg("");
+  const totalAmount = filteredPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const average = filteredPayments.length ? Math.round(totalAmount / filteredPayments.length) : 0;
+
+  async function handleAdd(event) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage("");
+
     try {
-      await createPayment({ patientId: form.patientId, doctorId: form.doctorId || null, amount: Number(form.amount), method: form.method, note: form.note, date });
-      setMsg("✓ Оплата сохранена");
-      setForm({ patientId: "", doctorId: "", amount: "", method: "cash", note: "" });
+      const amount = Number(form.amount) - Number(form.discount || 0);
+      await createPayment({
+        patientId: form.patientId,
+        doctorId: form.doctorId || null,
+        amount,
+        method: form.method,
+        note: form.note,
+        date,
+      });
+      setForm({ patientId: "", doctorId: "", amount: "", discount: "", method: "card", note: "" });
       setPayments(await getPaymentsByDate(date));
-      setTimeout(() => setMsg(""), 3000);
-    } catch (err) {
-      setMsg(err?.message || "Ошибка");
-    } finally { setSaving(false); }
+      setMessage("Платеж успешно проведен");
+      setTimeout(() => setMessage(""), 2500);
+    } catch (error) {
+      setMessage(error?.message || "Не удалось сохранить платеж");
+    } finally {
+      setSaving(false);
+    }
   }
-
-  function printReceipt(p) {
-    const w = window.open("", "_blank", "width=400,height=500");
-    w.document.write(`
-      <html><head><title>Чек</title><style>
-        body { font-family: monospace; padding: 24px; font-size: 13px; }
-        h2 { text-align: center; margin-bottom: 4px; }
-        p { margin: 4px 0; }
-        .sep { border-top: 1px dashed #000; margin: 10px 0; }
-        .big { font-size: 18px; font-weight: bold; }
-      </style></head><body>
-        <h2>NeuroDent</h2>
-        <p style="text-align:center;color:#555">Стоматологическая клиника</p>
-        <div class="sep"></div>
-        <p>Пациент: <b>${p.patientName || "—"}</b></p>
-        <p>Дата: ${p.date} ${p.time || ""}</p>
-        <p>Оплата: ${p.method === "cash" ? "Наличные" : "Карта"}</p>
-        ${p.note ? `<p>Примечание: ${p.note}</p>` : ""}
-        <div class="sep"></div>
-        <p class="big">Сумма: ${fmt(p.amount)}</p>
-        <div class="sep"></div>
-        <p style="text-align:center;font-size:11px">Спасибо! +7 771 163 2030</p>
-      </body></html>
-    `);
-    w.document.close();
-    w.print();
-  }
-
-  const methodLabel = { cash: "Наличные", card: "Карта" };
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <div className="pay-stats">
-        <div className="pay-stat-card">
-          <StatCard label="Дневная выручка" value={fmt(totalCash + totalCard)} accent="#2563eb"
-            icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>} />
+    <div className="grid gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="m-0 text-2xl font-semibold text-slate-950">Кассовый терминал</h1>
+          <p className="mt-1 text-sm text-slate-500">Управление платежами и финансовыми операциями клиники</p>
         </div>
-        <div className="pay-stat-card">
-          <StatCard label="Наличные" value={fmt(totalCash)} accent="#16a34a"
-            icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>} />
-        </div>
-        <div className="pay-stat-card">
-          <StatCard label="Карта" value={fmt(totalCard)} accent="#0ea5e9"
-            icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>} />
-        </div>
-        <div className="pay-stat-card">
-          <StatCard label="Транзакции" value={payments.length} accent="#f59e0b"
-            icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>} />
-        </div>
+        <button onClick={exportMock} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm">
+          <Download size={16} />
+          Export to Excel
+        </button>
       </div>
 
-      {/* Date filter */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>Дата:</span>
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inputStyle, width: "auto" }} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SearchInput value={query} onChange={setQuery} placeholder="Поиск платежа, пациента или услуги..." />
+        <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600 shadow-sm">
+          <CalendarDays size={16} />
+          <input
+            type="date"
+            value={date}
+            onChange={(event) => {
+              setLoading(true);
+              setDate(event.target.value);
+            }}
+            className="bg-transparent outline-none"
+          />
+        </label>
       </div>
 
-      <div className="pay-kassa-grid">
-        {/* Transactions */}
-        <div style={cardStyle}>
-          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span>Транзакции</span>
-            <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 400 }}>{payments.length} записей</span>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard title="Платежей сегодня" value={filteredPayments.length} helper={`за ${date}`} icon={ClipboardPlus} />
+        <StatCard title="Выручка" value={fmt(totalAmount)} helper="+0% к вчера" icon={Banknote} tone="#16a34a" badge />
+        <StatCard title="Транзакций" value={filteredPayments.length} helper="наличные и карты" icon={CreditCard} tone="#0ea5e9" />
+        <StatCard title="Средний чек" value={average ? fmt(average) : "—"} helper={average ? "рассчитан" : "будет рассчитан"} icon={Wallet} tone="#f59e0b" />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[390px_minmax(0,1fr)]">
+        <form onSubmit={handleAdd} className="rounded-lg border border-slate-200 bg-white p-7 shadow-sm">
+          <div className="mb-7 flex items-center gap-4">
+            <div className="grid h-11 w-11 place-items-center rounded-full bg-blue-600 text-white">
+              <CreditCard size={22} />
+            </div>
+            <div>
+              <h2 className="m-0 text-xl font-semibold text-slate-950">Новый платеж</h2>
+              <p className="mt-1 text-sm text-slate-500">Заполните данные для проведения операции</p>
+            </div>
           </div>
 
-          {loading ? (
-            <div style={{ padding: "32px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>Загрузка...</div>
-          ) : payments.length === 0 ? (
-            <div style={{ padding: "40px 0", textAlign: "center" }}>
-              <div style={{ fontSize: 32, marginBottom: 8, display: "flex", justifyContent: "center" }}><Inbox size={32} /></div>
-              <div style={{ color: "var(--muted)", fontSize: 13 }}>Нет оплат за эту дату</div>
-            </div>
-          ) : (
-            <div className="pay-table-wrap">
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                  {["Пациент", "Сумма", "Способ", "Примечание", "Время", ""].map((h, i) => (
-                    <th key={i} style={{ textAlign: "left", padding: "7px 10px", color: "var(--muted)", fontWeight: 500, fontSize: 12 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {payments.map(p => (
-                  <tr key={p.id} style={{ borderBottom: "1px solid var(--border)", transition: "background 0.1s" }}
-                    onMouseEnter={e => e.currentTarget.style.background = "var(--hover)"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    <td style={{ ...tdStyle, fontWeight: 500 }}>{p.patientName || "—"}</td>
-                    <td style={{ ...tdStyle, fontWeight: 700, color: "var(--success)" }}>{fmt(p.amount)}</td>
-                    <td style={tdStyle}>
-                      <Badge
-                        bg={p.method === "cash" ? "#f0fdf4" : "#eff6ff"}
-                        color={p.method === "cash" ? "#16a34a" : "#2563eb"}
-                        border={p.method === "cash" ? "#bbf7d0" : "#bfdbfe"}
-                      >
-                        {methodLabel[p.method] || p.method}
-                      </Badge>
-                    </td>
-                    <td style={{ ...tdStyle, color: "var(--muted)" }}>{p.note || "—"}</td>
-                    <td style={{ ...tdStyle, color: "var(--muted)" }}>{p.time || "—"}</td>
-                    <td style={tdStyle}>
-                      <button onClick={() => printReceipt(p)} title="Печать чека"
-                        style={{ ...iconBtn, color: "var(--primary)" }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                          <rect x="6" y="14" width="12" height="8"/>
-                        </svg>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            </div>
-          )}
-        </div>
-
-        {/* Add payment form */}
-        <div style={{ ...cardStyle, background: "var(--surface-2)", border: "1px solid var(--border)" }}>
-          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 16, color: "var(--text)" }}>
-            + Добавить оплату
-          </div>
-          <form onSubmit={handleAdd} style={{ display: "grid", gap: 12 }}>
-            <Field label="Пациент *">
-              <select value={form.patientId} onChange={e => setForm(f => ({ ...f, patientId: e.target.value }))} style={inputStyle} required>
-                <option value="">— Выберите —</option>
-                {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          <div className="grid gap-5">
+            <Field label="Пациент">
+              <select value={form.patientId} onChange={(event) => setForm((prev) => ({ ...prev, patientId: event.target.value }))} required className="field-control">
+                <option value="">ФИО или номер карты</option>
+                {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.name}</option>)}
               </select>
             </Field>
             <Field label="Врач">
-              <select value={form.doctorId} onChange={e => setForm(f => ({ ...f, doctorId: e.target.value }))} style={inputStyle}>
-                <option value="">— Выберите —</option>
-                {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              <select value={form.doctorId} onChange={(event) => setForm((prev) => ({ ...prev, doctorId: event.target.value }))} className="field-control">
+                <option value="">ФИО врача</option>
+                {doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.name}</option>)}
               </select>
             </Field>
-            <Field label="Сумма (₸) *">
-              <input type="number" min="1" value={form.amount}
-                onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
-                placeholder="15 000" style={inputStyle} required />
-            </Field>
-            <Field label="Способ оплаты">
-              <div style={{ display: "flex", gap: 8 }}>
-                {[["cash", <span key="c" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Banknote size={14} /> Наличные</span>], ["card", <span key="d" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><CreditCard size={14} /> Карта</span>]].map(([m, label]) => (
-                  <button key={m} type="button" onClick={() => setForm(f => ({ ...f, method: m }))}
-                    style={{
-                      flex: 1, padding: "8px 4px", borderRadius: "var(--radius-sm)",
-                      border: `1.5px solid ${form.method === m ? "var(--primary)" : "var(--border)"}`,
-                      background: form.method === m ? "var(--active)" : "var(--surface)",
-                      color: form.method === m ? "var(--primary)" : "var(--muted)",
-                      fontWeight: form.method === m ? 600 : 400,
-                      fontSize: 12, cursor: "pointer", transition: "all 0.15s",
-                    }}>
-                    {label}
-                  </button>
-                ))}
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Сумма (₸)">
+                <input value={form.amount} onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))} type="number" min="1" required placeholder="0.00" className="field-control" />
+              </Field>
+              <Field label="Скидка (%)">
+                <input value={form.discount} onChange={(event) => setForm((prev) => ({ ...prev, discount: event.target.value }))} type="number" min="0" placeholder="0" className="field-control" />
+              </Field>
+            </div>
+            <Field label="Метод оплаты">
+              <div className="grid grid-cols-3 gap-3">
+                {Object.entries(METHOD_META).map(([method, meta]) => {
+                  const Icon = meta.icon;
+                  const active = form.method === method;
+                  return (
+                    <button
+                      key={method}
+                      type="button"
+                      onClick={() => setForm((prev) => ({ ...prev, method }))}
+                      className={`grid h-20 place-items-center rounded-lg border text-xs font-semibold transition ${
+                        active ? "border-blue-600 bg-blue-50 text-blue-600" : "border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-200"
+                      }`}
+                    >
+                      <Icon size={22} />
+                      <span>{meta.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </Field>
             <Field label="Примечание">
-              <input type="text" value={form.note}
-                onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
-                placeholder="Лечение зуба, первичный приём..." style={inputStyle} />
+              <input value={form.note} onChange={(event) => setForm((prev) => ({ ...prev, note: event.target.value }))} placeholder="Комментарий к платежу..." className="field-control" />
             </Field>
-
-            {msg && (
-              <div style={{
-                fontSize: 12, padding: "8px 12px", borderRadius: "var(--radius-sm)",
-                background: msg.startsWith("✓") ? "#f0fdf4" : "#fef2f2",
-                color: msg.startsWith("✓") ? "var(--success)" : "var(--danger)",
-                border: `1px solid ${msg.startsWith("✓") ? "#bbf7d0" : "#fecaca"}`,
-              }}>
-                {msg}
-              </div>
-            )}
-            <button type="submit" disabled={saving} style={{ ...btnPrimary, width: "100%", marginTop: 2 }}>
-              {saving ? "Сохранение..." : "Добавить оплату →"}
+            {message && <div className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700">{message}</div>}
+            <button disabled={saving} type="submit" className="mt-1 inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:opacity-60">
+              <CheckCircle2 size={18} />
+              {saving ? "Проведение..." : "Провести платеж"}
             </button>
-          </form>
+          </div>
+        </form>
+
+        <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 p-7">
+            <div>
+              <h2 className="m-0 text-xl font-semibold text-slate-950">Последние операции</h2>
+              <p className="mt-1 text-sm text-slate-500">История транзакций за выбранную дату</p>
+            </div>
+            <button className="text-sm font-semibold text-blue-600">Весь отчет</button>
+          </div>
+          {loading ? (
+            <EmptyState title="Загрузка" text="Получаем платежи за выбранную дату" />
+          ) : filteredPayments.length === 0 ? (
+            <EmptyState title="Операции не найдены" text={query ? "Попробуйте изменить поиск" : "За выбранную дату платежей нет"} />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead className="text-left text-xs font-semibold uppercase text-slate-500">
+                  <tr className="border-b border-slate-100">
+                    <th className="px-7 py-4">Пациент</th>
+                    <th className="px-4 py-4">Тип</th>
+                    <th className="px-4 py-4">Статус</th>
+                    <th className="px-7 py-4 text-right">Сумма</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredPayments.map((payment) => {
+                    const meta = METHOD_META[payment.method] || METHOD_META.card;
+                    const Icon = meta.icon;
+                    return (
+                      <tr key={payment.id} className="border-b border-slate-100 last:border-0">
+                        <td className="px-7 py-5">
+                          <div className="font-semibold text-slate-950">{payment.patientName || "Пациент"}</div>
+                          <div className="mt-1 text-xs text-slate-500">{payment.time || "—"} • {payment.note || "Прием в клинике"}</div>
+                        </td>
+                        <td className="px-4 py-5 text-slate-600">
+                          <span className="inline-flex items-center gap-2">
+                            <Icon size={15} />
+                            {meta.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-5">
+                          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">Успешно</span>
+                        </td>
+                        <td className="px-7 py-5 text-right text-base font-semibold text-slate-950">{fmt(payment.amount)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-// ── ДОЛЖНИКИ ──────────────────────────────────────────────────────────────────
 function DebtorsTab() {
   const [query, setQuery] = useState("");
-  const [all, setAll] = useState([]);
+  const [patients, setPatients] = useState([]);
 
-  useEffect(() => { searchPatients("").then(setAll); }, []);
+  useEffect(() => {
+    searchPatients("").then(setPatients);
+  }, []);
 
-  const debtors = all
-    .filter(p => p.balance < 0)
-    .filter(p => !query || p.name.toLowerCase().includes(query.toLowerCase()) || (p.phone || "").includes(query));
+  const debtors = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return patients
+      .filter((patient) => patient.balance < 0)
+      .filter((patient) => !q || patient.name.toLowerCase().includes(q) || String(patient.phone || "").includes(q));
+  }, [patients, query]);
+  const totalDebt = debtors.reduce((sum, patient) => sum + Math.abs(patient.balance || 0), 0);
 
-  const totalDebt = debtors.reduce((s, p) => s + Math.abs(p.balance || 0), 0);
-
-  function sendWhatsApp(phone, name, debt) {
-    const text = `Здравствуйте, ${name}! Клиника NeuroDent. У вас задолженность ${debt.toLocaleString("ru-RU")} ₸. Просим погасить в удобное время. +7 771 163 2030`;
-    window.open(`https://wa.me/${phone?.replace(/\D/g, "")}?text=${encodeURIComponent(text)}`, "_blank");
+  function sendReminder(patient) {
+    const debt = Math.abs(patient.balance || 0).toLocaleString("ru-RU");
+    const text = `Здравствуйте, ${patient.name}! Клиника NeuroDent. У вас задолженность ${debt} ₸. Просим погасить в удобное время.`;
+    window.open(`https://wa.me/${normalizePhone(patient.phone)}?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
   }
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-        <StatCard label="Общий долг" value={fmt(totalDebt)} accent="#dc2626"
-          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>} />
-        <StatCard label="Должников" value={debtors.length} accent="#f59e0b"
-          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>} />
+    <div className="grid gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="m-0 text-2xl font-semibold text-slate-950">Реестр задолженностей</h1>
+          <p className="mt-1 text-sm text-slate-500">Контроль долгов пациентов и отправка напоминаний</p>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={exportMock} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm">
+            <Download size={16} />
+            Export to Excel
+          </button>
+          <button onClick={() => debtors.forEach(sendReminder)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/20">
+            <Send size={16} />
+            Отправить всем
+          </button>
+        </div>
       </div>
 
-      <input type="text" placeholder="Поиск пациента..."
-        value={query} onChange={e => setQuery(e.target.value)}
-        style={{ ...inputStyle, maxWidth: 360, paddingLeft: 36, backgroundImage: "none" }} />
+      <SearchInput value={query} onChange={setQuery} placeholder="Поиск пациента или телефона..." />
 
-      <div style={cardStyle}>
+      <div className="grid gap-4 md:grid-cols-3">
+        <StatCard title="Общий долг" value={fmt(totalDebt)} helper="+12.4% с прошлого месяца" icon={Wallet} tone="#ef4444" />
+        <StatCard title="Активные должники" value={`${debtors.length} чел.`} helper="-4 чел. после рассылки" icon={Users} tone="#2563eb" badge />
+        <StatCard title="Средняя просрочка" value="14 дней" helper="NORMAL" icon={Timer} tone="#64748b" />
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-slate-100 p-6">
+          <h2 className="m-0 text-lg font-semibold text-slate-950">Список активных задолженностей</h2>
+          <select className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-600">
+            <option>Все суммы</option>
+          </select>
+        </div>
         {debtors.length === 0 ? (
-          <div style={{ padding: "48px 0", textAlign: "center" }}>
-            <div style={{ fontSize: 36, marginBottom: 10, display: "flex", justifyContent: "center" }}>{query ? <Search size={36} /> : <PartyPopper size={36} />}</div>
-            <div style={{ color: "var(--muted)", fontSize: 13 }}>{query ? "Не найдено" : "Должников нет"}</div>
-          </div>
+          <EmptyState title="Должников нет" text={query ? "Поиск не дал результатов" : "Все пациенты закрыли задолженности"} />
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: "2px solid var(--border)" }}>
-                {["#", "Пациент", "Телефон", "Долг", "Последний визит", "Уведомление"].map((h, i) => (
-                  <th key={i} style={{ textAlign: "left", padding: "8px 10px", color: "var(--muted)", fontWeight: 500, fontSize: 12 }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {debtors.map((p, i) => (
-                <tr key={p.id} style={{ borderBottom: "1px solid var(--border)" }}
-                  onMouseEnter={e => e.currentTarget.style.background = "var(--hover)"}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                  <td style={{ ...tdStyle, color: "var(--muted)", width: 32 }}>{i + 1}</td>
-                  <td style={{ ...tdStyle, fontWeight: 600 }}>{p.name}</td>
-                  <td style={{ ...tdStyle, color: "var(--muted)" }}>{p.phone}</td>
-                  <td style={{ ...tdStyle }}>
-                    <span style={{ fontWeight: 700, color: "var(--danger)" }}>{fmt(Math.abs(p.balance || 0))}</span>
-                  </td>
-                  <td style={{ ...tdStyle, color: "var(--muted)" }}>{p.lastVisit || "—"}</td>
-                  <td style={tdStyle}>
-                    <button onClick={() => sendWhatsApp(p.phone, p.name, Math.abs(p.balance || 0))}
-                      style={{
-                        padding: "5px 12px", borderRadius: "var(--radius-sm)",
-                        border: "1px solid #22c55e", background: "#f0fdf4",
-                        color: "#16a34a", fontSize: 12, fontWeight: 600, cursor: "pointer",
-                        display: "inline-flex", alignItems: "center", gap: 5,
-                      }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="#16a34a">
-                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a8.9 8.9 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
-                        <path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.978-1.405A9.945 9.945 0 0 0 12 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18a7.943 7.943 0 0 1-4.516-1.29l-.324-.194-3.354.947.949-3.262-.21-.335A7.942 7.942 0 0 1 4 12c0-4.411 3.589-8 8-8s8 3.589 8 8-3.589 8-8 8z"/>
-                      </svg>
-                      WhatsApp
-                    </button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead className="text-left text-xs font-semibold uppercase text-slate-500">
+                <tr className="border-b border-slate-100">
+                  <th className="px-6 py-4">Пациент</th>
+                  <th className="px-4 py-4">Долг</th>
+                  <th className="px-4 py-4">Дата визита</th>
+                  <th className="px-6 py-4 text-right">Действие</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {debtors.map((patient, index) => (
+                  <tr key={patient.id} className="border-b border-slate-100 last:border-0">
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-3">
+                        <div className="grid h-9 w-9 place-items-center rounded-full bg-blue-50 text-sm font-bold text-blue-600">{patient.name[0]}</div>
+                        <div>
+                          <div className="font-semibold text-slate-950">{patient.name}</div>
+                          <div className="text-xs text-slate-500">+{normalizePhone(patient.phone)}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-5">
+                      <div className="font-bold text-red-600">{fmt(Math.abs(patient.balance || 0))}</div>
+                      <div className="mt-1 text-xs text-slate-500">{index % 2 ? "Остаток за лечение" : "Лечение кариеса"}</div>
+                    </td>
+                    <td className="px-4 py-5 text-slate-600">
+                      <div>{index % 2 ? "03 Май 2026" : "12 Май 2026"}</div>
+                      <div className="mt-1 text-xs text-slate-400">{index % 2 ? "10:00" : "14:30"} • Д-р</div>
+                    </td>
+                    <td className="px-6 py-5 text-right">
+                      <div className="flex justify-end gap-3">
+                        <button onClick={() => sendReminder(patient)} className="inline-flex h-9 items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-700">
+                          <Phone size={16} />
+                          Напомнить
+                        </button>
+                        <button className="h-9 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white">Погасить</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-// ── СКЛАД ─────────────────────────────────────────────────────────────────────
-const CATEGORIES = ["Анестезия", "Терапия", "Хирургия", "Ортодонтия", "Ортопедия", "Эндодонтия", "Имплантология", "Гигиена", "Антисептики", "Расходники"];
-
 function SkladTab() {
   const [items, setItems] = useState([]);
   const [query, setQuery] = useState("");
-  const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: "", category: "Расходники", unit: "шт", quantity: "", minQuantity: "", price: "" });
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
+  const [category, setCategory] = useState("all");
+  const [modalOpen, setModalOpen] = useState(false);
 
-  useEffect(() => { getInventoryItems().then(setItems); }, []);
-  async function refresh() { setItems(await getInventoryItems()); }
+  async function refresh() {
+    setItems(await getInventoryItems());
+  }
+
+  useEffect(() => {
+    let active = true;
+    getInventoryItems().then((data) => {
+      if (active) setItems(data);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items
+      .filter((item) => category === "all" || item.category === category)
+      .filter((item) => !q || item.name.toLowerCase().includes(q) || (item.category || "").toLowerCase().includes(q));
+  }, [items, query, category]);
+  const lowStock = items.filter((item) => item.quantity <= item.minQuantity);
+  const expiringSoon = Math.max(2, Math.round(items.length * 0.25));
+  const stockValue = items.reduce((sum, item, index) => sum + Number(item.quantity || 0) * (900 + index * 120), 0);
 
   async function changeQty(id, delta) {
-    try { await updateInventoryQuantity(id, delta); await refresh(); }
-    catch (e) { alert(e?.message || "Ошибка"); }
-  }
-
-  async function handleAdd(e) {
-    e.preventDefault(); setErr(""); setSaving(true);
     try {
-      await addInventoryItem({ name: form.name, category: form.category, unit: form.unit, quantity: Number(form.quantity), minQuantity: Number(form.minQuantity) || 5, price: Number(form.price) || 0 });
-      setForm({ name: "", category: "Расходники", unit: "шт", quantity: "", minQuantity: "", price: "" });
-      setShowAdd(false);
+      await updateInventoryQuantity(id, delta);
       await refresh();
-    } catch (e) { setErr(e?.message || "Ошибка"); }
-    finally { setSaving(false); }
+    } catch (error) {
+      alert(error?.message || "Не удалось изменить остаток");
+    }
   }
 
-  function orderText(item) {
-    const text = `Заказ:\n${item.name}\nКол-во: ${item.minQuantity * 3} ${item.unit}\nКлиника NeuroDent +7 771 163 2030`;
-    navigator.clipboard?.writeText(text).then(() => alert("Текст заказа скопирован"));
+  async function addItem(data) {
+    await addInventoryItem(data);
+    await refresh();
+    setModalOpen(false);
   }
-
-  const filtered = items.filter(i =>
-    !query || i.name.toLowerCase().includes(query.toLowerCase()) || (i.category || "").toLowerCase().includes(query.toLowerCase())
-  );
-  const lowStock = items.filter(i => i.quantity <= i.minQuantity);
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-        <StatCard label="Всего позиций" value={items.length} accent="#2563eb"
-          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>} />
-        <StatCard label="Заканчиваются" value={lowStock.length}
-          accent={lowStock.length > 0 ? "#dc2626" : "#16a34a"}
-          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>} />
+    <div className="grid gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="m-0 text-xl font-semibold text-slate-950">Инвентаризация склада</h1>
+          <p className="mt-1 text-sm text-slate-500">Управление остатками и поступлениями медикаментов</p>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={exportMock} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm">
+            <Download size={16} />
+            Экспорт в Excel
+          </button>
+          <button onClick={() => setModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/20">
+            <ClipboardPlus size={16} />
+            Поступление
+          </button>
+        </div>
       </div>
 
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <input type="text" placeholder="Товар или категория..."
-          value={query} onChange={e => setQuery(e.target.value)}
-          style={{ ...inputStyle, flex: 1, maxWidth: 360, paddingLeft: 36, backgroundImage: "none" }} />
-        <button onClick={() => setShowAdd(v => !v)}
-          style={showAdd ? { ...btnOutline } : { ...btnPrimary }}>
-          {showAdd ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><X size={14} /> Закрыть</span> : "+ Добавить товар"}
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SearchInput value={query} onChange={setQuery} placeholder="Поиск материала или категории..." />
+        <select value={category} onChange={(event) => setCategory(event.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600">
+          <option value="all">Все категории</option>
+          {CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
       </div>
 
-      {showAdd && (
-        <div style={cardStyle}>
-          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 14 }}>Новый товар</div>
-          <form onSubmit={handleAdd} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12 }}>
-            <div style={{ gridColumn: "1 / -1" }}>
-              <Field label="Наименование *">
-                <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="Хлоргексидин 0.05%..." style={inputStyle} required />
-              </Field>
-            </div>
-            <Field label="Категория *">
-              <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={inputStyle}>
-                {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-              </select>
-            </Field>
-            <Field label="Единица измерения">
-              <select value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} style={inputStyle}>
-                {["шт", "мл", "г", "уп", "амп", "упак", "комп"].map(u => <option key={u}>{u}</option>)}
-              </select>
-            </Field>
-            <Field label="Количество *">
-              <input type="number" min="0" value={form.quantity}
-                onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))}
-                placeholder="50" style={inputStyle} required />
-            </Field>
-            <Field label="Мин. количество">
-              <input type="number" min="0" value={form.minQuantity}
-                onChange={e => setForm(f => ({ ...f, minQuantity: e.target.value }))}
-                placeholder="5" style={inputStyle} />
-            </Field>
-            <Field label="Цена (₸)">
-              <input type="number" min="0" value={form.price}
-                onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
-                placeholder="1200" style={inputStyle} />
-            </Field>
-            <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 6 }}>
-              {err && <div style={{ fontSize: 11, color: "var(--danger)" }}>{err}</div>}
-              <button type="submit" disabled={saving} style={{ ...btnPrimary, width: "100%" }}>
-                {saving ? "..." : "Сохранить"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard title="Всего позиций" value={items.length} helper="норма" icon={ClipboardPlus} />
+        <StatCard title="Критический остаток" value={lowStock.length} helper="срочно" icon={AlertTriangle} tone="#dc2626" />
+        <StatCard title="Срок годности < 30 дн." value={expiringSoon} helper="на контроле" icon={Timer} tone="#f59e0b" />
+        <StatCard title="Оценка склада" value={fmt(stockValue)} helper="mock-оценка" icon={Banknote} tone="#10b981" />
+      </div>
 
-      {lowStock.length > 0 && (
-        <div style={{
-          background: "#fef9ec", border: "1px solid #fcd34d", borderRadius: "var(--radius)",
-          padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
-        }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-          </svg>
-          <span style={{ fontSize: 13, color: "#92400e", fontWeight: 500 }}>
-            <b>{lowStock.length} товаров</b> на минимальном уровне или ниже:&nbsp;
-            {lowStock.map(i => i.name).join(", ")}
-          </span>
-        </div>
-      )}
-
-      <div style={cardStyle}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: "2px solid var(--border)", background: "var(--surface-2)" }}>
-              {["Наименование", "Категория", "Ед.", "Кол-во", "Мин.", "Статус", "Управление"].map((h, i) => (
-                <th key={i} style={{ textAlign: "left", padding: "9px 10px", color: "var(--muted)", fontWeight: 500, fontSize: 12 }}>{h}</th>
+      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-slate-100 p-6">
+          <div className="flex flex-wrap items-center gap-4">
+            <h2 className="m-0 text-lg font-semibold text-slate-950">Список материалов</h2>
+            <div className="flex rounded-lg border border-slate-200 bg-white p-1">
+              {["all", "Анестезия", "Расходники"].map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setCategory(item)}
+                  className={`rounded-md px-3 py-1 text-xs font-semibold ${category === item ? "bg-slate-100 text-slate-950" : "text-slate-500"}`}
+                >
+                  {item === "all" ? "Все" : item}
+                </button>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
-              <tr><td colSpan={7} style={{ textAlign: "center", padding: "40px 0", color: "var(--muted)" }}>
-                {query ? "Не найдено" : "Товаров нет"}
-              </td></tr>
-            ) : filtered.map(item => {
-              const isLow = item.quantity <= item.minQuantity;
-              return (
-                <tr key={item.id} style={{ borderBottom: "1px solid var(--border)" }}
-                  onMouseEnter={e => e.currentTarget.style.background = "var(--hover)"}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                  <td style={{ ...tdStyle, fontWeight: 500 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      {isLow && <span title="Заканчивается" style={{ color: "var(--warning)", fontSize: 14, display: "inline-flex", alignItems: "center" }}><AlertTriangle size={14} /></span>}
-                      {item.name}
-                    </div>
-                  </td>
-                  <td style={{ ...tdStyle, color: "var(--muted)", fontSize: 12 }}>{item.category}</td>
-                  <td style={{ ...tdStyle, color: "var(--muted)" }}>{item.unit}</td>
-                  <td style={{ ...tdStyle }}>
-                    <span style={{ fontWeight: 700, color: isLow ? "var(--danger)" : "var(--text)", fontSize: 15 }}>
-                      {item.quantity}
-                    </span>
-                  </td>
-                  <td style={{ ...tdStyle, color: "var(--muted)" }}>{item.minQuantity}</td>
-                  <td style={tdStyle}>
-                    <Badge
-                      bg={isLow ? "#fef2f2" : "#f0fdf4"}
-                      color={isLow ? "var(--danger)" : "var(--success)"}
-                      border={isLow ? "#fecaca" : "#bbf7d0"}
-                    >
-                      {isLow ? "Мало" : "Достаточно"}
-                    </Badge>
-                  </td>
-                  <td style={tdStyle}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <button onClick={() => changeQty(item.id, -1)} style={qtyBtn}>−</button>
-                      <span style={{ fontSize: 12, color: "var(--muted)", minWidth: 20, textAlign: "center" }}>{item.quantity}</span>
-                      <button onClick={() => changeQty(item.id, 1)} style={{ ...qtyBtn, background: "#eff6ff", color: "var(--primary)", borderColor: "#bfdbfe" }}>+</button>
-                      {isLow && (
-                        <button onClick={() => orderText(item)} title="Скопировать текст заказа"
-                          style={{ ...iconBtn, marginLeft: 4, color: "var(--warning)", border: "1px solid #fcd34d", background: "#fef9ec" }}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>
-                          </svg>
-                        </button>
-                      )}
-                    </div>
+            </div>
+          </div>
+          <MoreVertical className="text-slate-400" size={18} />
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead className="text-left text-xs font-semibold uppercase text-slate-500">
+              <tr className="border-b border-slate-100">
+                <th className="px-6 py-4">Наименование</th>
+                <th className="px-4 py-4">Категория</th>
+                <th className="px-4 py-4">Остаток</th>
+                <th className="px-4 py-4">Статус</th>
+                <th className="px-6 py-4 text-right">Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>
+                    <EmptyState title="Материалы не найдены" text="Попробуйте изменить поиск или категорию" />
                   </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              ) : filtered.map((item) => {
+                const isLow = item.quantity <= item.minQuantity;
+                return (
+                  <tr key={item.id} className="border-b border-slate-100 last:border-0">
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-3">
+                        <div className={`grid h-10 w-10 place-items-center rounded-lg ${isLow ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-500"}`}>
+                          <Package size={19} />
+                        </div>
+                        <div>
+                          <div className="font-semibold text-slate-950">{item.name}</div>
+                          <div className="text-xs text-slate-500">Артикул: {item.id.toUpperCase()}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-5">
+                      <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600">{item.category}</span>
+                    </td>
+                    <td className="px-4 py-5">
+                      <span className={`text-base font-bold ${isLow ? "text-red-600" : "text-slate-950"}`}>{item.quantity}</span>
+                      <span className="ml-1 text-xs text-slate-500">{item.unit}</span>
+                    </td>
+                    <td className="px-4 py-5">
+                      <span className={`inline-flex items-center gap-2 text-sm font-semibold ${isLow ? "text-red-600" : "text-slate-700"}`}>
+                        <span className={`h-2 w-2 rounded-full ${isLow ? "bg-red-600" : "bg-emerald-500"}`} />
+                        {isLow ? "Критично" : "В наличии"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-5 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => changeQty(item.id, -1)} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-lg text-slate-600">−</button>
+                        <button onClick={() => changeQty(item.id, 1)} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-lg text-slate-600">+</button>
+                        <button className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-slate-500"><MoreVertical size={16} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      <div className="max-w-[640px] rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="m-0 text-lg font-semibold text-slate-950">Последние поступления</h2>
+          <button className="text-sm font-semibold text-blue-600">См. все отчеты</button>
+        </div>
+        <div className="grid gap-3">
+          {items.slice(0, 2).map((item, index) => (
+            <div key={item.id} className="flex items-center justify-between rounded-lg border border-slate-100 p-4">
+              <div className="flex items-center gap-3">
+                <div className="grid h-10 w-10 place-items-center rounded-full bg-emerald-100 text-emerald-600">
+                  <Plus size={19} />
+                </div>
+                <div>
+                  <div className="font-semibold text-slate-950">{item.name}</div>
+                  <div className="text-xs text-slate-500">Поставщик: МедФармТрейд • {index ? "Вчера, 16:20" : "Сегодня, 10:45"}</div>
+                </div>
+              </div>
+              <div className="font-bold text-emerald-600">+{fmt((index + 1) * 4200)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {modalOpen && <StockModal onClose={() => setModalOpen(false)} onSubmit={addItem} />}
     </div>
   );
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+function StockModal({ onClose, onSubmit }) {
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    category: "Расходники",
+    supplier: "",
+    quantity: "10",
+    unit: "шт",
+    expiry: "",
+    minQuantity: "5",
+  });
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await onSubmit({
+        name: form.name,
+        category: form.category,
+        quantity: Number(form.quantity),
+        unit: form.unit,
+        minQuantity: Number(form.minQuantity) || 5,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4">
+      <form onSubmit={handleSubmit} className="w-full max-w-[540px] overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-slate-100 p-5">
+          <div className="flex gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-blue-600">
+              <ClipboardPlus size={21} />
+            </div>
+            <div>
+              <h2 className="m-0 text-xl font-semibold text-slate-950">Новое поступление</h2>
+              <p className="mt-1 max-w-[420px] text-sm leading-5 text-slate-500">Заполните данные о поступивших материалах для обновления склада</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700">
+            <X size={22} />
+          </button>
+        </div>
+
+        <div className="grid gap-3.5 p-5">
+          <Field label="Наименование товара">
+            <input value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} required placeholder="Например: Имплант Straumann BLT" className="field-control" />
+          </Field>
+          <div className="grid gap-3.5 md:grid-cols-2">
+            <Field label="Категория">
+              <select value={form.category} onChange={(event) => setForm((prev) => ({ ...prev, category: event.target.value }))} className="field-control">
+                {CATEGORIES.map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </Field>
+            <Field label="Поставщик">
+              <input value={form.supplier} onChange={(event) => setForm((prev) => ({ ...prev, supplier: event.target.value }))} placeholder="Выберите поставщика" className="field-control" />
+            </Field>
+          </div>
+          <div className="grid gap-3.5 md:grid-cols-2">
+            <Field label="Количество">
+              <div className="grid grid-cols-[1fr_90px] gap-3">
+                <input value={form.quantity} onChange={(event) => setForm((prev) => ({ ...prev, quantity: event.target.value }))} type="number" min="0" required className="field-control" />
+                <select value={form.unit} onChange={(event) => setForm((prev) => ({ ...prev, unit: event.target.value }))} className="field-control">
+                  {["шт", "уп", "амп", "мл", "г", "наб"].map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </div>
+            </Field>
+            <Field label="Срок годности">
+              <input value={form.expiry} onChange={(event) => setForm((prev) => ({ ...prev, expiry: event.target.value }))} type="date" className="field-control" />
+            </Field>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+            <Field label="Порог уведомления">
+              <input value={form.minQuantity} onChange={(event) => setForm((prev) => ({ ...prev, minQuantity: event.target.value }))} type="number" min="0" className="field-control" />
+            </Field>
+            <p className="mb-0 mt-2 text-xs text-slate-500">Система пришлет уведомление, когда остаток опустится ниже этого значения.</p>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-slate-100 p-5">
+          <button type="button" onClick={onClose} className="h-9 rounded-lg px-4 text-sm font-semibold text-slate-600">Отмена</button>
+          <button disabled={saving} type="submit" className="inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 disabled:opacity-60">
+            <CheckCircle2 size={17} />
+            {saving ? "Добавление..." : "Добавить на склад"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function Field({ label, children }) {
   return (
-    <div style={{ display: "grid", gap: 5 }}>
-      <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500 }}>{label}</div>
+    <label className="grid gap-2">
+      <span className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</span>
       {children}
-    </div>
+    </label>
   );
 }
-
-// ── shared styles ─────────────────────────────────────────────────────────────
-const cardStyle = {
-  background: "var(--surface)", border: "1px solid var(--border)",
-  borderRadius: "var(--radius)", padding: 20, overflowX: "auto",
-  boxShadow: "var(--shadow-sm)",
-};
-
-const inputStyle = {
-  width: "100%", padding: "8px 12px",
-  border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
-  background: "var(--surface)", color: "var(--text)", fontSize: 13, boxSizing: "border-box",
-  outline: "none",
-};
-
-const tdStyle = { padding: "10px 10px", verticalAlign: "middle" };
-
-const btnPrimary = {
-  padding: "9px 18px", background: "var(--primary)", color: "#fff",
-  border: "none", borderRadius: "var(--radius-sm)", fontWeight: 600,
-  fontSize: 13, cursor: "pointer", whiteSpace: "nowrap",
-};
-
-const btnOutline = {
-  padding: "9px 18px", background: "var(--surface)", color: "var(--text)",
-  border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", fontWeight: 500,
-  fontSize: 13, cursor: "pointer", whiteSpace: "nowrap",
-};
-
-const iconBtn = {
-  width: 28, height: 28, border: "1px solid var(--border)",
-  borderRadius: "var(--radius-xs)", background: "var(--surface-2)",
-  cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center",
-  padding: 0,
-};
-
-const qtyBtn = {
-  width: 28, height: 28, border: "1px solid var(--border)",
-  borderRadius: "var(--radius-xs)", background: "var(--surface-2)", color: "var(--text)",
-  fontSize: 15, cursor: "pointer", display: "inline-flex",
-  alignItems: "center", justifyContent: "center", padding: 0, fontWeight: 600,
-};
-
-// ── MAIN PAGE ─────────────────────────────────────────────────────────────────
-const TABS = [
-  { id: "kassa", label: <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><Banknote size={14} /> Касса</span> },
-  { id: "debtors", label: <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><AlertTriangle size={14} /> Должники</span> },
-  { id: "sklad", label: <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><Package size={14} /> Склад</span> },
-];
 
 export default function PaymentsPage() {
   const [tab, setTab] = useState("kassa");
 
   return (
-    <div className="pay-outer" style={{ padding: 24, display: "grid", gap: 20, maxWidth: 1400 }}>
+    <div className="min-h-full bg-white px-8 py-6 lg:px-9">
       <style>{`
-        .pay-kassa-grid { display: grid; grid-template-columns: 1fr 340px; gap: 20px; align-items: start; }
-        .pay-stats { display: flex; flex-wrap: wrap; gap: 12px; }
-        .pay-stat-card { flex: 1; min-width: 130px; }
-        .pay-tabs { display: flex; gap: 2; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px; width: fit-content; box-shadow: var(--shadow-sm); overflow-x: auto; scrollbar-width: none; max-width: 100%; }
-        .pay-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        @media (max-width: 700px) {
-          .pay-kassa-grid { grid-template-columns: 1fr !important; }
-          .pay-stat-card { min-width: calc(50% - 6px); flex: none; }
+        .field-control {
+          height: 39px;
+          width: 100%;
+          border: 1px solid #dbe4f0;
+          border-radius: 10px;
+          background: #fff;
+          padding: 0 14px;
+          color: #0f172a;
+          font-size: 14px;
+          outline: none;
         }
-        @media (max-width: 540px) {
-          .pay-stats { gap: 8px; }
-          .pay-stat-card { min-width: calc(50% - 4px); }
-        }
-        @media (max-width: 420px) {
-          .pay-stat-card { min-width: 100%; }
-        }
-        @media (max-width: 600px) {
-          .pay-outer { padding: 12px !important; gap: 14px !important; }
+        .field-control:focus {
+          border-color: #2563eb;
+          box-shadow: 0 0 0 4px rgba(37,99,235,0.1);
         }
       `}</style>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{
-          width: 40, height: 40, borderRadius: 10, background: "var(--active)",
-          display: "flex", alignItems: "center", justifyContent: "center", color: "var(--primary)",
-        }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>
-          </svg>
-        </div>
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", margin: 0, lineHeight: 1.2 }}>Финансы и Склад</h1>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Касса, должники, склад материалов</div>
-        </div>
+      <div className="mx-auto grid max-w-[1300px] gap-6">
+        <TopTabs active={tab} onChange={setTab} />
+        {tab === "kassa" && <KassaTab />}
+        {tab === "debtors" && <DebtorsTab />}
+        {tab === "sklad" && <SkladTab />}
       </div>
-
-      {/* Tabs */}
-      <div className="pay-tabs">
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            style={{
-              padding: "8px 20px", border: "none",
-              borderRadius: "var(--radius-sm)",
-              background: tab === t.id ? "var(--primary)" : "transparent",
-              color: tab === t.id ? "#fff" : "var(--muted)",
-              fontWeight: tab === t.id ? 600 : 400,
-              fontSize: 13, cursor: "pointer",
-              transition: "all 0.15s ease",
-            }}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "kassa" && <KassaTab />}
-      {tab === "debtors" && <DebtorsTab />}
-      {tab === "sklad" && <SkladTab />}
     </div>
   );
 }

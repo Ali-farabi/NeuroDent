@@ -259,25 +259,25 @@ function PatientSelectPage() {
   }, [search, allPatients]);
 
   return (
-    <div className="min-h-full bg-white px-8 py-7 lg:px-11 lg:py-9">
-      <div className="max-w-[1140px]">
-        <header className="mb-12">
-          <h1 className="text-[30px] leading-tight font-semibold text-gray-950 tracking-[-0.01em]">Core AI Layer</h1>
-          <p className="mt-1 text-[18px] leading-7 text-gray-500">Автопротоколирование, МКБ-10 и анализ истории</p>
+    <div className="min-h-full bg-white px-6 py-5 lg:px-8 lg:py-6">
+      <div className="max-w-310">
+        <header className="mb-8">
+          <h1 className="text-2xl leading-tight font-bold text-gray-950">Core AI Layer</h1>
+          <p className="mt-0 text-s leading-5 text-gray-500">Автопротоколирование, МКБ-10 и анализ истории</p>
         </header>
 
-        <section className="rounded-xl border border-gray-200 bg-white px-3 py-5 shadow-[0_1px_5px_rgba(15,23,42,0.12)]">
+        <section className="rounded-lg border border-gray-200 bg-white px-3 py-4 shadow-[0_1px_4px_rgba(15,23,42,0.1)]">
           <div className="px-1">
-            <h2 className="text-[26px] leading-tight font-semibold tracking-[-0.01em] text-blue-600">Выберите пациента для приема</h2>
-            <p className="mt-1 text-[15px] leading-6 text-gray-600">Чтобы Core AI Layer начал слушать и писать протокол, выберите пациента из базы.</p>
+            <h2 className="text-lg leading-tight font-semibold text-blue-600">Выберите пациента для приема</h2>
+            <p className="mt-1 text-[13px] leading-5 text-gray-600">Чтобы Core AI Layer начал слушать и писать протокол, выберите пациента из базы.</p>
           </div>
         </section>
 
-        <div className="relative mt-[18px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={22} strokeWidth={1.8} />
+        <div className="relative mt-4">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={18} strokeWidth={1.8} />
         <input
           type="text"
-          className="h-[42px] w-full rounded-xl border border-gray-200 bg-white pl-11 pr-4 text-[15px] text-gray-900 shadow-[0_1px_4px_rgba(15,23,42,0.11)] transition placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-[3px] focus:ring-blue-500/15"
+          className="h-10 w-full rounded-lg border border-gray-200 bg-white pl-10 pr-4 text-sm text-gray-900 shadow-[0_1px_4px_rgba(15,23,42,0.1)] transition placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-[3px] focus:ring-blue-500/15"
           placeholder=""
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -285,8 +285,8 @@ function PatientSelectPage() {
         />
         </div>
 
-        <section className="mt-9">
-          <h3 className="mb-4 text-[16px] font-medium text-blue-600">Найденные пациенты</h3>
+        <section className="mt-7">
+          <h3 className="mb-3 text-sm font-medium text-blue-600">Найденные пациенты</h3>
           <div className="flex max-h-[420px] flex-col gap-3 overflow-y-auto pr-1">
             {loading ? (
               <div className="rounded-xl border border-gray-200 bg-white py-12 text-center text-sm text-gray-400 shadow-[0_1px_4px_rgba(15,23,42,0.1)]">Загрузка...</div>
@@ -297,11 +297,11 @@ function PatientSelectPage() {
                 <button
                   key={p.id}
                   type="button"
-                  className="flex min-h-[72px] w-full items-center justify-between gap-5 rounded-xl border border-gray-200 bg-white px-3 py-3 text-left shadow-[0_1px_5px_rgba(15,23,42,0.11)] transition hover:border-blue-100 hover:bg-gray-50"
+                  className="flex min-h-[66px] w-full items-center justify-between gap-5 rounded-lg border border-gray-200 bg-white px-3 py-3 text-left shadow-[0_1px_4px_rgba(15,23,42,0.1)] transition hover:border-blue-100 hover:bg-gray-50"
                   onClick={() => router.push(`/ai?patient=${p.id}`)}
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-[15px] font-semibold text-gray-950">{p.name}</span>
+                    <span className="block truncate text-sm font-semibold text-gray-950">{p.name}</span>
                     <span className="mt-1 block truncate text-[11px] text-gray-400">
                       Зарегистрирован: {p.createdAt || "—"} * {p.phone}
                     </span>
@@ -777,13 +777,13 @@ function AiCorePage({ patientId }: { patientId: string }) {
   return (
     <div className="min-h-full bg-[#f6f8fb] flex flex-col">
       {/* Header */}
-      <div className="flex justify-between items-center gap-3 flex-wrap bg-white border-b border-gray-200 px-6 py-4">
+      <div className="flex justify-between items-center gap-3 flex-wrap bg-white border-b border-gray-200 px-6 py-3">
         <div className="flex flex-col gap-1">
-            <h1 className="flex items-center gap-2 text-[22px] font-extrabold tracking-tight text-gray-900 m-0">
-            <img src="/images/Medimetricslogotype.png" alt="Neurodent" className="w-[34px] h-[34px]" />
+            <h1 className="flex items-center gap-2 text-xl font-bold text-gray-900 m-0">
+            <img src="/images/Medimetricslogotype.png" alt="Neurodent" className="w-7 h-7" />
             <span>Core AI Layer</span>
           </h1>
-          <p className="text-[13px] text-gray-500 m-0">Автопротоколирование, МКБ-10, тип кариеса и зубная формула</p>
+          <p className="text-xs text-gray-500 m-0">Автопротоколирование, МКБ-10, тип кариеса и зубная формула</p>
         </div>
         <div className="flex gap-2.5 flex-wrap">
           <button

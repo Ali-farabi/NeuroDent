@@ -9,7 +9,7 @@ const menuItems = [
   {
     route: "ai",
     href: "/ai",
-    label: "Core AI Layer",
+    label: "AI Protocol",
     roles: ["owner", "doctor"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -20,7 +20,7 @@ const menuItems = [
   {
     route: "report",
     href: "/report",
-    label: "Business Analytics",
+    label: "Analytics",
     roles: ["owner"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -34,7 +34,7 @@ const menuItems = [
   {
     route: "schedule",
     href: "/schedule",
-    label: "Call-центр и CRM",
+    label: "CRM",
     roles: ["owner", "admin", "doctor"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -133,7 +133,7 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
         @media (max-width: 640px) {
           .sidebar-el {
             position: fixed !important;
-            left: ${isOpen ? "0" : "-260px"} !important;
+            left: ${isOpen ? "0" : "-220px"} !important;
             top: 0;
             height: 100vh;
             z-index: 1000;
@@ -160,17 +160,17 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
         {/* Logo */}
         <div>
           <div style={{
-            display: "flex", alignItems: "center", gap: 5, padding: "28px 16px 0",
+            display: "flex", alignItems: "center", gap: 8, padding: "24px 14px 0",
           }}>
-            <Image src="/images/Medimetricslogotype.png" alt="NeuroDent" width={40} height={40} />
-            <span style={{ fontSize: 24, fontWeight: 700, color: "var(--primary)", letterSpacing: "-0.3px" }}>
+            <Image src="/images/Medimetricslogotype.png" alt="NeuroDent" width={32} height={32} />
+            <span style={{ fontSize: 20, fontWeight: 700, color: "var(--primary)", letterSpacing: "-0.3px" }}>
               Neurodent
             </span>
           </div>
         </div>
 
         {/* Nav */}
-        <nav style={{ display: "flex", flexDirection: "column", gap: 8, padding: "32px 16px 0" }}>
+        <nav style={{ display: "flex", flexDirection: "column", gap: 8, padding: "34px 10px 0" }}>
           {visibleItems.map((item) => {
             const isActive = pathname.startsWith(item.href);
             return (
@@ -179,32 +179,32 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
                 href={item.href}
                 onClick={onClose}
                 style={{
-                  display: "flex", alignItems: "center", gap: 12,
-                  padding: "8px 10px",
-                  borderRadius: 6,
+                  display: "flex", alignItems: "center", gap: 9,
+                  padding: "9px 10px",
+                  borderRadius: 10,
                   color: isActive ? "rgba(11,18,32,0.82)" : "rgba(11,18,32,0.72)",
-                  fontSize: 14, fontWeight: 500,
+                  fontSize: 13, fontWeight: 600,
                   background: isActive ? "#e9e9e9" : "transparent",
                   transition: "background 0.15s ease, color 0.15s ease",
                   textDecoration: "none",
                 }}
               >
-                <span style={{ color: "rgba(11,18,32,0.45)", flexShrink: 0 }}>
+                <span style={{ color: "rgba(11,18,32,0.45)", flexShrink: 0, display: "inline-flex" }}>
                   {item.icon}
                 </span>
-                <span style={{ flex: 1 }}>{item.label}</span>
+                <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.label}</span>
               </Link>
             );
           })}
         </nav>
 
-        <div style={{ marginTop: "auto", padding: "0 16px 34px", display: "grid", gap: 16 }}>
+        <div style={{ marginTop: "auto", padding: "0 14px 30px", display: "grid", gap: 14 }}>
           <button
             type="button"
             style={{
-              display: "flex", alignItems: "center", gap: 12,
+              display: "flex", alignItems: "center", gap: 10,
               border: "none", background: "transparent", padding: 0,
-              color: "var(--text)", fontSize: 16, fontWeight: 500, cursor: "pointer",
+              color: "var(--text)", fontSize: 14, fontWeight: 600, cursor: "pointer",
               textAlign: "left",
             }}
           >
@@ -219,9 +219,9 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
             type="button"
             onClick={onLogout}
             style={{
-              display: "flex", alignItems: "center", gap: 12,
+              display: "flex", alignItems: "center", gap: 10,
               border: "none", background: "transparent", padding: 0,
-              color: "var(--text)", fontSize: 16, fontWeight: 500, cursor: "pointer",
+              color: "var(--text)", fontSize: 14, fontWeight: 600, cursor: "pointer",
               textAlign: "left",
             }}
           >

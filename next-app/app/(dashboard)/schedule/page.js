@@ -447,9 +447,25 @@ function CalendarTab({ doctors, patients, role }) {
 // Здесь используем поле patient.channel из mock-данных
 const CH_COLOR = {
   WhatsApp:  { bg: "#f0fdf4", color: "#15803d", border: "#bbf7d0" },
-  Instagram: { bg: "#fdf2f8", color: "#9d174d", border: "#f9a8d4" },
   Телефон:   { bg: "#eff6ff", color: "#1d4ed8", border: "#bfdbfe" },
 };
+
+function normalizeKzPhone(phone) {
+  return String(phone || "").replace(/\D/g, "").replace(/^8/, "7");
+}
+
+function buildWhatsappUrl(phone, text = "") {
+  const num = normalizeKzPhone(phone);
+  return `https://wa.me/${num}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
+}
+
+function buildInitialChat(patient) {
+  const incoming = patient?.lastMessage || "Здравствуйте! Хочу уточнить запись в клинику.";
+  return [
+    { type: "in", text: incoming, time: patient?.lastMessageTime || "10:42" },
+    { type: "out", text: "Добрый день! Сейчас проверим расписание и подберем удобное время.", time: "10:45", status: "sent" },
+  ];
+}
 
 function CrmTab({ patients, onNewAppt }) {
   const router = useRouter();
@@ -458,10 +474,8 @@ function CrmTab({ patients, onNewAppt }) {
   const [patientVisits, setPatientVisits] = useState([]);
   const [loadingCard, setLoadingCard]   = useState(false);
   const [msg, setMsg]                   = useState("");
-  const [chatMsgs, setChatMsgs]         = useState([
-    { type: "in",  text: "Здравствуйте! Можно записаться на завтра к хирургу?", time: "10:42" },
-    { type: "out", text: "Добрый день! Да, конечно. У доктора Омарова есть окошко на 14:30. Записать вас?", time: "10:45" },
-  ]);
+  const [chatByPatient, setChatByPatient] = useState({});
+  const [sendStatus, setSendStatus]     = useState("");
   const [search, setSearch]             = useState("");
   const messagesEnd                     = useRef(null);
 
@@ -470,10 +484,12 @@ function CrmTab({ patients, onNewAppt }) {
   const filtered = chatPatients.filter(p =>
     !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.phone.includes(search)
   );
+  const chatMsgs = selected ? (chatByPatient[selected.id] || buildInitialChat(selected)) : [];
 
   async function selectPatient(p) {
     setSelected(p);
-    setChatMsgs([{ type: "in", text: "Здравствуйте! Подскажите, пожалуйста...", time: "10:42" }]);
+    setSendStatus("");
+    setChatByPatient((current) => current[p.id] ? current : { ...current, [p.id]: buildInitialChat(p) });
     setPatientInfo(null); setPatientVisits([]); setLoadingCard(true);
     try {
       const [info, visits] = await Promise.all([getPatientById(p.id), getVisitsByPatient(p.id)]);
@@ -487,11 +503,19 @@ function CrmTab({ patients, onNewAppt }) {
     const text = msg.trim();
     if (!text || !selected) return;
     const time = new Date().toTimeString().slice(0, 5);
-    setChatMsgs(m => [...m, { type: "out", text, time }]);
+    setChatByPatient((current) => ({
+      ...current,
+      [selected.id]: [...(current[selected.id] || buildInitialChat(selected)), { type: "out", text, time, status: "sent" }],
+    }));
     setMsg("");
-    const num = (selected.phone || "").replace(/\D/g, "").replace(/^8/, "7");
-    window.open(`https://wa.me/${num}?text=${encodeURIComponent(text)}`, "_blank");
+    setSendStatus("Открыт WhatsApp с готовым текстом");
+    window.open(buildWhatsappUrl(selected.phone, text), "_blank", "noopener,noreferrer");
     setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: "smooth" }), 50);
+  }
+
+  function callPatient() {
+    if (!selected) return;
+    window.location.href = `tel:+${normalizeKzPhone(selected.phone)}`;
   }
 
   const lastVisit = patientVisits[0];
@@ -545,8 +569,8 @@ function CrmTab({ patients, onNewAppt }) {
           </div>
           {selected && (
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => { const n=(selected.phone||"").replace(/\D/g,"").replace(/^8/,"7"); window.location.href=`tel:+${n}`; }} style={{ ...btnOutline, fontSize: 12, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 4 }}><Phone size={13} /> Позвонить</button>
-              <button style={{ ...btnOutline, fontSize: 12, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 4 }}><CalendarDays size={13} /> Записать</button>
+              <button onClick={callPatient} style={{ ...btnOutline, fontSize: 12, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 4 }}><Phone size={13} /> Позвонить</button>
+              <button onClick={onNewAppt} style={{ ...btnOutline, fontSize: 12, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 4 }}><CalendarDays size={13} /> Записать</button>
             </div>
           )}
         </div>
@@ -560,7 +584,7 @@ function CrmTab({ patients, onNewAppt }) {
             <div key={i} style={{ display: "flex", justifyContent: m.type==="out"?"flex-end":"flex-start" }}>
               <div style={{ maxWidth: "68%", padding: "10px 14px", borderRadius: m.type==="out"?"16px 16px 4px 16px":"16px 16px 16px 4px", background: m.type==="out"?"var(--primary)":"var(--surface)", color: m.type==="out"?"#fff":"var(--text)", fontSize: 13, lineHeight: 1.45, boxShadow: "0 1px 4px rgba(0,0,0,0.08)" }}>
                 <div>{m.text}</div>
-                <div style={{ fontSize: 10, opacity: 0.6, marginTop: 4, textAlign: "right" }}>{m.time}{m.type==="out"?" ✓✓":""}</div>
+                <div style={{ fontSize: 10, opacity: 0.6, marginTop: 4, textAlign: "right" }}>{m.time}{m.type==="out" ? " • WhatsApp" : ""}</div>
               </div>
             </div>
           ))}
@@ -570,9 +594,9 @@ function CrmTab({ patients, onNewAppt }) {
           <div style={{ borderTop: "1px solid var(--border)", background: "var(--surface)", padding: "10px 16px", flexShrink: 0 }}>
             <div style={{ display: "flex", gap: 6, marginBottom: 9 }}>
               {[
-                { key: "ai",     label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Sparkles size={11} /> AI-Ответ</span>,    text: "Добрый день! Да, конечно. У доктора есть окошко на 14:30. Записать вас?", primary: true },
-                { key: "price",  label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><ClipboardList size={11} /> Прайс</span>,   text: "Добрый день! Актуальный прайс на услуги клиники прикреплён.", primary: false },
-                { key: "remind", label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Bell size={11} /> Напоминание</span>,       text: "Напоминаем о вашем приёме завтра. Ждём вас!", primary: false },
+                { key: "ai",     label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Sparkles size={11} /> Быстрый ответ</span>, text: "Добрый день! Да, конечно. Можем записать вас на ближайшее свободное время. Подскажите, какой день удобен?", primary: true },
+                { key: "price",  label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><ClipboardList size={11} /> Прайс</span>, text: "Добрый день! Стоимость зависит от процедуры и осмотра врача. Можем записать вас на консультацию.", primary: false },
+                { key: "remind", label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Bell size={11} /> Напоминание</span>, text: "Напоминаем о вашем приеме. Если нужно перенести запись, ответьте на это сообщение.", primary: false },
               ].map(b => (
                 <button key={b.key} onClick={() => setMsg(b.text)} style={{ fontSize: 11, padding: "5px 11px", borderRadius: 7, cursor: "pointer", fontWeight: 600, border: b.primary?"1px solid var(--primary)":"1px solid var(--border)", background: b.primary?"rgba(59,130,246,0.09)":"var(--surface-2)", color: b.primary?"var(--primary)":"var(--muted)" }}>{b.label}</button>
               ))}
@@ -583,6 +607,11 @@ function CrmTab({ patients, onNewAppt }) {
                 placeholder="Введите сообщение..." style={{ ...inputStyle, flex: 1 }} />
               <button onClick={sendMsg} style={{ ...btnPrimary, padding: "0 20px" }}>Отправить</button>
             </div>
+            {sendStatus && (
+              <div style={{ marginTop: 7, fontSize: 11, color: "#15803d", fontWeight: 600 }}>
+                {sendStatus}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -627,7 +656,7 @@ function CrmTab({ patients, onNewAppt }) {
             <div style={{ display: "grid", gap: 8 }}>
               {[
                 { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Phone size={13} /> Позвонить</span>,
-                  fn: () => { const n=(selected.phone||"").replace(/\D/g,"").replace(/^8/,"7"); window.location.href=`tel:+${n}`; } },
+                  fn: callPatient },
                 { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><CalendarDays size={13} /> Записать на приём</span>,
                   fn: () => onNewAppt?.() },
                 { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><ClipboardList size={13} /> Карточка пациента</span>,
@@ -677,7 +706,7 @@ export default function SchedulePage() {
         {tab === "crm"      && (
           <CrmTab
             patients={patients}
-            onNewAppt={() => { setTab("calendar"); setNewApptOpen(true); }}
+            onNewAppt={() => setTab("calendar")}
           />
         )}
       </div>

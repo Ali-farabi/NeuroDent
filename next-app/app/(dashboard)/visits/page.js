@@ -138,7 +138,7 @@ export default function VisitsPage() {
   }, {});
 
   return (
-    <div className="vis-outer" style={{ padding: 24, display: "grid", gap: 20, maxWidth: 1400 }}>
+    <div className="vis-outer" style={{ padding: 24, display: "grid", gap: 20, maxWidth: 1400, minHeight: "100%", background: "#fff" }}>
       <style>{`
         .vis-stats { display: flex; flex-wrap: wrap; gap: 12px; }
         .vis-stat  { flex: 1; min-width: 140px; }
@@ -227,7 +227,7 @@ export default function VisitsPage() {
           </select>
           <input
             type="text" value={query} onChange={onQueryChange}
-            placeholder="Поиск по пациенту или диагнозу..."
+            placeholder="Поиск по пациенту, диагнозу или врачу..."
             style={{ ...inputStyle, flex: 1, minWidth: 160 }}
           />
         </div>

@@ -428,6 +428,8 @@ function PatientListInner() {
 
   const canCreate = ["owner", "admin"].includes(user?.role);
   const canAI     = ["owner", "doctor"].includes(user?.role);
+  const totalDebt = patients.reduce((sum, patient) => sum + Math.abs(Math.min(patient.balance || 0, 0)), 0);
+  const activeDebtors = patients.filter((patient) => (patient.balance || 0) < 0).length;
 
   async function handleSave(form) {
     if (modal.mode === "create") await createPatient(form);
@@ -458,6 +460,16 @@ function PatientListInner() {
     return age;
   }
 
+  function fmtShortDate(iso) {
+    if (!iso) return "—";
+    const [y, m, d] = iso.split("-");
+    return `${d}.${m}.${y}`;
+  }
+
+  function fmtMoney(amount) {
+    return `${Math.abs(amount || 0).toLocaleString("ru-RU")} ₸`;
+  }
+
   // Get avatar initials
   function getInitials(name) {
     return name?.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) || "??";
@@ -465,7 +477,7 @@ function PatientListInner() {
 
   // Get avatar color based on name
   function getAvatarColor(name) {
-    const colors = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
+    const colors = ["#eff6ff", "#ecfdf5", "#fffbeb", "#fef2f2", "#f5f3ff", "#fdf2f8"];
     let hash = 0;
     for (let i = 0; i < (name?.length || 0); i++) {
       hash = name.charCodeAt(i) + ((hash << 5) - hash);
@@ -474,31 +486,33 @@ function PatientListInner() {
   }
 
   return (
-    <div style={{ padding: 0 }}>
+    <div style={{ minHeight: "100%", background: "#fff", padding: "22px 24px 32px" }}>
       <style>{`
         .pat-table { width: 100%; border-collapse: collapse; }
-        .pat-table th { text-align: left; padding: 12px 16px; fontSize: 12px; fontWeight: 600; color: var(--muted); borderBottom: 1px solid var(--border); background: var(--surface-2); }
-        .pat-table td { padding: 12px 16px; borderBottom: 1px solid var(--border); fontSize: 13px; }
+        .pat-table th { text-align: left; padding: 12px 16px; font-size: 11px; font-weight: 700; color: var(--muted); border-bottom: 1px solid var(--border); background: #f8fafc; text-transform: uppercase; letter-spacing: 0.02em; }
+        .pat-table td { padding: 13px 16px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
         .pat-table tr:hover { background: var(--hover); }
-        .pat-table tr:last-child td { borderBottom: none; }
-        .pat-avatar { width: 36px; height: 36px; borderRadius: 50%; display: flex; alignItems: center; justifyContent: center; color: #fff; fontSize: 13px; fontWeight: 600; }
-        .pat-action-btn { width: 32px; height: 32px; border: none; background: transparent; cursor: pointer; borderRadius: 6px; display: inline-flex; alignItems: center; justify-content: center; color: var(--muted); transition: all 0.15s; }
-        .pat-action-btn:hover { background: var(--surface-2); color: var(--text); }
+        .pat-table tr:last-child td { border-bottom: none; }
+        .pat-avatar { width: 36px; height: 36px; border-radius: 999px; display: flex; align-items: center; justify-content: center; color: var(--primary); font-size: 12px; font-weight: 700; border: 1px solid #dbeafe; }
+        .pat-action-btn { width: 32px; height: 32px; border: 1px solid transparent; background: transparent; cursor: pointer; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: #64748b; transition: all 0.15s; }
+        .pat-action-btn:hover { background: #f8fafc; border-color: var(--border); color: var(--primary); }
         .pat-action-btn.delete:hover { background: #fef2f2; color: var(--danger); }
       `}</style>
 
       {/* Header */}
       <div style={{
         display: "flex", justifyContent: "space-between", alignItems: "center",
-        padding: "16px 20px", background: "var(--surface)",
-        borderBottom: "1px solid var(--border)",
+        gap: 16, flexWrap: "wrap", marginBottom: 18,
       }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: "var(--text)" }}>Пациенты</h1>
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: "var(--text)" }}>Пациенты</h1>
+          <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12 }}>База пациентов, контакты и история лечения</p>
+        </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <input
             value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Поиск..."
-            style={{ ...inputStyle, width: 200, padding: "8px 12px" }}
+            placeholder="Поиск пациента..."
+            style={{ ...inputStyle, width: 250, height: 40, padding: "8px 13px", borderRadius: 10 }}
           />
           {canCreate && (
             <button onClick={() => setModal({ mode: "create" })} style={btnPrimary}>
@@ -508,8 +522,25 @@ function PatientListInner() {
         </div>
       </div>
 
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12, marginBottom: 18 }}>
+        {[
+          { label: "Всего пациентов", value: patients.length, note: loading ? "загрузка" : "в базе" },
+          { label: "С долгом", value: activeDebtors, note: totalDebt ? fmtMoney(totalDebt) : "нет задолженности" },
+          { label: "С WhatsApp", value: patients.filter((patient) => patient.channel === "WhatsApp").length, note: "для напоминаний" },
+        ].map((item) => (
+          <div key={item.label} style={{
+            border: "1px solid var(--border)", borderRadius: 10, padding: "10px 16px",
+            background: "#fff", boxShadow: "0 1px 4px rgba(15,23,42,0.06)",
+          }}>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>{item.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "var(--text)", lineHeight: 1 }}>{item.value}</div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>{item.note}</div>
+          </div>
+        ))}
+      </div>
+
       {/* Table */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderTop: "none", overflowX: "auto" }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, overflowX: "auto", boxShadow: "0 1px 5px rgba(15,23,42,0.08)" }}>
         {loading && (
           <div style={{ padding: "48px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
             Загрузка пациентов...
@@ -530,45 +561,68 @@ function PatientListInner() {
           <table className="pat-table">
             <thead>
               <tr>
-                <th style={{ width: 60 }}>ID</th>
                 <th>Пациент</th>
-                <th style={{ width: 80 }}>Возраст</th>
-                <th>Диагноз</th>
                 <th>Телефон</th>
-                <th style={{ width: 100, textAlign: "right" }}>Действия</th>
+                <th style={{ width: 90 }}>Возраст</th>
+                <th>Последний визит</th>
+                <th style={{ width: 130 }}>Баланс</th>
+                <th style={{ width: 118, textAlign: "right" }}>Действия</th>
               </tr>
             </thead>
             <tbody>
               {patients.map((p) => (
                 <tr key={p.id}>
-                  <td style={{ color: "var(--muted)" }}>#{p.id}</td>
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <div className="pat-avatar" style={{ background: getAvatarColor(p.name) }}>
                         {getInitials(p.name)}
                       </div>
-                      <span style={{ fontWeight: 500, color: "var(--text)" }}>{p.name}</span>
+                      <div>
+                        <div style={{ fontWeight: 650, color: "var(--text)" }}>{p.name}</div>
+                        <div style={{ marginTop: 2, color: "var(--muted)", fontSize: 11 }}>создан: {fmtShortDate(p.createdAt)}</div>
+                      </div>
                     </div>
                   </td>
+                  <td>
+                    <div style={{ color: "var(--text)", fontWeight: 500 }}>{p.phone}</div>
+                    <div style={{ marginTop: 2, color: "var(--muted)", fontSize: 11 }}>{p.channel || "Телефон"}</div>
+                  </td>
                   <td style={{ color: "var(--muted)" }}>{calculateAge(p.birthDate)}</td>
-                  <td style={{ color: "var(--muted)" }}>—</td>
-                  <td style={{ color: "var(--text)" }}>{p.phone}</td>
+                  <td>
+                    {p.lastVisitDate ? (
+                      <>
+                        <div style={{ color: "var(--text)", fontWeight: 500 }}>{fmtShortDate(p.lastVisitDate)} · {p.lastVisitTime}</div>
+                        <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 2 }}>{p.lastDiagnosis || "Прием завершен"}</div>
+                      </>
+                    ) : (
+                      <span style={{ color: "var(--muted)" }}>Нет визитов</span>
+                    )}
+                  </td>
+                  <td>
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", minHeight: 24, padding: "3px 9px",
+                      borderRadius: 999, fontSize: 12, fontWeight: 650,
+                      background: (p.balance || 0) < 0 ? "#fef2f2" : "#ecfdf5",
+                      color: (p.balance || 0) < 0 ? "#dc2626" : "#059669",
+                      border: `1px solid ${(p.balance || 0) < 0 ? "#fecaca" : "#bbf7d0"}`,
+                    }}>
+                      {(p.balance || 0) < 0 ? `долг ${fmtMoney(p.balance)}` : "нет долга"}
+                    </span>
+                  </td>
                   <td style={{ textAlign: "right" }}>
                     <div style={{ display: "inline-flex", gap: 4 }}>
                       {canAI && (
                         <button onClick={() => router.push(`/ai?patient=${p.id}`)} className="pat-action-btn" title="AI-Прием">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
-                          </svg>
+                          <Bot size={15} />
                         </button>
                       )}
                       <button onClick={() => openModal("view", p.id)} className="pat-action-btn" title="Просмотр">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
                         </svg>
                       </button>
                       <button onClick={() => openModal("edit", p.id)} className="pat-action-btn" title="Редактировать">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                         </svg>
                       </button>

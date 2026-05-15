@@ -231,7 +231,7 @@ export default function UsersPage() {
   }
 
   return (
-    <div style={{ padding: 0, display: "grid", gap: 0 }}>
+    <div style={{ minHeight: "100%", padding: 0, display: "grid", alignContent: "start", gap: 0, background: "#fff" }}>
       <style>{`
         .usr-row { display: flex; align-items: center; gap: 12px; padding: 14px 20px; transition: background 0.1s; }
         .usr-meta { font-size: 12px; color: var(--muted); flex-shrink: 0; }
@@ -246,7 +246,7 @@ export default function UsersPage() {
       {/* Toolbar */}
       <div style={{
         display: "flex", gap: 10, alignItems: "center",
-        background: "var(--surface)", border: "1px solid var(--border)",
+        background: "#fff", border: "1px solid var(--border)",
         borderRadius: 0, padding: "12px 16px", borderBottom: "none",
       }}>
         <input
@@ -261,7 +261,7 @@ export default function UsersPage() {
 
       {/* List */}
       <div style={{
-        background: "var(--surface)", border: "1px solid var(--border)",
+        background: "#fff", border: "1px solid var(--border)",
         borderRadius: 0, boxShadow: "var(--shadow-sm)", overflow: "hidden",
       }}>
         {loading ? (

@@ -200,12 +200,12 @@ export default function ReportPage() {
   const lastPayments = useMemo(() => (report?.payments || []).slice(0, 5), [report?.payments]);
 
   return (
-    <div className="min-h-full bg-white px-7 py-6 lg:px-9">
-      <div className="mx-auto max-w-[1180px]">
+    <div className="min-h-full bg-white px-5 py-5 lg:px-7">
+      <div className="mx-auto max-w-325">
         <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="m-0 text-[30px] font-semibold leading-tight text-black">Business Analytics</h1>
-            <p className="mt-1 text-base text-slate-500">Ключевые показатели клиники и контроль рисков</p>
+            <h1 className="m-0 text-[24px] font-bold leading-tight text-black">Business Analytics</h1>
+            <p className="mt-1 text-s text-slate-500">Ключевые показатели клиники и контроль рисков</p>
           </div>
           <div className="flex items-center gap-2.5">
             <label className="relative">
