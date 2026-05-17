@@ -102,6 +102,7 @@ const menuItems = [
 export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
   const pathname = usePathname();
   const visibleItems = menuItems.filter((item) => item.roles.includes(role));
+  const isPatient = role === "patient";
 
   // ESC менен жабу
   useEffect(() => {
@@ -133,7 +134,7 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
         @media (max-width: 640px) {
           .sidebar-el {
             position: fixed !important;
-            left: ${isOpen ? "0" : "-220px"} !important;
+            left: ${isOpen ? "0" : isPatient ? "-270px" : "-220px"} !important;
             top: 0;
             height: 100vh;
             z-index: 1000;
@@ -149,7 +150,7 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
       <aside
         className="sidebar-el"
         style={{
-          width: "var(--sidebar-w)",
+          width: isPatient ? 270 : "var(--sidebar-w)",
           background: "var(--surface)",
           borderRight: "1px solid var(--border)",
           display: "flex",
@@ -160,19 +161,20 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
         {/* Logo */}
         <div>
           <div style={{
-            display: "flex", alignItems: "center", gap: 8, padding: "24px 14px 0",
+            display: "flex", alignItems: "center", gap: 10, padding: isPatient ? "22px 18px 0" : "24px 14px 0",
           }}>
-            <Image src="/images/Medimetricslogotype.png" alt="NeuroDent" width={32} height={32} />
-            <span style={{ fontSize: 20, fontWeight: 700, color: "var(--primary)", letterSpacing: "-0.3px" }}>
+            <Image src="/images/Medimetricslogotype.png" alt="NeuroDent" width={isPatient ? 34 : 32} height={isPatient ? 34 : 32} />
+            <span style={{ fontSize: isPatient ? 18 : 20, fontWeight: 700, color: "var(--primary)", letterSpacing: "-0.3px" }}>
               Neurodent
             </span>
           </div>
         </div>
 
         {/* Nav */}
-        <nav style={{ display: "flex", flexDirection: "column", gap: 8, padding: "34px 10px 0" }}>
+        <nav style={{ display: "flex", flexDirection: "column", gap: 8, padding: isPatient ? "36px 16px 0" : "34px 10px 0" }}>
           {visibleItems.map((item) => {
             const isActive = pathname.startsWith(item.href);
+            const label = isPatient && item.route === "patients" ? "Моя медкарта" : item.label;
             return (
               <Link
                 key={item.route}
@@ -180,10 +182,10 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
                 onClick={onClose}
                 style={{
                   display: "flex", alignItems: "center", gap: 9,
-                  padding: "9px 10px",
+                  padding: isPatient ? "10px 14px" : "9px 10px",
                   borderRadius: 10,
                   color: isActive ? "rgba(11,18,32,0.82)" : "rgba(11,18,32,0.72)",
-                  fontSize: 13, fontWeight: 600,
+                  fontSize: isPatient ? 13 : 13, fontWeight: isPatient ? 500 : 600,
                   background: isActive ? "#e9e9e9" : "transparent",
                   transition: "background 0.15s ease, color 0.15s ease",
                   textDecoration: "none",
@@ -192,19 +194,80 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
                 <span style={{ color: "rgba(11,18,32,0.45)", flexShrink: 0, display: "inline-flex" }}>
                   {item.icon}
                 </span>
-                <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.label}</span>
+                <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
               </Link>
             );
           })}
         </nav>
 
-        <div style={{ marginTop: "auto", padding: "0 14px 30px", display: "grid", gap: 14 }}>
+        {isPatient && (
+          <div style={{ marginTop: "auto", padding: "0 14px 26px", display: "grid", gap: 16 }}>
+            <div style={{
+              border: "1px solid #e2e8f3",
+              borderRadius: 18,
+              padding: "16px 14px 14px",
+              background: "#fff",
+              boxShadow: "0 1px 2px rgba(15,23,42,0.03)",
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#1b2432", lineHeight: 1.35 }}>
+                Следите за статусами
+                <br />
+                в Telegram
+              </div>
+              <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.5, color: "#6c778b" }}>
+                Получайте обновления по сервисам быстрее - без входа в систему.
+              </div>
+              <button
+                type="button"
+                style={{
+                  marginTop: 16,
+                  width: "100%",
+                  height: 38,
+                  border: "none",
+                  borderRadius: 10,
+                  background: "#f2f5f8",
+                  color: "#333b49",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                }}
+              >
+                Телеграм-бот
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="#2AABEE">
+                  <path d="M21.944 4.683a1.5 1.5 0 0 0-1.766-.255L2.624 12.526a1.5 1.5 0 0 0 .173 2.78l4.654 1.628 2.046 5.345a1.5 1.5 0 0 0 2.654.357l2.636-3.64 4.407 3.507a1.5 1.5 0 0 0 2.402-.884l2.348-15.065a1.5 1.5 0 0 0-.598-1.871Zm-4.31 3.638-7.046 6.543-.645 2.889-.986-2.575-3.09-1.08 11.767-5.777Z" />
+                </svg>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              style={{
+                width: "100%",
+                height: 56,
+                border: "none",
+                borderRadius: 14,
+                background: "#3167e3",
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 700,
+                boxShadow: "0 10px 18px rgba(49, 103, 227, 0.16)",
+              }}
+            >
+              Новая запись
+            </button>
+          </div>
+        )}
+
+        <div style={{ padding: isPatient ? "0 14px 34px" : "0 14px 30px", display: "grid", gap: 18 }}>
           <button
             type="button"
             style={{
               display: "flex", alignItems: "center", gap: 10,
               border: "none", background: "transparent", padding: 0,
-              color: "var(--text)", fontSize: 14, fontWeight: 600, cursor: "pointer",
+              color: "var(--text)", fontSize: isPatient ? 15 : 14, fontWeight: isPatient ? 500 : 600, cursor: "pointer",
               textAlign: "left",
             }}
           >
@@ -221,7 +284,7 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
             style={{
               display: "flex", alignItems: "center", gap: 10,
               border: "none", background: "transparent", padding: 0,
-              color: "var(--text)", fontSize: 14, fontWeight: 600, cursor: "pointer",
+              color: "var(--text)", fontSize: isPatient ? 15 : 14, fontWeight: isPatient ? 500 : 600, cursor: "pointer",
               textAlign: "left",
             }}
           >

@@ -78,8 +78,10 @@ interface ToothImageItem {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const UPPER = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28];
-const LOWER = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38];
+const PERMANENT_UPPER = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28];
+const PERMANENT_LOWER = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38];
+const MILK_UPPER = [55, 54, 53, 52, 51, 61, 62, 63, 64, 65];
+const MILK_LOWER = [85, 84, 83, 82, 81, 71, 72, 73, 74, 75];
 const STATUS_ORDER: ToothStatus[] = ["normal", "caries", "filling", "healthy", "removed", "missing"];
 
 const TOOTH_IMG: Record<ToothStatus, string> = {
@@ -104,79 +106,197 @@ interface IcdGroup {
   items: IcdItem[];
 }
 
-const ICD_GROUPS: IcdGroup[] = [
-  { code: "K00", title: "K00 Нарушения развития и прорезывания зубов", items: [{ code: "K00.0", label: "K00.0 Нарушения прорезывания зубов" }] },
-  { code: "K01", title: "K01 Ретинированные и импактные зубы", items: [{ code: "K01.0", label: "K01.0 Ретинированные зубы" }] },
-  {
-    code: "K02", title: "K02 Кариес зубов", open: true, items: [
-      { code: "K02.0", label: "K02.0 Кариес эмали" },
-      { code: "K02.1", label: "K02.1 Кариес дентина", active: true },
-      { code: "K02.2", label: "K02.2 Кариес цемента" },
-      { code: "K02.3", label: "K02.3 Приостановившийся кариес зубов" },
+interface IcdDataset {
+  ambulatoryLabel: string;
+  defaultDiagnosisCode: string;
+  defaultDiagnosisText: string;
+  groups: IcdGroup[];
+  highlights: string[];
+  sourceSection: string;
+  sourceSummary: string;
+  sourceUrl: string;
+}
+
+const BITE_TEETH: Record<BiteType, { cardLabel: string; jawLabel: string; upper: number[]; lower: number[] }> = {
+  permanent: {
+    cardLabel: "Постоянный прикус",
+    jawLabel: "Взрослая стоматология",
+    upper: PERMANENT_UPPER,
+    lower: PERMANENT_LOWER,
+  },
+  milk: {
+    cardLabel: "Молочный прикус",
+    jawLabel: "Детская стоматология",
+    upper: MILK_UPPER,
+    lower: MILK_LOWER,
+  },
+};
+
+const ICD_DATASETS: Record<BiteType, IcdDataset> = {
+  permanent: {
+    ambulatoryLabel: "взрослая стоматология",
+    defaultDiagnosisCode: "K02.1",
+    defaultDiagnosisText: "K02.1 Кариес дентина",
+    sourceSection: "Стоматология",
+    sourceSummary: "MedElement: раздел «Стоматология», найдено 23 клинических протокола МЗ РК.",
+    sourceUrl: "https://diseases.medelement.com/?searched_data=diseases&q=&mq=&tq=&diseases_filter_type=section_medicine&diseases_content_type=4&section_medicine=97391385460043&category_mkb=0&parent_category_mkb=0",
+    highlights: [
+      "Кариес зубов (K02)",
+      "Гингивит (K05.0, K05.1)",
+      "Гипоплазия эмали зубов (K00.4)",
+    ],
+    groups: [
+      {
+        code: "K02",
+        title: "Кариес зубов",
+        open: true,
+        items: [
+          { code: "K02", label: "K02 Кариес зубов" },
+          { code: "K02.0", label: "K02.0 Кариес эмали" },
+          { code: "K02.1", label: "K02.1 Кариес дентина", active: true },
+          { code: "K02.2", label: "K02.2 Кариес цемента" },
+          { code: "K02.3", label: "K02.3 Приостановившийся кариес зубов" },
+        ],
+      },
+      {
+        code: "K04",
+        title: "Болезни пульпы и периапикальных тканей",
+        items: [
+          { code: "K04.0", label: "K04.0 Пульпит" },
+          { code: "K04.1", label: "K04.1 Некроз пульпы" },
+          { code: "K04.4", label: "K04.4 Острый апикальный периодонтит" },
+          { code: "K04.5", label: "K04.5 Хронический апикальный периодонтит" },
+          { code: "K04.6", label: "K04.6 Периапикальный абсцесс со свищом" },
+          { code: "K04.7", label: "K04.7 Периапикальный абсцесс без свища" },
+        ],
+      },
+      {
+        code: "K05",
+        title: "Гингивит и болезни пародонта",
+        items: [
+          { code: "K05.0", label: "K05.0 Острый гингивит" },
+          { code: "K05.1", label: "K05.1 Хронический гингивит" },
+          { code: "K05.2", label: "K05.2 Острый пародонтит" },
+          { code: "K05.3", label: "K05.3 Хронический пародонтит" },
+        ],
+      },
+      {
+        code: "K00",
+        title: "Нарушения развития и прорезывания зубов",
+        items: [
+          { code: "K00.0", label: "K00.0 Нарушения прорезывания зубов" },
+          { code: "K00.4", label: "K00.4 Нарушения формирования зубов" },
+        ],
+      },
+      {
+        code: "K03",
+        title: "Другие болезни твёрдых тканей зубов",
+        items: [
+          { code: "K03.0", label: "K03.0 Повышенное стирание зубов" },
+          { code: "K03.1", label: "K03.1 Сошлифовывание зубов" },
+          { code: "K03.2", label: "K03.2 Эрозия зубов" },
+          { code: "K03.6", label: "K03.6 Отложения на зубах" },
+        ],
+      },
+      {
+        code: "K13",
+        title: "Болезни слизистой полости рта",
+        items: [
+          { code: "B37.0", label: "B37.0 Кандидозный стоматит" },
+          { code: "K13.2", label: "K13.2 Лейкоплакия и другие изменения эпителия полости рта" },
+          { code: "K14.6", label: "K14.6 Глоссодиния" },
+        ],
+      },
+      {
+        code: "DERM",
+        title: "Смежные стоматологические состояния",
+        items: [
+          { code: "B02", label: "B02 Опоясывающий лишай [herpes zoster]" },
+          { code: "L43", label: "L43 Лишай красный плоский" },
+          { code: "L51", label: "L51 Эритема многоформная" },
+          { code: "L51.0", label: "L51.0 Небуллезная эритема многоформная" },
+          { code: "L51.1", label: "L51.1 Буллезная эритема многоформная" },
+        ],
+      },
     ],
   },
-  {
-    code: "K03", title: "K03 Другие болезни твёрдых тканей зубов", items: [
-      { code: "K03.0", label: "K03.0 Повышенное стирание зубов" },
-      { code: "K03.1", label: "K03.1 Сошлифовывание зубов" },
-      { code: "K03.2", label: "K03.2 Эрозия зубов" },
-      { code: "K03.3", label: "K03.3 Патологическая резорбция зубов" },
-      { code: "K03.4", label: "K03.4 Гиперцементоз" },
-      { code: "K03.5", label: "K03.5 Анкилоз зубов" },
-      { code: "K03.6", label: "K03.6 Отложения на зубах" },
-      { code: "K03.7", label: "K03.7 Изменение цвета зубов" },
+  milk: {
+    ambulatoryLabel: "детская стоматология",
+    defaultDiagnosisCode: "K02.1",
+    defaultDiagnosisText: "K02.1 Кариес дентина у детей",
+    sourceSection: "Стоматология детская",
+    sourceSummary: "MedElement: раздел «Стоматология детская», найдено 23 клинических протокола МЗ РК.",
+    sourceUrl: "https://diseases.medelement.com/?searched_data=diseases&q=&mq=&tq=&diseases_filter_type=section_medicine&diseases_content_type=4&section_medicine=544746821495980557&category_mkb=0&parent_category_mkb=0",
+    highlights: [
+      "Кариес зубов у детей (K02.*)",
+      "Периодонтит у детей (K04.4, K04.5)",
+      "Острый гингивит у детей (K05.0)",
+    ],
+    groups: [
+      {
+        code: "K02",
+        title: "Кариес зубов у детей",
+        open: true,
+        items: [
+          { code: "K02", label: "K02 Кариес зубов у детей" },
+          { code: "K02.0", label: "K02.0 Кариес эмали у детей" },
+          { code: "K02.1", label: "K02.1 Кариес дентина у детей", active: true },
+          { code: "K02.2", label: "K02.2 Кариес цемента у детей" },
+          { code: "K02.3", label: "K02.3 Приостановившийся кариес зубов у детей" },
+        ],
+      },
+      {
+        code: "K04",
+        title: "Периодонтит у детей",
+        items: [
+          { code: "K04.4", label: "K04.4 Острый апикальный периодонтит у детей" },
+          { code: "K04.5", label: "K04.5 Хронический апикальный периодонтит у детей" },
+        ],
+      },
+      {
+        code: "K05",
+        title: "Воспалительные заболевания пародонта у детей",
+        items: [
+          { code: "K05.0", label: "K05.0 Острый гингивит у детей" },
+          { code: "K05.2", label: "K05.2 Острый пародонтит у детей" },
+        ],
+      },
+      {
+        code: "K00",
+        title: "Нарушения развития зубов у детей",
+        items: [
+          { code: "K00.4", label: "K00.4 Гипоплазия эмали у детей" },
+        ],
+      },
+      {
+        code: "MOUTH",
+        title: "Болезни полости рта у детей",
+        items: [
+          { code: "B00.2", label: "B00.2 Герпетический гингивостоматит и фаринготонзиллит" },
+          { code: "K13.0", label: "K13.0 Болезни губ у детей" },
+          { code: "Q38.0", label: "Q38.0 Врожденные аномалии губ" },
+          { code: "Q38.6", label: "Q38.6 Другие пороки развития рта" },
+        ],
+      },
+      {
+        code: "K07",
+        title: "Челюстно-лицевые нарушения у детей",
+        items: [
+          { code: "K07.6", label: "K07.6 Болезни височно-нижнечелюстного сустава у детей" },
+        ],
+      },
+      {
+        code: "TRAUMA",
+        title: "Травмы зубов у детей",
+        items: [
+          { code: "S03.2", label: "S03.2 Вывих зуба" },
+          { code: "K08.1", label: "K08.1 Потеря зубов вследствие болезни или травмы" },
+          { code: "S00-S09", label: "S00-S09 Травмы головы" },
+        ],
+      },
     ],
   },
-  {
-    code: "K04", title: "K04 Болезни пульпы и периапикальных тканей", items: [
-      { code: "K04.0", label: "K04.0 Пульпит" },
-      { code: "K04.1", label: "K04.1 Некроз пульпы" },
-      { code: "K04.2", label: "K04.2 Дегенерация пульпы" },
-      { code: "K04.3", label: "K04.3 Патологическое образование твёрдых тканей в пульпе" },
-      { code: "K04.4", label: "K04.4 Острый апикальный периодонтит" },
-      { code: "K04.5", label: "K04.5 Хронический апикальный периодонтит" },
-      { code: "K04.6", label: "K04.6 Периапикальный абсцесс со свищом" },
-      { code: "K04.7", label: "K04.7 Периапикальный абсцесс без свища" },
-      { code: "K04.8", label: "K04.8 Корневая киста" },
-    ],
-  },
-  {
-    code: "K05", title: "K05 Гингивит и болезни пародонта", items: [
-      { code: "K05.0", label: "K05.0 Острый гингивит" },
-      { code: "K05.1", label: "K05.1 Хронический гингивит" },
-      { code: "K05.2", label: "K05.2 Острый пародонтит" },
-      { code: "K05.3", label: "K05.3 Хронический пародонтит" },
-      { code: "K05.4", label: "K05.4 Пародонтоз" },
-      { code: "K05.5", label: "K05.5 Другие болезни пародонта" },
-    ],
-  },
-  {
-    code: "K06", title: "K06 Другие изменения десны и альвеолярного края", items: [
-      { code: "K06.0", label: "K06.0 Рецессия десны" },
-      { code: "K06.1", label: "K06.1 Гипертрофия десны" },
-      { code: "K06.2", label: "K06.2 Поражения десны и беззубого края" },
-    ],
-  },
-  {
-    code: "K07", title: "K07 Челюстно-лицевые аномалии", items: [
-      { code: "K07.0", label: "K07.0 Аномалии размеров челюстей" },
-      { code: "K07.1", label: "K07.1 Аномалии соотношения челюстей" },
-      { code: "K07.2", label: "K07.2 Аномалии прикуса" },
-      { code: "K07.3", label: "K07.3 Аномалии положения зубов" },
-      { code: "K07.4", label: "K07.4 Аномалии прикуса неуточнённые" },
-      { code: "K07.5", label: "K07.5 Болезни ВНЧС" },
-    ],
-  },
-  {
-    code: "K08", title: "K08 Другие изменения зубов и поддерживающих структур", items: [
-      { code: "K08.0", label: "K08.0 Потеря зубов вследствие несчастного случая" },
-      { code: "K08.1", label: "K08.1 Потеря зубов вследствие болезни" },
-      { code: "K08.2", label: "K08.2 Атрофия беззубого альвеолярного края" },
-      { code: "K08.3", label: "K08.3 Задержка корня зуба" },
-      { code: "K08.8", label: "K08.8 Другие уточнённые изменения зубов" },
-    ],
-  },
-];
+};
 
 const CARIES_HINTS: Record<CariesType, string> = {
   surface: "Для поверхностного кариеса рекомендована реминерализующая терапия.",
@@ -357,11 +477,11 @@ function ToothBtn({ n, status, isSelected, bite, onClick }: {
         ${isSelected ? "bg-blue-50 border-blue-300 shadow-[0_0_0_1px_rgba(59,130,246,0.25)]" : ""}
         hover:bg-gray-100 hover:-translate-y-px`}
       onClick={onClick}
-      title={`Зуб ${n}`}
+      title={bite === "milk" ? `Молочный зуб ${n}` : `Зуб ${n}`}
     >
       <img
         src={TOOTH_IMG[status] || TOOTH_IMG.normal}
-        alt={`Зуб ${n}`}
+        alt={bite === "milk" ? `Молочный зуб ${n}` : `Зуб ${n}`}
         className="w-[44px] h-[44px] object-cover object-[center_20%] rounded-md mix-blend-multiply transition-all duration-200"
         style={imgStyle}
       />
@@ -371,17 +491,48 @@ function ToothBtn({ n, status, isSelected, bite, onClick }: {
 }
 
 // ─── ICD-10 Tree ──────────────────────────────────────────────────────────────
-function IcdTree({ activeCode, onSelect }: { activeCode: string; onSelect: (code: string, label: string) => void }) {
+function IcdTree({ activeCode, dataset, onSelect }: { activeCode: string; dataset: IcdDataset; onSelect: (code: string, label: string) => void }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     const m: Record<string, boolean> = {};
-    ICD_GROUPS.forEach((g) => { m[g.code] = !!g.open; });
+    dataset.groups.forEach((g) => { m[g.code] = !!g.open; });
     return m;
   });
   const [search, setSearch] = useState("");
   const q = search.toLowerCase().trim();
 
+  useEffect(() => {
+    const m: Record<string, boolean> = {};
+    dataset.groups.forEach((g) => { m[g.code] = !!g.open; });
+    setOpenGroups(m);
+    setSearch("");
+  }, [dataset]);
+
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm max-h-[680px] flex flex-col gap-4">
+      <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 flex flex-col gap-2">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-blue-600">Источник протоколов</div>
+            <div className="text-sm font-semibold text-gray-900">{dataset.sourceSection}</div>
+          </div>
+          <a
+            href={dataset.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+          >
+            MedElement
+          </a>
+        </div>
+        <div className="text-[11px] leading-relaxed text-gray-500">{dataset.sourceSummary}</div>
+        <div className="flex flex-wrap gap-1.5">
+          {dataset.highlights.map((item) => (
+            <span key={item} className="rounded-full border border-blue-200 bg-white px-2 py-1 text-[10px] text-blue-700">
+              {item}
+            </span>
+          ))}
+        </div>
+      </div>
       <div className="relative">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
         <input
@@ -394,7 +545,7 @@ function IcdTree({ activeCode, onSelect }: { activeCode: string; onSelect: (code
         />
       </div>
       <div className="flex-1 overflow-y-auto pr-1 text-sm">
-        {ICD_GROUPS.map((group) => {
+        {dataset.groups.map((group) => {
           const matchItems = group.items.filter((i) => !q || i.label.toLowerCase().includes(q));
           if (q && !group.title.toLowerCase().includes(q) && matchItems.length === 0) return null;
           const isOpen = q ? true : !!openGroups[group.code];
@@ -625,6 +776,49 @@ function AiCorePage({ patientId }: { patientId: string }) {
     ? "bg-amber-50 text-amber-600 border-amber-200"
     : "bg-blue-50 text-blue-700 border-blue-200";
 
+  const activeTeethConfig = BITE_TEETH[bite];
+  const activeIcdDataset = ICD_DATASETS[bite];
+  const activeUpperTeeth = activeTeethConfig.upper;
+  const activeLowerTeeth = activeTeethConfig.lower;
+  const activeToothNumbers = useMemo(() => [...activeUpperTeeth, ...activeLowerTeeth], [activeLowerTeeth, activeUpperTeeth]);
+  const activeIcdItems = useMemo(
+    () => activeIcdDataset.groups.flatMap((group) => group.items),
+    [activeIcdDataset],
+  );
+
+  const switchBite = useCallback((nextBite: BiteType, withToast = true) => {
+    setBite(nextBite);
+    setJawFilter("all");
+    setSelectedTooth(null);
+    setSurfacePopupTooth(null);
+    setActiveSurfaces([]);
+
+    const nextDataset = ICD_DATASETS[nextBite];
+    const nextCodes = new Set(nextDataset.groups.flatMap((group) => group.items.map((item) => item.code)));
+
+    setDiagnosisText((prev) => {
+      const stripped = prev.replace(/\(\d{1,2}\)(\s*—\s*пов\.:.*)?$/u, "").trim();
+      if (!stripped) return nextDataset.defaultDiagnosisText;
+      return nextCodes.has(diagnosisCode) ? stripped : nextDataset.defaultDiagnosisText;
+    });
+
+    if (!nextCodes.has(diagnosisCode)) {
+      setDiagnosisCode(nextDataset.defaultDiagnosisCode);
+    }
+
+    if (withToast) {
+      showToast(nextBite === "milk" ? "Переключено на детскую стоматологию и молочный прикус" : "Переключено на взрослую стоматологию и постоянный прикус");
+    }
+  }, [diagnosisCode, showToast]);
+
+  useEffect(() => {
+    if (patientAge == null) return;
+    const suggestedBite = patientAge <= 12 ? "milk" : "permanent";
+    if (suggestedBite !== bite) {
+      switchBite(suggestedBite, false);
+    }
+  }, [bite, patientAge, switchBite]);
+
   function startRecording() {
     transcriptRef.current = "";
     setIsRecording(true);
@@ -688,13 +882,17 @@ function AiCorePage({ patientId }: { patientId: string }) {
   }
 
   function handleSurfaceClose() {
-    if (activeSurfaces.length) setDiagnosisText(`Кариес дентина (${surfacePopupTooth}) — пов.: ${activeSurfaces.join(", ")}`);
+    if (activeSurfaces.length) {
+      const baseDiagnosis = bite === "milk" ? "K02.1 Кариес дентина у детей" : "K02.1 Кариес дентина";
+      setDiagnosisCode("K02.1");
+      setDiagnosisText(`${baseDiagnosis} (${surfacePopupTooth}) — пов.: ${activeSurfaces.join(", ")}`);
+    }
     setSurfacePopupTooth(null);
   }
 
   function exportToothFormula() {
     const r: Record<number, { status: string }> = {};
-    [...UPPER, ...LOWER].forEach((n) => { r[n] = { status: teeth[n] || "normal" }; });
+    activeToothNumbers.forEach((n) => { r[n] = { status: teeth[n] || "normal" }; });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([JSON.stringify(r, null, 2)], { type: "application/json" }));
     a.download = "tooth_formula.json";
@@ -763,7 +961,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
   ];
 
   const counts: Record<ToothStatus, number> = { normal: 0, caries: 0, filling: 0, healthy: 0, removed: 0, missing: 0 };
-  [...UPPER, ...LOWER].forEach((n) => { const s = teeth[n] || "normal"; if (counts[s] !== undefined) counts[s]++; });
+  activeToothNumbers.forEach((n) => { const s = teeth[n] || "normal"; if (counts[s] !== undefined) counts[s]++; });
 
   const legend = [
     { key: "caries", bg: "bg-red-100 border-red-300", label: "Кариес", c: counts.caries },
@@ -865,6 +1063,13 @@ function AiCorePage({ patientId }: { patientId: string }) {
               <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border flex items-center gap-1 ${riskBadge}`}>
                 <Bot size={12} /> Риск: {riskLevel}
               </span>
+              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border flex items-center gap-1 ${
+                bite === "milk"
+                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                  : "bg-slate-50 text-slate-700 border-slate-200"
+              }`}>
+                <Info size={12} /> {activeTeethConfig.jawLabel}
+              </span>
               {complaints.trim() && (
                 <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 flex items-center gap-1">
                   <AlertTriangle size={12} /> {complaints.length > 35 ? complaints.slice(0, 35) + "…" : complaints}
@@ -920,7 +1125,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
                 className={`px-3 py-1 text-[11px] border rounded-full cursor-pointer transition ${
                   bite === "permanent" ? "bg-blue-50 border-blue-500 text-blue-700 font-semibold" : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"
                 }`}
-                onClick={() => setBite("permanent")}
+                onClick={() => switchBite("permanent")}
               >
                 Постоянный
               </button>
@@ -929,7 +1134,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
                 className={`px-3 py-1 text-[11px] border rounded-full cursor-pointer transition ${
                   bite === "milk" ? "bg-amber-50 border-amber-500 text-amber-600 font-semibold" : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"
                 }`}
-                onClick={() => setBite("milk")}
+                onClick={() => switchBite("milk")}
               >
                 Молочный
               </button>
@@ -940,7 +1145,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
                 <>
                   <div className="text-[11px] text-gray-400 mt-1">Верхняя челюсть</div>
                   <div className="flex flex-nowrap gap-1 min-w-max">
-                    {UPPER.map((n) => (
+                    {activeUpperTeeth.map((n) => (
                       <ToothBtn key={n} n={n} status={teeth[n] || "normal"} isSelected={selectedTooth === n} bite={bite} onClick={() => handleToothClick(n, teeth[n] || "normal")} />
                     ))}
                   </div>
@@ -950,7 +1155,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
                 <>
                   <div className="text-[11px] text-gray-400 mt-1">Нижняя челюсть</div>
                   <div className="flex flex-nowrap gap-1 min-w-max">
-                    {LOWER.map((n) => (
+                    {activeLowerTeeth.map((n) => (
                       <ToothBtn key={n} n={n} status={teeth[n] || "normal"} isSelected={selectedTooth === n} bite={bite} onClick={() => handleToothClick(n, teeth[n] || "normal")} />
                     ))}
                   </div>
@@ -986,7 +1191,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
               </div>
             </div>
             <div className="text-[11px] text-gray-400 text-right mt-1">
-              {bite === "milk" ? "Молочный прикус" : "Постоянный прикус"}
+              {activeTeethConfig.cardLabel} • {activeTeethConfig.jawLabel}
             </div>
           </div>
 
@@ -1034,10 +1239,9 @@ function AiCorePage({ patientId }: { patientId: string }) {
                     <label className="text-[11px] text-gray-500">МКБ-10</label>
                     <select className="w-full h-10 px-3 text-sm border border-gray-200 bg-gray-50 rounded-xl focus:border-blue-500 focus:outline-none" value={diagnosisCode} onChange={(e) => setDiagnosisCode(e.target.value)}>
                       <option value="">Не выбрано</option>
-                      <option value="K02.0">K02.0 — Кариес эмали</option>
-                      <option value="K02.1">K02.1 — Кариес дентина</option>
-                      <option value="K02.2">K02.2 — Кариес цемента</option>
-                      <option value="K04.0">K04.0 — Острый пульпит</option>
+                      {activeIcdItems.map((item) => (
+                        <option key={item.code} value={item.code}>{item.label}</option>
+                      ))}
                     </select>
                     {AI_SUGGESTIONS[diagnosisCode] && (
                       <div className="mt-1.5 p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-[11px] flex flex-col gap-1">
@@ -1119,7 +1323,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
               </div>
 
               {/* ICD */}
-              <IcdTree activeCode={diagnosisCode} onSelect={(code, label) => { setDiagnosisCode(code); setDiagnosisText(label); }} />
+              <IcdTree activeCode={diagnosisCode} dataset={activeIcdDataset} onSelect={(code, label) => { setDiagnosisCode(code); setDiagnosisText(label); }} />
             </div>
           </div>
         </div>
@@ -1398,9 +1602,10 @@ function AiCorePage({ patientId }: { patientId: string }) {
               <div className="text-base font-semibold mb-3">Проверка протокола перед экспортом</div>
               <div className="text-[13px] text-gray-500 mb-2"><b>Диагноз:</b> {diagnosisText || "—"}</div>
               <div className="text-[13px] text-gray-500 mb-2"><b>МКБ-10:</b> {diagnosisCode || "—"} &bull; <b>Тип кариеса:</b> {cariesType || "—"}</div>
+              <div className="text-[13px] text-gray-500 mb-2"><b>Раздел:</b> {activeIcdDataset.sourceSection}</div>
               <div className="text-[13px] text-gray-500 mb-4"><b>Зуб:</b> {selectedTooth || "—"}</div>
               <span className="inline-block w-6 h-6 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4" />
-              <div className="text-[13px] text-gray-400">Формируем амбулаторную карту (Форма №043/у)...</div>
+              <div className="text-[13px] text-gray-400">Формируем амбулаторную карту: {activeIcdDataset.ambulatoryLabel} (Форма №043/у)...</div>
             </div>
           )}
           {modal.title.includes("PDF") && modal.phase === "done" && (
