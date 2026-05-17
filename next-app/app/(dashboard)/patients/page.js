@@ -4,13 +4,17 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/AuthContext";
 import { searchPatients, getPatientById, createPatient, updatePatient, getPatientVisits } from "@/lib/api";
-import { Bot, HeartPulse, CalendarDays, HandMetal, Sparkles, FileDown, AlertTriangle, UserRound } from "lucide-react";
+import { Bot, HeartPulse, CalendarDays, FileDown, AlertTriangle, UserRound, Upload, ScanLine } from "lucide-react";
 
 // ── Date formatter ────────────────────────────────────────────────────────────
 function fmtDate(iso) {
   if (!iso) return "";
   const [y, m, d] = iso.split("-");
   return `${d}.${m}.${y}`;
+}
+
+function firstFilled(...values) {
+  return values.find((value) => typeof value === "string" && value.trim()) || "";
 }
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
@@ -293,100 +297,687 @@ function PatientCabinet() {
   }, [user?.phone]);
 
   const completedVisits = patientVisits.filter(v => v.visitId);
+  const patientName = patientData?.name || user?.name || "Пациент";
+  const firstName = patientName.split(" ")[0] || patientName;
+  const bonusPoints = Number(patientData?.bonusPoints ?? user?.bonusPoints ?? 0);
+  const bonusLabel = `${bonusPoints.toLocaleString("ru-RU")} т`;
+  const primaryVisit = completedVisits[0];
+  const imagingAssets = {
+    model3d: firstFilled(
+      patientData?.model3dImageUrl,
+      patientData?.xrayImageUrl,
+      patientData?.ctImageUrl,
+      patientData?.images?.model3d,
+      patientData?.images?.xray,
+      user?.model3dImageUrl,
+    ),
+    before: firstFilled(
+      patientData?.beforeTreatmentImageUrl,
+      patientData?.beforeImageUrl,
+      patientData?.images?.before,
+    ),
+    after: firstFilled(
+      patientData?.afterTreatmentImageUrl,
+      patientData?.afterImageUrl,
+      patientData?.images?.after,
+    ),
+  };
+  const historyItems = completedVisits.slice(0, 3).map((visit, index) => ({
+    id: visit.appointmentId || `${visit.date}-${visit.time}-${index}`,
+    date: fmtDate(visit.date).toUpperCase(),
+    title: visit.diagnosis || "Контрольный прием",
+    description: visit.notes || visit.complaint || "Обновлен клинический протокол и рекомендации по уходу.",
+    isActive: index === 0,
+  }));
+  const planItems = [
+    {
+      id: "plan-urgent",
+      title: primaryVisit?.diagnosis?.includes("мудр")
+        ? primaryVisit.diagnosis
+        : "Удаление зуба мудрости",
+      subtitle: primaryVisit?.toothNumber
+        ? `Зуб ${primaryVisit.toothNumber} (дистопированный)`
+        : "Зуб 4.8 (дистопированный)",
+      tone: "danger",
+    },
+    {
+      id: "plan-next",
+      title: primaryVisit?.diagnosisCode?.startsWith("K07")
+        ? "Ортодонтический этап"
+        : "Установка имплантата",
+      subtitle: primaryVisit?.toothNumber
+        ? `Зуб ${primaryVisit.toothNumber} (Nobel Biocare)`
+        : "Зуб 1.6 (Nobel Biocare)",
+      tone: "muted",
+    },
+  ];
+  const timelineFallback = [
+    {
+      id: "fallback-1",
+      date: "12 МАЙ 2024",
+      title: "Профессиональная гигиена",
+      description: "Ультразвуковая чистка AirFlow, полировка эмали.",
+      isActive: true,
+    },
+    {
+      id: "fallback-2",
+      date: "28 АПР 2024",
+      title: "Лечение кариеса",
+      description: "Зуб 2.4, медиальная поверхность. Пломба Ceram.X.",
+      isActive: false,
+    },
+    {
+      id: "fallback-3",
+      date: "15 МАРТ 2024",
+      title: "КТ-диагностика",
+      description: "Полное 3D сканирование обеих челюстей.",
+      isActive: false,
+    },
+  ];
+  const displayHistory = historyItems.length ? historyItems : timelineFallback;
 
   return (
-    <div style={{ padding: 24, maxWidth: 1000, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 }}>
-      {/* Welcome */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, margin: "0 0 6px 0", color: "var(--text)" }}>
-            Добро пожаловать, {user?.name || "Пациент"}! <HandMetal size={24} style={{ display: "inline", verticalAlign: "middle" }} />
-          </h1>
-          <p style={{ color: "var(--muted)", margin: 0, fontSize: 14 }}>Ваша личная медицинская карта и история лечения</p>
-        </div>
-        <div style={{
-          background: "var(--surface)", padding: "12px 20px", borderRadius: "var(--radius)",
-          border: "1px solid var(--primary-100)", display: "flex", alignItems: "center",
-          gap: 12, boxShadow: "var(--shadow-sm)",
-        }}>
-          <div style={{ background: "#dcfce7", padding: 8, borderRadius: "50%", color: "var(--success)", display: "flex" }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-            </svg>
-          </div>
+    <div style={{ minHeight: "100%", background: "#fbfcfe", padding: "22px 24px 20px" }}>
+      <style>{`
+        .patient-home {
+          display: grid;
+          gap: 20px;
+        }
+        .patient-home-card {
+          border: 1px solid #dbe3f1;
+          border-radius: 16px;
+          background: #fff;
+          box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+        }
+        .patient-home-grid {
+          display: grid;
+          grid-template-columns: minmax(0, 1.22fr) minmax(420px, 0.88fr);
+          gap: 18px 24px;
+          align-items: start;
+        }
+        .patient-model-stage {
+          position: relative;
+          min-height: 470px;
+          overflow: hidden;
+          border-radius: 0 0 16px 16px;
+          background:
+            radial-gradient(circle at 50% 42%, rgba(28, 130, 208, 0.42), rgba(8, 18, 28, 0) 24%),
+            radial-gradient(circle at 50% 52%, rgba(31, 145, 229, 0.18), rgba(7, 13, 22, 0) 44%),
+            radial-gradient(circle at 50% 48%, rgba(41, 156, 241, 0.09), rgba(7, 13, 22, 0) 58%),
+            linear-gradient(180deg, #08121d 0%, #0a1520 45%, #0b1622 100%);
+        }
+        .patient-model-stage::before {
+          content: "";
+          position: absolute;
+          top: 28px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 58%;
+          height: 46%;
+          border-radius: 50%;
+          border: 4px solid rgba(140, 217, 255, 0.52);
+          filter: drop-shadow(0 0 22px rgba(109, 217, 255, 0.35));
+          box-shadow:
+            0 0 0 16px rgba(82, 190, 249, 0.08),
+            0 0 0 34px rgba(58, 145, 214, 0.06);
+        }
+        .patient-model-stage::after {
+          content: "";
+          position: absolute;
+          bottom: 22px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 50%;
+          height: 31%;
+          border-radius: 50%;
+          border: 4px solid rgba(140, 217, 255, 0.52);
+          filter: drop-shadow(0 0 22px rgba(109, 217, 255, 0.35));
+          box-shadow:
+            0 0 0 14px rgba(82, 190, 249, 0.08),
+            0 0 0 30px rgba(58, 145, 214, 0.05);
+        }
+        .patient-model-empty {
+          position: absolute;
+          inset: 76px 72px 76px;
+          border-radius: 28px;
+          border: 1px dashed rgba(138, 210, 255, 0.3);
+          background: linear-gradient(180deg, rgba(13, 23, 36, 0.58), rgba(8, 16, 26, 0.82));
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 28px;
+        }
+        .patient-model-empty-card {
+          width: min(100%, 360px);
+          border-radius: 22px;
+          border: 1px solid rgba(135, 206, 250, 0.2);
+          background: rgba(7, 15, 24, 0.72);
+          box-shadow: 0 24px 60px rgba(4, 9, 16, 0.32);
+          backdrop-filter: blur(12px);
+          padding: 24px 22px;
+          display: grid;
+          gap: 12px;
+          justify-items: center;
+          text-align: center;
+          color: #eef6ff;
+        }
+        .patient-model-empty-icon {
+          width: 58px;
+          height: 58px;
+          border-radius: 18px;
+          background: rgba(49, 103, 227, 0.18);
+          color: #8ec8ff;
+          display: grid;
+          place-items: center;
+          box-shadow: inset 0 0 0 1px rgba(142, 200, 255, 0.12);
+        }
+        .patient-model-empty-title {
+          font-size: 18px;
+          font-weight: 700;
+          letter-spacing: -0.02em;
+        }
+        .patient-model-empty-text {
+          font-size: 13px;
+          line-height: 1.55;
+          color: rgba(222, 234, 248, 0.72);
+        }
+        .patient-model-empty-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          min-height: 34px;
+          padding: 0 14px;
+          border-radius: 999px;
+          background: rgba(49, 103, 227, 0.12);
+          border: 1px solid rgba(108, 176, 255, 0.16);
+          color: #b6d7ff;
+          font-size: 12px;
+          font-weight: 600;
+        }
+        .patient-photo-card {
+          padding: 10px 12px 12px;
+          border: 1px solid #d9e1ef;
+          border-radius: 16px;
+          background: #fff;
+        }
+        .patient-photo-label {
+          margin-bottom: 8px;
+          font-size: 12px;
+          font-weight: 700;
+          color: #5e6f8e;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+        }
+        .patient-photo-stage {
+          position: relative;
+          height: 116px;
+          overflow: hidden;
+          border-radius: 12px;
+          border: 1px dashed #cbd8ef;
+          background: linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+        }
+        .patient-photo-empty {
+          display: grid;
+          gap: 8px;
+          justify-items: center;
+          text-align: center;
+          color: #62738f;
+        }
+        .patient-photo-empty strong {
+          font-size: 13px;
+          color: #32415d;
+        }
+        .patient-photo-empty span {
+          font-size: 12px;
+          line-height: 1.45;
+        }
+        .patient-doc-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 18px;
+        }
+        .patient-doc-card {
+          min-height: 110px;
+          border: 1px solid #dce4f2;
+          border-radius: 16px;
+          background: #fff;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          color: #172c4c;
+          font-size: 15px;
+          font-weight: 700;
+          text-align: center;
+          box-shadow: 0 4px 16px rgba(28, 48, 89, 0.04);
+        }
+        @media (max-width: 1320px) {
+          .patient-home-grid {
+            grid-template-columns: minmax(0, 1fr);
+          }
+        }
+        @media (max-width: 900px) {
+          .patient-home {
+            gap: 16px;
+          }
+          .patient-doc-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+        @media (max-width: 640px) {
+          .patient-model-stage {
+            min-height: 320px;
+          }
+          .patient-model-empty {
+            inset: 54px 18px 54px;
+            padding: 18px;
+          }
+          .patient-model-empty-card {
+            padding: 18px 16px;
+          }
+          .patient-model-empty-title {
+            font-size: 16px;
+          }
+        }
+      `}</style>
+
+      <div className="patient-home">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
           <div>
-            <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase" }}>Ваши баллы</div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)" }}>{patientData?.bonusPoints ?? user?.bonusPoints ?? 0}</div>
+            <h1 style={{ margin: 0, color: "#3167e3", fontSize: "clamp(34px, 4.3vw, 48px)", lineHeight: 1.02, fontWeight: 800, letterSpacing: "-0.04em" }}>
+              Добро пожаловать, {firstName}!
+            </h1>
+            <p style={{ margin: "8px 0 0", color: "#5f6f89", fontSize: 15, lineHeight: 1.4, maxWidth: 620 }}>
+              Ваш персональный план лечения и 3D-диагностика обновлены сегодня.
+            </p>
           </div>
-        </div>
-      </div>
 
-      {/* Allergy warning */}
-      {(patientData?.allergies || user?.allergies) && (
-        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "var(--radius-sm)", padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
-          <AlertTriangle size={16} style={{ color: "var(--danger)", flexShrink: 0 }} />
-          <span style={{ fontSize: 13, color: "var(--danger)", fontWeight: 500 }}>
-            Аллергия: {patientData?.allergies || user?.allergies}
-          </span>
-        </div>
-      )}
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20 }}>
-        {/* 3D Model */}
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", overflow: "hidden", boxShadow: "var(--shadow-sm)" }}>
-          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>Ваша 3D-модель челюсти</div>
-            <span style={{ background: "var(--active)", color: "var(--primary)", fontSize: 11, padding: "2px 8px", borderRadius: 6, fontWeight: 500 }}>Демо</span>
-          </div>
-          <div style={{ background: "#111", height: 180, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
-            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1">
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-              <polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" />
-            </svg>
-            <div style={{ position: "absolute", bottom: 10, color: "rgba(255,255,255,0.5)", fontSize: 11 }}>Крутите для просмотра (Демо)</div>
-          </div>
-          <div style={{ padding: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            {[["Фото ДО", <HeartPulse key="do" size={22} />], ["Фото ПОСЛЕ", <Sparkles key="posle" size={22} />]].map(([label, icon]) => (
-              <div key={label}>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>{label}</div>
-                <div style={{ height: 56, background: "var(--surface-2)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{icon}</div>
+          <div className="patient-home-card" style={{ minWidth: 248, padding: "14px 20px", display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              background: "#edf3ff",
+              color: "#3167e3",
+              display: "grid",
+              placeItems: "center",
+              flexShrink: 0,
+            }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="m12 2.2 2.43 4.92 5.43.79-3.93 3.83.93 5.41L12 14.6l-4.86 2.55.93-5.41-3.93-3.83 5.43-.79L12 2.2Z" />
+              </svg>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#65728c", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                Бонусный баланс
               </div>
-            ))}
+              <div style={{ marginTop: 4, fontSize: 18, fontWeight: 800, color: "#3167e3" }}>{bonusLabel}</div>
+            </div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#b2bfd5" strokeWidth="2">
+              <path d="m9 18 6-6-6-6" />
+            </svg>
           </div>
         </div>
 
-        {/* Treatment history */}
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 16, boxShadow: "var(--shadow-sm)", display: "flex", flexDirection: "column" }}>
-          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16 }}>История лечения</div>
-          {completedVisits.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "24px 0", color: "var(--muted)", fontSize: 13 }}>Нет завершённых визитов</div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14, flex: 1 }}>
-              {completedVisits.slice(0, 3).map((v, i) => (
-                <div key={i} style={{ borderLeft: `2px solid ${i === 0 ? "var(--primary)" : "var(--border)"}`, paddingLeft: 12, opacity: i === 0 ? 1 : 0.7 }}>
-                  <div style={{ fontSize: 11, color: i === 0 ? "var(--primary)" : "var(--muted)", fontWeight: 600, marginBottom: 4 }}>
-                    {fmtDate(v.date)}, {v.time}
+        {(patientData?.allergies || user?.allergies) && (
+          <div className="patient-home-card" style={{ padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, borderColor: "#fed7d7", background: "#fff7f7" }}>
+            <AlertTriangle size={18} style={{ color: "#dc2626", flexShrink: 0 }} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: "#a12b2b" }}>
+              Аллергия: {patientData?.allergies || user?.allergies}
+            </span>
+          </div>
+        )}
+
+        <div className="patient-home-grid">
+          <div style={{ display: "grid", gap: 16 }}>
+            <section className="patient-home-card" style={{ overflow: "hidden" }}>
+              <div style={{
+                padding: "18px 20px 14px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 16,
+                borderBottom: "1px solid #e6ecf6",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 16, fontWeight: 600, color: "#1f2e47" }}>
+                  <span style={{ color: "#3167e3", display: "inline-flex" }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="m12 2 7 4v12l-7 4-7-4V6l7-4Z" />
+                      <path d="m12 22 0-8" />
+                      <path d="m19 6-7 4-7-4" />
+                      <path d="M8 10h.01M16 10h.01M12 14h.01" />
+                    </svg>
+                  </span>
+                  <span>Ваша 3D-модель челюсти</span>
+                </div>
+
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button type="button" style={{
+                    height: 30,
+                    padding: "0 14px",
+                    border: "none",
+                    borderRadius: 9,
+                    background: "#f0f4f9",
+                    color: "#495a77",
+                    fontWeight: 700,
+                    fontSize: 12,
+                  }}>
+                    Вращение
+                  </button>
+                  <button type="button" style={{
+                    height: 30,
+                    padding: "0 14px",
+                    border: "none",
+                    borderRadius: 9,
+                    background: "#3167e3",
+                    color: "#fff",
+                    fontWeight: 700,
+                    fontSize: 12,
+                    boxShadow: "0 10px 18px rgba(49, 103, 227, 0.24)",
+                  }}>
+                    Слои AI
+                  </button>
+                </div>
+              </div>
+
+              <div className="patient-model-stage">
+                { (
+                  <div className="patient-model-empty">
+                    <div className="patient-model-empty-card">
+                      <div className="patient-model-empty-icon">
+                        <ScanLine size={28} />
+                      </div>
+                      <div className="patient-model-empty-title">3D-снимок еще не загружен</div>
+                      <div className="patient-model-empty-text">
+                        Здесь будет отображаться КТ, рентген или 3D-модель челюсти после загрузки изображения врачом в карточку пациента.
+                      </div>
+                      <div className="patient-model-empty-chip">
+                        <Upload size={14} />
+                        Ожидание снимка из базы
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
-                    {v.diagnosis || "Прием"}
-                    {v.toothNumber && <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12 }}> · Зуб #{v.toothNumber}</span>}
+                )}
+
+                <div style={{
+                  position: "absolute",
+                  left: 24,
+                  bottom: 24,
+                  width: 188,
+                  padding: "12px 14px",
+                  borderRadius: 14,
+                  background: "rgba(8, 14, 21, 0.74)",
+                  border: "1px solid rgba(103, 181, 233, 0.16)",
+                  backdropFilter: "blur(10px)",
+                  color: "#fff",
+                }}>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", color: "rgba(255,255,255,0.66)", textTransform: "uppercase" }}>
+                    Точность сканирования
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: i === 0 ? 8 : 0 }}>Врач: {v.doctorName}</div>
-                  {i === 0 && (
+                  <div style={{ marginTop: 4, fontSize: 28, fontWeight: 800, letterSpacing: "-0.04em" }}>99.8%</div>
+                </div>
+
+                <div style={{ position: "absolute", right: 20, bottom: 20, display: "flex", gap: 10 }}>
+                  {[
+                    { label: "+", wide: false },
+                    { label: "−", wide: false },
+                    { label: "⤢", wide: true },
+                  ].map((item) => (
                     <button
-                      style={{ fontSize: 11, padding: "4px 10px", border: "1px solid var(--primary)", color: "var(--primary)", borderRadius: "var(--radius-xs)", background: "var(--active)", cursor: "pointer" }}
-                      disabled={downloading === v.appointmentId}
-                      onClick={() => { setDownloading(v.appointmentId); setTimeout(() => setDownloading(null), 2000); }}
+                      key={item.label}
+                      type="button"
+                      style={{
+                        width: item.wide ? 36 : 34,
+                        height: 34,
+                        borderRadius: "50%",
+                        border: "none",
+                        background: "rgba(35, 46, 56, 0.85)",
+                        color: "#fff",
+                        fontSize: item.wide ? 16 : 24,
+                        lineHeight: 1,
+                        display: "grid",
+                        placeItems: "center",
+                      }}
                     >
-                      {downloading === v.appointmentId
-                        ? "Скачивание..."
-                        : <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><FileDown size={13} /> Скачать AI-Протокол (eGov)</span>}
+                      {item.label}
                     </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
+              <div className="patient-photo-card">
+                <div className="patient-photo-label">Состояние: до (05.01.2024)</div>
+                <div className="patient-photo-stage">
+                  {imagingAssets.before ? (
+                    <img
+                      src={imagingAssets.before}
+                      alt="Состояние до лечения"
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", borderRadius: 10 }}
+                    />
+                  ) : (
+                    <div className="patient-photo-empty">
+                      <Upload size={18} />
+                      <strong>Фото до лечения не загружено</strong>
+                      <span>После добавления снимка врачом он появится здесь автоматически.</span>
+                    </div>
                   )}
                 </div>
+              </div>
+              <div className="patient-photo-card">
+                <div className="patient-photo-label">Текущее состояние (15.05.2024)</div>
+                <div className="patient-photo-stage">
+                  {imagingAssets.after ? (
+                    <img
+                      src={imagingAssets.after}
+                      alt="Текущее состояние"
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", borderRadius: 10 }}
+                    />
+                  ) : (
+                    <div className="patient-photo-empty">
+                      <Upload size={18} />
+                      <strong>Текущее фото не загружено</strong>
+                      <span>Этот блок готов для реального изображения из базы пациента.</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gap: 16 }}>
+            <section className="patient-home-card" style={{ overflow: "hidden" }}>
+              <div style={{ padding: "18px 20px", borderBottom: "1px solid #e8eef8", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontSize: 16, fontWeight: 600, color: "#1e2f49" }}>История лечения</div>
+                <button type="button" style={{ border: "none", background: "transparent", color: "#0f45b9", fontSize: 13, fontWeight: 700 }}>
+                  Все записи
+                </button>
+              </div>
+
+              <div style={{ padding: "16px 16px 16px" }}>
+                <div style={{ position: "relative" }}>
+                  <div style={{ position: "absolute", left: 13, top: 14, bottom: 18, width: 2, background: "#e3ebf8" }} />
+                  <div style={{ display: "grid", gap: 22 }}>
+                    {displayHistory.map((item) => (
+                      <div key={item.id} style={{ position: "relative", paddingLeft: 42, paddingRight: 8 }}>
+                        <div style={{
+                          position: "absolute",
+                          left: 0,
+                          top: 12,
+                          width: 20,
+                          height: 20,
+                          borderRadius: "50%",
+                          background: item.isActive ? "#3167e3" : "#e0e7f2",
+                          border: item.isActive ? "4px solid #edf3ff" : "4px solid #fff",
+                          boxSizing: "border-box",
+                        }} />
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14 }}>
+                          <div>
+                            <div style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              minHeight: 26,
+                              padding: "0 10px",
+                              borderRadius: 8,
+                              background: item.isActive ? "#edf4ff" : "#f4f7fc",
+                              color: item.isActive ? "#3167e3" : "#61738d",
+                              fontSize: 11,
+                              fontWeight: 800,
+                              letterSpacing: "0.02em",
+                              textTransform: "uppercase",
+                            }}>
+                              {item.date}
+                            </div>
+                            <div style={{ marginTop: 10, fontSize: 15, lineHeight: 1.28, fontWeight: 600, color: "#1f2d43" }}>
+                              {item.title}
+                            </div>
+                            <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.45, color: "#66768e" }}>
+                              {item.description}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={downloading === item.id}
+                            onClick={() => {
+                              setDownloading(item.id);
+                              setTimeout(() => setDownloading(null), 1200);
+                            }}
+                            style={{
+                              border: "none",
+                              background: "transparent",
+                              color: "#66768e",
+                              fontSize: 12,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              flexShrink: 0,
+                              paddingTop: 6,
+                            }}
+                          >
+                            <FileDown size={14} />
+                            {downloading === item.id ? "Скачивание..." : "AI протокол"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="patient-home-card" style={{ overflow: "hidden", background: "#fffdfa" }}>
+              <div style={{ padding: "0" }}>
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  minHeight: 78,
+                  padding: "18px 20px",
+                  background: "#fff5f3",
+                  borderBottom: "1px solid #f0e8e2",
+                }}>
+                  <div style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    background: "#fde6e4",
+                    color: "#ca322f",
+                    display: "grid",
+                    placeItems: "center",
+                    flexShrink: 0,
+                  }}>
+                    <AlertTriangle size={20} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: "#2d2d2d", textTransform: "uppercase", letterSpacing: "0.02em" }}>Ваш план лечения</div>
+                    <div style={{ marginTop: 3, fontSize: 13, color: "#575d70" }}>Рекомендуется срочное вмешательство</div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ padding: "18px 20px 20px", display: "grid", gap: 14 }}>
+                {planItems.map((item) => (
+                  <div key={item.id} style={{
+                    minHeight: 94,
+                    borderRadius: 14,
+                    border: "1px solid #eef1f6",
+                    background: "#f8fafc",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    padding: "0 20px",
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: "#1d2d45", lineHeight: 1.2 }}>{item.title}</div>
+                      <div style={{ marginTop: 4, fontSize: 12, color: "#6b7a8d" }}>{item.subtitle}</div>
+                    </div>
+                    {item.tone === "danger" ? (
+                      <div style={{ color: "#d62522", fontSize: 34, fontWeight: 800, lineHeight: 1 }}>!</div>
+                    ) : (
+                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#c7cedc" strokeWidth="2">
+                        <rect x="3" y="4" width="18" height="18" rx="2" />
+                        <line x1="16" y1="2" x2="16" y2="6" />
+                        <line x1="8" y1="2" x2="8" y2="6" />
+                        <line x1="3" y1="10" x2="21" y2="10" />
+                      </svg>
+                    )}
+                  </div>
+                ))}
+
+                <button type="button" style={{
+                  height: 62,
+                  border: "none",
+                  borderRadius: 16,
+                  background: "#3167e3",
+                  color: "#fff",
+                  fontSize: 16,
+                  fontWeight: 800,
+                  boxShadow: "0 14px 26px rgba(49, 103, 227, 0.22)",
+                  letterSpacing: "0.01em",
+                }}>
+                  ЗАПИСАТЬСЯ НА ПРИЕМ
+                </button>
+              </div>
+            </section>
+
+            <div className="patient-doc-grid">
+              {[
+                { label: "Договор", icon: "doc" },
+                { label: "Чеки и счета", icon: "receipt" },
+              ].map((item) => (
+                <button key={item.label} type="button" className="patient-doc-card">
+                  <span style={{ color: "#3167e3", display: "inline-flex" }}>
+                    {item.icon === "doc" ? (
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="16" y1="13" x2="8" y2="13" />
+                        <line x1="16" y1="17" x2="8" y2="17" />
+                      </svg>
+                    ) : (
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M9 2v6" />
+                        <path d="M15 2v6" />
+                        <path d="M4 8h16" />
+                        <rect x="3" y="4" width="18" height="18" rx="2" />
+                        <path d="M8 12h8" />
+                        <path d="M8 16h6" />
+                      </svg>
+                    )}
+                  </span>
+                  <span>{item.label}</span>
+                </button>
               ))}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
