@@ -397,100 +397,62 @@ function PatientCabinet() {
         }
         .patient-model-stage {
           position: relative;
-          min-height: 470px;
+          min-height: 380px;
           overflow: hidden;
           border-radius: 0 0 16px 16px;
-          background:
-            radial-gradient(circle at 50% 42%, rgba(28, 130, 208, 0.42), rgba(8, 18, 28, 0) 24%),
-            radial-gradient(circle at 50% 52%, rgba(31, 145, 229, 0.18), rgba(7, 13, 22, 0) 44%),
-            radial-gradient(circle at 50% 48%, rgba(41, 156, 241, 0.09), rgba(7, 13, 22, 0) 58%),
-            linear-gradient(180deg, #08121d 0%, #0a1520 45%, #0b1622 100%);
-        }
-        .patient-model-stage::before {
-          content: "";
-          position: absolute;
-          top: 28px;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 58%;
-          height: 46%;
-          border-radius: 50%;
-          border: 4px solid rgba(140, 217, 255, 0.52);
-          filter: drop-shadow(0 0 22px rgba(109, 217, 255, 0.35));
-          box-shadow:
-            0 0 0 16px rgba(82, 190, 249, 0.08),
-            0 0 0 34px rgba(58, 145, 214, 0.06);
-        }
-        .patient-model-stage::after {
-          content: "";
-          position: absolute;
-          bottom: 22px;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 50%;
-          height: 31%;
-          border-radius: 50%;
-          border: 4px solid rgba(140, 217, 255, 0.52);
-          filter: drop-shadow(0 0 22px rgba(109, 217, 255, 0.35));
-          box-shadow:
-            0 0 0 14px rgba(82, 190, 249, 0.08),
-            0 0 0 30px rgba(58, 145, 214, 0.05);
+          background: linear-gradient(180deg, #fbfdff 0%, #f4f8fd 100%);
         }
         .patient-model-empty {
           position: absolute;
-          inset: 76px 72px 76px;
-          border-radius: 28px;
-          border: 1px dashed rgba(138, 210, 255, 0.3);
-          background: linear-gradient(180deg, rgba(13, 23, 36, 0.58), rgba(8, 16, 26, 0.82));
+          inset: 28px;
+          border-radius: 20px;
+          border: 1px dashed #c8d6ea;
+          background: #f8fbff;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 28px;
+          padding: 24px;
         }
         .patient-model-empty-card {
-          width: min(100%, 360px);
-          border-radius: 22px;
-          border: 1px solid rgba(135, 206, 250, 0.2);
-          background: rgba(7, 15, 24, 0.72);
-          box-shadow: 0 24px 60px rgba(4, 9, 16, 0.32);
-          backdrop-filter: blur(12px);
-          padding: 24px 22px;
+          width: min(100%, 340px);
+          padding: 0;
           display: grid;
-          gap: 12px;
+          gap: 10px;
           justify-items: center;
           text-align: center;
-          color: #eef6ff;
+          color: #29405f;
         }
         .patient-model-empty-icon {
-          width: 58px;
-          height: 58px;
-          border-radius: 18px;
-          background: rgba(49, 103, 227, 0.18);
-          color: #8ec8ff;
+          width: 52px;
+          height: 52px;
+          border-radius: 16px;
+          background: #edf4ff;
+          color: #3167e3;
           display: grid;
           place-items: center;
-          box-shadow: inset 0 0 0 1px rgba(142, 200, 255, 0.12);
+          border: 1px solid #d7e5fb;
         }
         .patient-model-empty-title {
-          font-size: 18px;
+          font-size: 17px;
           font-weight: 700;
           letter-spacing: -0.02em;
+          color: #24364f;
         }
         .patient-model-empty-text {
           font-size: 13px;
           line-height: 1.55;
-          color: rgba(222, 234, 248, 0.72);
+          color: #6b7a8f;
         }
         .patient-model-empty-chip {
           display: inline-flex;
           align-items: center;
           gap: 8px;
-          min-height: 34px;
-          padding: 0 14px;
+          min-height: 30px;
+          padding: 0 12px;
           border-radius: 999px;
-          background: rgba(49, 103, 227, 0.12);
-          border: 1px solid rgba(108, 176, 255, 0.16);
-          color: #b6d7ff;
+          background: #ffffff;
+          border: 1px solid #d9e4f2;
+          color: #5f7190;
           font-size: 12px;
           font-weight: 600;
         }
@@ -571,17 +533,17 @@ function PatientCabinet() {
         }
         @media (max-width: 640px) {
           .patient-model-stage {
-            min-height: 320px;
+            min-height: 280px;
           }
           .patient-model-empty {
-            inset: 54px 18px 54px;
-            padding: 18px;
+            inset: 16px;
+            padding: 16px;
           }
           .patient-model-empty-card {
-            padding: 18px 16px;
+            width: min(100%, 280px);
           }
           .patient-model-empty-title {
-            font-size: 16px;
+            font-size: 15px;
           }
         }
       `}</style>
@@ -686,11 +648,22 @@ function PatientCabinet() {
               </div>
 
               <div className="patient-model-stage">
-                { (
+                {imagingAssets.model3d ? (
+                  <img
+                    src={imagingAssets.model3d}
+                    alt="3D-модель челюсти"
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "contain",
+                      display: "block",
+                    }}
+                  />
+                ) : (
                   <div className="patient-model-empty">
                     <div className="patient-model-empty-card">
                       <div className="patient-model-empty-icon">
-                        <ScanLine size={28} />
+                        <ScanLine size={24} />
                       </div>
                       <div className="patient-model-empty-title">3D-снимок еще не загружен</div>
                       <div className="patient-model-empty-text">
@@ -703,51 +676,6 @@ function PatientCabinet() {
                     </div>
                   </div>
                 )}
-
-                <div style={{
-                  position: "absolute",
-                  left: 24,
-                  bottom: 24,
-                  width: 188,
-                  padding: "12px 14px",
-                  borderRadius: 14,
-                  background: "rgba(8, 14, 21, 0.74)",
-                  border: "1px solid rgba(103, 181, 233, 0.16)",
-                  backdropFilter: "blur(10px)",
-                  color: "#fff",
-                }}>
-                  <div style={{ fontSize: 11, letterSpacing: "0.06em", color: "rgba(255,255,255,0.66)", textTransform: "uppercase" }}>
-                    Точность сканирования
-                  </div>
-                  <div style={{ marginTop: 4, fontSize: 28, fontWeight: 800, letterSpacing: "-0.04em" }}>99.8%</div>
-                </div>
-
-                <div style={{ position: "absolute", right: 20, bottom: 20, display: "flex", gap: 10 }}>
-                  {[
-                    { label: "+", wide: false },
-                    { label: "−", wide: false },
-                    { label: "⤢", wide: true },
-                  ].map((item) => (
-                    <button
-                      key={item.label}
-                      type="button"
-                      style={{
-                        width: item.wide ? 36 : 34,
-                        height: 34,
-                        borderRadius: "50%",
-                        border: "none",
-                        background: "rgba(35, 46, 56, 0.85)",
-                        color: "#fff",
-                        fontSize: item.wide ? 16 : 24,
-                        lineHeight: 1,
-                        display: "grid",
-                        placeItems: "center",
-                      }}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
               </div>
             </section>
 
@@ -938,7 +866,7 @@ function PatientCabinet() {
                   borderRadius: 16,
                   background: "#3167e3",
                   color: "#fff",
-                  fontSize: 16,
+                  fontSize: 14,
                   fontWeight: 800,
                   boxShadow: "0 14px 26px rgba(49, 103, 227, 0.22)",
                   letterSpacing: "0.01em",
