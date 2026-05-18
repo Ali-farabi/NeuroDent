@@ -200,67 +200,6 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
           })}
         </nav>
 
-        {isPatient && (
-          <div style={{ marginTop: "auto", padding: "0 14px 26px", display: "grid", gap: 16 }}>
-            <div style={{
-              border: "1px solid #e2e8f3",
-              borderRadius: 18,
-              padding: "16px 14px 14px",
-              background: "#fff",
-              boxShadow: "0 1px 2px rgba(15,23,42,0.03)",
-            }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "#1b2432", lineHeight: 1.35 }}>
-                Следите за статусами
-                <br />
-                в Telegram
-              </div>
-              <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.5, color: "#6c778b" }}>
-                Получайте обновления по сервисам быстрее - без входа в систему.
-              </div>
-              <button
-                type="button"
-                style={{
-                  marginTop: 16,
-                  width: "100%",
-                  height: 38,
-                  border: "none",
-                  borderRadius: 10,
-                  background: "#f2f5f8",
-                  color: "#333b49",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                }}
-              >
-                Телеграм-бот
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="#2AABEE">
-                  <path d="M21.944 4.683a1.5 1.5 0 0 0-1.766-.255L2.624 12.526a1.5 1.5 0 0 0 .173 2.78l4.654 1.628 2.046 5.345a1.5 1.5 0 0 0 2.654.357l2.636-3.64 4.407 3.507a1.5 1.5 0 0 0 2.402-.884l2.348-15.065a1.5 1.5 0 0 0-.598-1.871Zm-4.31 3.638-7.046 6.543-.645 2.889-.986-2.575-3.09-1.08 11.767-5.777Z" />
-                </svg>
-              </button>
-            </div>
-
-            <button
-              type="button"
-              style={{
-                width: "100%",
-                height: 56,
-                border: "none",
-                borderRadius: 14,
-                background: "#3167e3",
-                color: "#fff",
-                fontSize: 14,
-                fontWeight: 700,
-                boxShadow: "0 10px 18px rgba(49, 103, 227, 0.16)",
-              }}
-            >
-              Новая запись
-            </button>
-          </div>
-        )}
-
         <div style={{ padding: isPatient ? "0 14px 34px" : "0 14px 30px", display: "grid", gap: 18 }}>
           <button
             type="button"
