@@ -170,6 +170,31 @@ function createSchema(database) {
       details_json TEXT NOT NULL DEFAULT '{}'
     );
 
+    CREATE TABLE IF NOT EXISTS conversations (
+      id TEXT PRIMARY KEY,
+      patient_id TEXT,
+      channel TEXT NOT NULL,
+      external_id TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'open',
+      last_message_at TEXT NOT NULL DEFAULT '',
+      assigned_user_id TEXT,
+      created_at TEXT NOT NULL,
+      extra_json TEXT NOT NULL DEFAULT '{}'
+    );
+
+    CREATE TABLE IF NOT EXISTS conversation_messages (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      sender_name TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'sent',
+      created_at TEXT NOT NULL,
+      extra_json TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS price_items (
       id TEXT PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,
@@ -240,6 +265,9 @@ function createSchema(database) {
     CREATE INDEX IF NOT EXISTS idx_payments_patient ON payments (patient_id);
     CREATE INDEX IF NOT EXISTS idx_inventory_category ON inventory (category);
     CREATE INDEX IF NOT EXISTS idx_sessions_subject ON sessions (subject_type, subject_id);
+    CREATE INDEX IF NOT EXISTS idx_conversations_patient ON conversations (patient_id, status);
+    CREATE INDEX IF NOT EXISTS idx_conversations_channel ON conversations (channel, last_message_at);
+    CREATE INDEX IF NOT EXISTS idx_conversation_messages_conversation ON conversation_messages (conversation_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_invoices_patient ON invoices (patient_id, date);
     CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items (invoice_id);
     CREATE INDEX IF NOT EXISTS idx_stock_movements_inventory ON stock_movements (inventory_id, created_at);
@@ -260,6 +288,12 @@ function runMigrations(database) {
       VALUES (?, ?, ?)
     `)
     .run(2, "billing_stock_documents_sessions", appliedAt);
+  database
+    .prepare(`
+      INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
+      VALUES (?, ?, ?)
+    `)
+    .run(3, "crm_conversations_messages", appliedAt);
 }
 
 function runTransaction(database, fn) {
@@ -781,7 +815,7 @@ export function createAuditLogRecord({ actorUserId = "", action, entityType, ent
     .run(actorUserId || null, action, entityType, entityId, createdAt, encodeJson(details));
 }
 
-export function listAuditLogRecords({ entityType = "", entityId = "", limit = 100 } = {}) {
+export function listAuditLogRecords({ entityType = "", entityId = "", dateFrom = "", dateTo = "", limit = 100 } = {}) {
   const database = getDb();
   const params = [];
   const where = [];
@@ -792,6 +826,14 @@ export function listAuditLogRecords({ entityType = "", entityId = "", limit = 10
   if (entityId) {
     where.push("entity_id = ?");
     params.push(entityId);
+  }
+  if (dateFrom) {
+    where.push("created_at >= ?");
+    params.push(`${dateFrom}T00:00:00`);
+  }
+  if (dateTo) {
+    where.push("created_at <= ?");
+    params.push(`${dateTo}T23:59:59`);
   }
   params.push(Math.max(1, Math.min(Number(limit) || 100, 500)));
   const sql = `
@@ -811,6 +853,137 @@ export function listAuditLogRecords({ entityType = "", entityId = "", limit = 10
     createdAt: row.createdAt,
     details: parseJson(row.detailsJson, {}),
   }));
+}
+
+function mapConversation(row) {
+  return {
+    ...parseJson(row.extra_json, {}),
+    id: row.id,
+    patientId: row.patient_id || "",
+    channel: row.channel,
+    externalId: row.external_id || "",
+    title: row.title || "",
+    status: row.status,
+    lastMessageAt: row.last_message_at || "",
+    assignedUserId: row.assigned_user_id || "",
+    createdAt: row.created_at,
+  };
+}
+
+function mapConversationMessage(row) {
+  return {
+    ...parseJson(row.extra_json, {}),
+    id: row.id,
+    conversationId: row.conversation_id,
+    direction: row.direction,
+    senderName: row.sender_name || "",
+    body: row.body,
+    status: row.status,
+    createdAt: row.created_at,
+  };
+}
+
+export function upsertConversationRecord(conversation) {
+  const database = getDb();
+  database
+    .prepare(`
+      INSERT OR REPLACE INTO conversations
+        (id, patient_id, channel, external_id, title, status, last_message_at, assigned_user_id, created_at, extra_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    .run(
+      conversation.id,
+      conversation.patientId || null,
+      conversation.channel,
+      conversation.externalId || "",
+      conversation.title || "",
+      conversation.status || "open",
+      conversation.lastMessageAt || conversation.createdAt,
+      conversation.assignedUserId || null,
+      conversation.createdAt,
+      encodeJson(conversation.extra || {}),
+    );
+  return getConversationRecord(conversation.id);
+}
+
+export function getConversationRecord(id) {
+  const database = getDb();
+  const row = database.prepare("SELECT * FROM conversations WHERE id = ?").get(id);
+  if (!row) return null;
+  const conversation = mapConversation(row);
+  const lastMessage = database
+    .prepare("SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1")
+    .get(id);
+  return {
+    ...conversation,
+    lastMessage: lastMessage ? mapConversationMessage(lastMessage) : null,
+  };
+}
+
+export function listConversationRecords({ query = "", channel = "", status = "", patientId = "", limit = 100 } = {}) {
+  const database = getDb();
+  const params = [];
+  const where = [];
+  const q = String(query || "").trim().toLowerCase();
+  if (q) {
+    where.push("(LOWER(title) LIKE ? OR LOWER(external_id) LIKE ? OR LOWER(channel) LIKE ?)");
+    params.push(`%${q}%`, `%${q}%`, `%${q}%`);
+  }
+  if (channel) {
+    where.push("channel = ?");
+    params.push(channel);
+  }
+  if (status) {
+    where.push("status = ?");
+    params.push(status);
+  }
+  if (patientId) {
+    where.push("patient_id = ?");
+    params.push(patientId);
+  }
+  params.push(Math.max(1, Math.min(Number(limit) || 100, 500)));
+  const sql = `SELECT * FROM conversations${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY last_message_at DESC, created_at DESC LIMIT ?`;
+  return database.prepare(sql).all(...params).map((row) => getConversationRecord(row.id));
+}
+
+export function createConversationMessageRecord(message) {
+  const database = getDb();
+  runTransaction(database, () => {
+    database
+      .prepare(`
+        INSERT INTO conversation_messages
+          (id, conversation_id, direction, sender_name, body, status, created_at, extra_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        message.id,
+        message.conversationId,
+        message.direction,
+        message.senderName || "",
+        message.body,
+        message.status || "sent",
+        message.createdAt,
+        encodeJson(message.extra || {}),
+      );
+    database
+      .prepare("UPDATE conversations SET last_message_at = ? WHERE id = ?")
+      .run(message.createdAt, message.conversationId);
+  });
+  const row = database.prepare("SELECT * FROM conversation_messages WHERE id = ?").get(message.id);
+  return row ? mapConversationMessage(row) : null;
+}
+
+export function listConversationMessageRecords({ conversationId, limit = 100 } = {}) {
+  const database = getDb();
+  return database
+    .prepare(`
+      SELECT * FROM conversation_messages
+      WHERE conversation_id = ?
+      ORDER BY created_at ASC, rowid ASC
+      LIMIT ?
+    `)
+    .all(conversationId, Math.max(1, Math.min(Number(limit) || 100, 500)))
+    .map(mapConversationMessage);
 }
 
 function mapPriceItem(row) {

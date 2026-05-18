@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createAuditLogRecord,
+  createConversationMessageRecord,
   createFileRecord,
   createNotificationRecord,
   createInvoiceRecord,
@@ -13,11 +14,14 @@ import {
   deleteExpiredSessions,
   deleteSessionRecord,
   getFileRecord,
+  getConversationRecord,
   getInvoiceRecord,
   getPriceItemRecord,
   getSessionRecord,
   initializeStore,
   listAuditLogRecords,
+  listConversationMessageRecords,
+  listConversationRecords,
   listFileRecords,
   listInvoiceRecords,
   listNotificationRecords,
@@ -28,6 +32,7 @@ import {
   persistDbSnapshot,
   setPriceItemActiveRecord,
   updateInvoicePaymentRecord,
+  upsertConversationRecord,
   upsertPriceItemRecord,
 } from "./storage.js";
 
@@ -1842,6 +1847,674 @@ export async function generateNotifications() {
 export async function getAuditLogs(query = {}) {
   await delay(100);
   return clone(listAuditLogRecords(query));
+}
+
+function csvEscape(value) {
+  const text = value === null || value === undefined ? "" : String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+export async function exportAuditLogsCsv(query = {}) {
+  await delay(100);
+  const rows = listAuditLogRecords({
+    ...query,
+    limit: query?.limit || 500,
+  });
+  const header = ["id", "createdAt", "actorUserId", "action", "entityType", "entityId", "details"];
+  const lines = rows.map((row) => [
+    row.id,
+    row.createdAt,
+    row.actorUserId,
+    row.action,
+    row.entityType,
+    row.entityId,
+    JSON.stringify(row.details || {}),
+  ].map(csvEscape).join(","));
+  return [header.join(","), ...lines].join("\n");
+}
+
+const CONVERSATION_CHANNELS = new Set(["whatsapp", "sms", "phone", "instagram", "email", "website", "manual"]);
+const CONVERSATION_STATUSES = new Set(["open", "pending", "closed"]);
+const MESSAGE_DIRECTIONS = new Set(["inbound", "outbound", "system"]);
+const MESSAGE_STATUSES = new Set(["draft", "sent", "delivered", "read", "failed"]);
+
+function normalizeConversationChannel(channel = "whatsapp") {
+  const normalized = String(channel || "whatsapp").trim().toLowerCase();
+  if (!CONVERSATION_CHANNELS.has(normalized)) throw new Error("Unsupported conversation channel");
+  return normalized;
+}
+
+function normalizeConversationStatus(status = "open") {
+  const normalized = String(status || "open").trim().toLowerCase();
+  if (!CONVERSATION_STATUSES.has(normalized)) throw new Error("Unsupported conversation status");
+  return normalized;
+}
+
+function enrichConversation(conversation) {
+  if (!conversation) return null;
+  const patient = getPatient(conversation.patientId);
+  return {
+    ...conversation,
+    patientName: patient?.name || "",
+    patientPhone: patient?.phone || "",
+  };
+}
+
+function ensureDefaultConversations() {
+  if (listConversationRecords({ limit: 1 }).length) return;
+  const now = new Date().toISOString();
+  for (const patient of (db.patients || []).slice(0, 3)) {
+    const conversation = upsertConversationRecord({
+      id: genId("conv"),
+      patientId: patient.id,
+      channel: "whatsapp",
+      externalId: patient.phone || "",
+      title: patient.name,
+      status: "open",
+      lastMessageAt: now,
+      createdAt: now,
+      extra: { source: "seed" },
+    });
+    createConversationMessageRecord({
+      id: genId("msg"),
+      conversationId: conversation.id,
+      direction: "inbound",
+      senderName: patient.name,
+      body: "Здравствуйте, хочу уточнить время приема.",
+      status: "delivered",
+      createdAt: now,
+      extra: { source: "seed" },
+    });
+  }
+}
+
+export async function getConversations(query = {}) {
+  await delay(120);
+  ensureDefaultConversations();
+  return clone(listConversationRecords({
+    query: query?.query || query?.q || "",
+    channel: query?.channel || "",
+    status: query?.status || "",
+    patientId: query?.patientId || "",
+    limit: query?.limit || 100,
+  }).map(enrichConversation));
+}
+
+export async function createConversation(data = {}, options = {}) {
+  await delay(140);
+  const patientId = data?.patientId ? String(data.patientId) : "";
+  const patient = patientId ? getPatient(patientId) : null;
+  if (patientId && !patient) throw new Error("Patient not found");
+  const channel = normalizeConversationChannel(data?.channel || "whatsapp");
+  const status = normalizeConversationStatus(data?.status || "open");
+  const now = new Date().toISOString();
+  const conversation = upsertConversationRecord({
+    id: genId("conv"),
+    patientId,
+    channel,
+    externalId: String(data?.externalId || patient?.phone || ""),
+    title: String(data?.title || patient?.name || `${channel} conversation`).trim(),
+    status,
+    lastMessageAt: now,
+    assignedUserId: data?.assignedUserId ? String(data.assignedUserId) : actorIdFromOptions(options),
+    createdAt: now,
+    extra: { source: data?.source || "manual" },
+  });
+  if (data?.initialMessage) {
+    createConversationMessageRecord({
+      id: genId("msg"),
+      conversationId: conversation.id,
+      direction: "inbound",
+      senderName: patient?.name || String(data?.senderName || "Patient"),
+      body: String(data.initialMessage),
+      status: "delivered",
+      createdAt: now,
+      extra: { source: "initial" },
+    });
+  }
+  audit("create", "conversation", conversation.id, { patientId, channel }, actorIdFromOptions(options));
+  return clone(enrichConversation(getConversationRecord(conversation.id)));
+}
+
+export async function getConversation(id) {
+  await delay(80);
+  ensureDefaultConversations();
+  const conversation = getConversationRecord(id);
+  if (!conversation) throw new Error("Conversation not found");
+  return clone(enrichConversation(conversation));
+}
+
+export async function updateConversationStatus(id, status, options = {}) {
+  await delay(100);
+  const conversation = getConversationRecord(id);
+  if (!conversation) throw new Error("Conversation not found");
+  const nextStatus = normalizeConversationStatus(status);
+  const updated = upsertConversationRecord({
+    ...conversation,
+    status: nextStatus,
+    extra: { statusChangedAt: new Date().toISOString() },
+  });
+  audit("update_status", "conversation", id, { status: nextStatus }, actorIdFromOptions(options));
+  return clone(enrichConversation(updated));
+}
+
+export async function getConversationMessages(conversationId, { limit = 100 } = {}) {
+  await delay(100);
+  const conversation = getConversationRecord(conversationId);
+  if (!conversation) throw new Error("Conversation not found");
+  return clone(listConversationMessageRecords({ conversationId, limit }));
+}
+
+export async function sendConversationMessage(conversationId, data = {}, options = {}) {
+  await delay(140);
+  const conversation = getConversationRecord(conversationId);
+  if (!conversation) throw new Error("Conversation not found");
+  const body = String(data?.body || data?.message || "").trim();
+  if (body.length < 1) throw new Error("Message body is required");
+  if (body.length > 4000) throw new Error("Message is too long");
+  const direction = data?.direction ? String(data.direction).toLowerCase() : "outbound";
+  if (!MESSAGE_DIRECTIONS.has(direction)) throw new Error("Unsupported message direction");
+  const status = data?.status ? String(data.status).toLowerCase() : direction === "outbound" ? "sent" : "delivered";
+  if (!MESSAGE_STATUSES.has(status)) throw new Error("Unsupported message status");
+  const actor = db.users.find((user) => user.id === actorIdFromOptions(options));
+  const message = createConversationMessageRecord({
+    id: genId("msg"),
+    conversationId,
+    direction,
+    senderName: String(data?.senderName || actor?.name || (direction === "inbound" ? "Patient" : "NeuroDent")),
+    body,
+    status,
+    createdAt: new Date().toISOString(),
+    extra: {
+      providerMessageId: data?.providerMessageId || "",
+      providerStatus: data?.providerStatus || "",
+    },
+  });
+  audit("send_message", "conversation", conversationId, { messageId: message.id, direction, status }, actorIdFromOptions(options));
+  return clone(message);
+}
+
+export async function createConversationAiDraft(conversationId, data = {}, options = {}) {
+  await delay(180);
+  const conversation = getConversationRecord(conversationId);
+  if (!conversation) throw new Error("Conversation not found");
+  const patient = getPatient(conversation.patientId);
+  const messages = listConversationMessageRecords({ conversationId, limit: 20 });
+  const lastInbound = [...messages].reverse().find((message) => message.direction === "inbound");
+  const appointment = patient ? appointmentsForPatient(patient.id)
+    .filter((appt) => appt.status !== "cancelled")
+    .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))[0] : null;
+  const prompt = String(data?.prompt || "").trim();
+  const body = prompt
+    ? `Черновик ответа: ${prompt}`
+    : appointment
+      ? `Здравствуйте, ${patient?.name || ""}. Подтверждаем вашу запись на ${appointment.date} в ${appointment.time}. Если нужно перенести время, напишите нам.`
+      : `Здравствуйте, ${patient?.name || ""}. Мы получили ваше сообщение${lastInbound ? `: "${lastInbound.body}"` : ""}. Администратор NeuroDent скоро ответит.`;
+  const draft = createConversationMessageRecord({
+    id: genId("msg"),
+    conversationId,
+    direction: "outbound",
+    senderName: "AI draft",
+    body,
+    status: "draft",
+    createdAt: new Date().toISOString(),
+    extra: { generatedBy: "backend-rule-draft" },
+  });
+  audit("create_ai_draft", "conversation", conversationId, { messageId: draft.id }, actorIdFromOptions(options));
+  return clone(draft);
+}
+
+const DENTAL_ICD10 = [
+  { code: "K00.0", title: "Anodontia", group: "Development", keywords: ["missing", "anodontia"] },
+  { code: "K01.1", title: "Impacted teeth", group: "Eruption", keywords: ["impacted", "retained"] },
+  { code: "K02.0", title: "Caries limited to enamel", group: "Caries", cariesType: "surface", keywords: ["surface", "enamel", "white spot"] },
+  { code: "K02.1", title: "Caries of dentine", group: "Caries", cariesType: "medium", keywords: ["caries", "dentine", "deep", "medium"] },
+  { code: "K02.2", title: "Caries of cementum", group: "Caries", keywords: ["root", "cementum"] },
+  { code: "K03.6", title: "Deposits on teeth", group: "Hard tissues", keywords: ["calculus", "plaque", "hygiene"] },
+  { code: "K04.0", title: "Pulpitis", group: "Pulp/periapical", cariesType: "complicated", keywords: ["pulpitis", "night pain", "acute pain"] },
+  { code: "K04.4", title: "Acute apical periodontitis", group: "Pulp/periapical", cariesType: "complicated", keywords: ["periodontitis", "percussion", "apical"] },
+  { code: "K05.1", title: "Chronic gingivitis", group: "Periodontal", keywords: ["gingivitis", "bleeding gums"] },
+  { code: "K05.3", title: "Chronic periodontitis", group: "Periodontal", keywords: ["periodontitis", "mobility", "pocket"] },
+  { code: "K07.2", title: "Anomalies of dental arch relationship", group: "Orthodontics", keywords: ["crowding", "bite", "orthodontic"] },
+  { code: "K08.1", title: "Loss of teeth", group: "Other", keywords: ["missing tooth", "extraction"] },
+];
+
+function normalizedText(value = "") {
+  return String(value || "").toLowerCase();
+}
+
+function scoreIcd(item, query) {
+  const q = normalizedText(query);
+  if (!q) return 1;
+  let score = 0;
+  if (item.code.toLowerCase().includes(q)) score += 10;
+  if (item.title.toLowerCase().includes(q)) score += 6;
+  for (const keyword of item.keywords || []) {
+    if (q.includes(keyword) || keyword.includes(q)) score += 3;
+  }
+  return score;
+}
+
+export async function getIcd10Reference(query = "") {
+  await delay(80);
+  const q = String(query || "").trim();
+  return clone(DENTAL_ICD10
+    .map((item) => ({ ...item, score: scoreIcd(item, q) }))
+    .filter((item) => !q || item.score > 0)
+    .sort((a, b) => b.score - a.score || a.code.localeCompare(b.code))
+    .map(({ score, ...item }) => item));
+}
+
+function detectClinicalSignals(text = "", data = {}) {
+  const combined = normalizedText([
+    text,
+    data?.complaint,
+    data?.diagnosis,
+    data?.notes,
+    data?.protocol?.complaints,
+    data?.protocol?.objective,
+    data?.protocol?.diagnosisText,
+  ].filter(Boolean).join(" "));
+  let cariesType = data?.cariesType || "";
+  if (!cariesType) {
+    if (combined.includes("пульпит") || combined.includes("pulpitis") || combined.includes("periodont") || combined.includes("периодонт")) cariesType = "complicated";
+    else if (combined.includes("глуб") || combined.includes("deep")) cariesType = "deep";
+    else if (combined.includes("сред") || combined.includes("medium")) cariesType = "medium";
+    else if (combined.includes("поверх") || combined.includes("enamel") || combined.includes("surface")) cariesType = "surface";
+  }
+
+  let diagnosisCode = data?.diagnosisCode || "";
+  if (!diagnosisCode) {
+    if (combined.includes("пульпит") || combined.includes("pulpitis")) diagnosisCode = "K04.0";
+    else if (combined.includes("периодонт") || combined.includes("periodontitis")) diagnosisCode = "K04.4";
+    else if (combined.includes("гингив") || combined.includes("gingivitis")) diagnosisCode = "K05.1";
+    else if (combined.includes("ортодонт") || combined.includes("crowding") || combined.includes("скуч")) diagnosisCode = "K07.2";
+    else if (cariesType === "surface") diagnosisCode = "K02.0";
+    else if (["medium", "deep", "complicated"].includes(cariesType) || combined.includes("кариес") || combined.includes("caries")) diagnosisCode = "K02.1";
+  }
+
+  const toothMatch = String(data?.toothNumber || text || "").match(/\b(1[1-8]|2[1-8]|3[1-8]|4[1-8])\b/);
+  const toothNumber = data?.toothNumber || toothMatch?.[1] || "";
+  const icd = DENTAL_ICD10.find((item) => item.code === diagnosisCode) || null;
+  const diagnosisText = data?.diagnosis || data?.protocol?.diagnosisText || icd?.title || "Dental examination";
+  const materials = [];
+  if (["deep", "complicated"].includes(cariesType)) materials.push({ code: "ultracain", name: "Ultracain D-S forte 1.7ml", qty: 1, unit: "amp" });
+  if (["surface", "medium", "deep"].includes(cariesType)) materials.push({ code: "filtek", name: "Filtek Z250", qty: 1, unit: "pc" });
+  if (cariesType === "complicated") materials.push({ code: "guttapercha", name: "Gutta-percha cones", qty: 1, unit: "pack" });
+
+  return {
+    complaint: data?.complaint || text,
+    diagnosis: diagnosisText,
+    diagnosisCode,
+    cariesType,
+    toothNumber,
+    materials,
+    services: [
+      {
+        code: diagnosisCode || "ST-BASE",
+        name: diagnosisText,
+        price: estimateVisitCost({ cariesType }),
+        toothNumber,
+      },
+    ],
+  };
+}
+
+function clinicalRiskAlerts(patient, visits = [], signals = {}) {
+  const alerts = [];
+  const recentComplicated = visits.some((visit) => ["deep", "complicated"].includes(visit.cariesType));
+  if (recentComplicated || ["deep", "complicated"].includes(signals.cariesType)) {
+    alerts.push({
+      level: signals.cariesType === "complicated" ? "high" : "medium",
+      code: "CARIES_RISK",
+      title: "Caries progression risk",
+      message: "Check pulp vitality, X-ray data and treatment history before final protocol.",
+    });
+  }
+  const debt = paymentsForPatient(patient?.id).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  if (visits.length >= 4) {
+    alerts.push({
+      level: "info",
+      code: "FREQUENT_VISITS",
+      title: "Frequent visits",
+      message: "Patient has several visits in history; review previous diagnosis and materials.",
+    });
+  }
+  if (patient?.allergies || patient?.allergy) {
+    alerts.push({
+      level: "high",
+      code: "ALLERGY",
+      title: "Allergy note",
+      message: String(patient.allergies || patient.allergy),
+    });
+  }
+  return alerts.map((alert) => ({ ...alert, patientPaidTotal: debt }));
+}
+
+export async function analyzeClinicalTranscript(data = {}) {
+  await delay(140);
+  const text = String(data?.transcript || data?.text || "");
+  const signals = detectClinicalSignals(text, data);
+  const patient = data?.patientId ? getPatient(String(data.patientId)) : null;
+  const visits = patient ? visitsForPatient(patient.id) : [];
+  return clone({
+    ...signals,
+    icdSuggestions: DENTAL_ICD10
+      .filter((item) => item.code === signals.diagnosisCode || item.cariesType === signals.cariesType)
+      .slice(0, 5),
+    riskAlerts: clinicalRiskAlerts(patient, visits, signals),
+  });
+}
+
+export async function draftClinicalProtocol(data = {}, options = {}) {
+  await delay(160);
+  const patient = data?.patientId ? getPatient(String(data.patientId)) : null;
+  if (data?.patientId && !patient) throw new Error("Patient not found");
+  const signals = detectClinicalSignals(data?.transcript || data?.complaint || "", data);
+  const latest = patient ? latestFinalVisit(patient.id) : null;
+  const protocol = {
+    patientId: patient?.id || "",
+    patientName: patient?.name || "",
+    complaints: data?.protocol?.complaints || signals.complaint || "",
+    anamnesis: data?.protocol?.anamnesis || (latest ? `Previous visit: ${latest.diagnosis || latest.diagnosisCode || latest.id}` : ""),
+    objective: data?.protocol?.objective || "",
+    diagnosisText: data?.protocol?.diagnosisText || signals.diagnosis,
+    treatment: data?.protocol?.treatment || "Clinical examination, diagnosis confirmation and treatment according to protocol.",
+    diagnosisCode: signals.diagnosisCode,
+    cariesType: signals.cariesType,
+    toothNumber: signals.toothNumber,
+    materials: signals.materials,
+    services: signals.services,
+    riskAlerts: clinicalRiskAlerts(patient, patient ? visitsForPatient(patient.id) : [], signals),
+    createdAt: new Date().toISOString(),
+  };
+  audit("draft", "clinical_protocol", patient?.id || "anonymous", { diagnosisCode: signals.diagnosisCode }, actorIdFromOptions(options));
+  return clone(protocol);
+}
+
+export async function getPatientAiContext(patientId) {
+  await delay(120);
+  const patient = getPatient(patientId);
+  if (!patient) throw new Error("Patient not found");
+  const visits = visitsForPatient(patientId).sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
+  const activeAppointment = appointmentsForPatient(patientId)
+    .filter((appt) => ["scheduled", "arrived"].includes(appt.status))
+    .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))[0] || null;
+  const latest = visits[0] || null;
+  const signals = detectClinicalSignals(latest?.complaint || latest?.diagnosis || "", latest || {});
+  return clone({
+    patient,
+    activeAppointment,
+    latestVisit: latest,
+    visits: visits.slice(0, 10),
+    toothChart: patient.toothChart || { bite: "permanent", teeth: {}, updatedAt: "" },
+    aiSummary: {
+      visitsCount: visits.length,
+      lastDiagnosis: latest?.diagnosis || "",
+      lastDiagnosisCode: latest?.diagnosisCode || "",
+      suggestedDiagnosisCode: signals.diagnosisCode,
+      suggestedCariesType: signals.cariesType,
+    },
+    riskAlerts: clinicalRiskAlerts(patient, visits, signals),
+  });
+}
+
+export async function savePatientToothChart(patientId, data = {}, options = {}) {
+  await delay(120);
+  const patient = getPatient(patientId);
+  if (!patient) throw new Error("Patient not found");
+  const teeth = data?.teeth && typeof data.teeth === "object" ? data.teeth : data?.chart || {};
+  const bite = String(data?.bite || "permanent");
+  patient.toothChart = {
+    bite,
+    teeth,
+    updatedAt: new Date().toISOString(),
+    updatedBy: actorIdFromOptions(options),
+  };
+  saveDb();
+  audit("update_tooth_chart", "patient", patientId, { bite, teethCount: Object.keys(teeth || {}).length }, actorIdFromOptions(options));
+  return clone(patient.toothChart);
+}
+
+export async function getBusinessAnalytics({ dateFrom, dateTo } = {}) {
+  await delay(180);
+  const from = String(dateFrom || TODAY);
+  const to = String(dateTo || from);
+  validateIsoDate(from, "Start date");
+  validateIsoDate(to, "End date");
+  if (from > to) throw new Error("Start date cannot be later than end date");
+  const payments = db.payments.filter((payment) => payment.date >= from && payment.date <= to);
+  const appointments = db.appointments.filter((appt) => appt.date >= from && appt.date <= to);
+  const visits = db.visits.filter((visit) => {
+    const date = String(visit.startedAt || "").slice(0, 10);
+    return date >= from && date <= to;
+  });
+  const invoices = listInvoiceRecords({ dateFrom: from, dateTo: to });
+  const debtors = await getDebtors("");
+  const revenue = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const avgCheck = payments.length ? Math.round(revenue / payments.length) : 0;
+  const byDate = {};
+  for (const payment of payments) {
+    byDate[payment.date] = (byDate[payment.date] || 0) + Number(payment.amount || 0);
+  }
+  const doctorRevenue = new Map();
+  for (const payment of payments) {
+    const visit = payment.visitId ? db.visits.find((entry) => entry.id === payment.visitId) : null;
+    const doctor = getDoctor(visit?.doctorId);
+    const key = doctor?.id || "unknown";
+    if (!doctorRevenue.has(key)) {
+      doctorRevenue.set(key, {
+        doctorId: key,
+        doctorName: doctor?.name || "Unknown doctor",
+        specialty: doctor?.specialty || "",
+        revenue: 0,
+        paymentsCount: 0,
+      });
+    }
+    const row = doctorRevenue.get(key);
+    row.revenue += Number(payment.amount || 0);
+    row.paymentsCount += 1;
+  }
+  const lowStock = (db.inventory || []).filter((item) => Number(item.quantity || 0) <= Number(item.minQuantity || 0));
+  const completed = appointments.filter((appt) => appt.status === "completed").length;
+  return clone({
+    dateFrom: from,
+    dateTo: to,
+    revenue,
+    avgCheck,
+    paymentsCount: payments.length,
+    appointmentsCount: appointments.length,
+    completedVisits: visits.filter((visit) => visit.isFinal).length || completed,
+    conversionRate: appointments.length ? Math.round((completed / appointments.length) * 100) : 0,
+    invoiceTotal: invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
+    invoicePaid: invoices.reduce((sum, invoice) => sum + Number(invoice.paid || 0), 0),
+    debtTotal: debtors.reduce((sum, debtor) => sum + Number(debtor.debt || 0), 0),
+    debtorsCount: debtors.length,
+    lowStockCount: lowStock.length,
+    businessRisks: [
+      ...(debtors.length ? [{ level: "medium", code: "DEBTORS", message: `${debtors.length} patients have debt.` }] : []),
+      ...(lowStock.length ? [{ level: "medium", code: "LOW_STOCK", message: `${lowStock.length} inventory items are below minimum.` }] : []),
+    ],
+    revenueTrend: Object.entries(byDate).map(([date, amount]) => ({ date, amount })).sort((a, b) => a.date.localeCompare(b.date)),
+    doctorRevenue: Array.from(doctorRevenue.values()).sort((a, b) => b.revenue - a.revenue),
+    lowStock,
+  });
+}
+
+const API_ENDPOINTS = [
+  ["GET", "/api/health", "Backend health check", false],
+  ["GET", "/api/docs", "HTML API documentation", false],
+  ["GET", "/api/openapi.json", "OpenAPI schema", false],
+  ["POST", "/api/auth/login", "Login by phone and password", false],
+  ["GET", "/api/auth/me", "Current session user", true],
+  ["POST", "/api/auth/logout", "Logout current session", true],
+  ["POST", "/api/auth/change-password", "Change current password", true],
+  ["GET", "/api/reference/icd10", "Dental ICD-10 reference", true],
+  ["POST", "/api/ai/analyze-transcript", "Analyze clinical transcript", true],
+  ["POST", "/api/ai/protocol-draft", "Create clinical protocol draft", true],
+  ["GET", "/api/doctors", "List doctors", true],
+  ["GET", "/api/schedule", "Doctor schedule", true],
+  ["POST", "/api/appointments", "Create appointment", true],
+  ["GET", "/api/appointments/active", "Active appointment by patient", true],
+  ["PATCH", "/api/appointments/:id/status", "Update appointment status", true],
+  ["GET", "/api/patients", "Search patients", true],
+  ["POST", "/api/patients", "Create patient", true],
+  ["GET", "/api/patients/:id", "Patient profile", true],
+  ["PUT", "/api/patients/:id", "Update patient", true],
+  ["GET", "/api/patients/:id/protocol", "Generated protocol text", true],
+  ["GET", "/api/patients/:id/medical-card", "Patient medical card", true],
+  ["GET", "/api/patients/:id/treatment-plan", "Patient treatment plan", true],
+  ["GET", "/api/patients/:id/ai-context", "Patient AI clinical context", true],
+  ["GET", "/api/patients/:id/tooth-chart", "Patient tooth chart", true],
+  ["PUT", "/api/patients/:id/tooth-chart", "Save patient tooth chart", true],
+  ["POST", "/api/patients/:id/reminders", "Create patient reminder", true],
+  ["POST", "/api/patients/:id/documents/protocol", "Create protocol document", true],
+  ["POST", "/api/visits/start", "Start visit", true],
+  ["POST", "/api/visits/finish", "Finish visit", true],
+  ["GET", "/api/visits", "List visits", true],
+  ["GET", "/api/visits/:id/materials", "Visit materials", true],
+  ["GET", "/api/visits/:id/services", "Visit services", true],
+  ["GET", "/api/files", "List files", true],
+  ["POST", "/api/files", "Upload file metadata/content", true],
+  ["GET", "/api/files/:id/download", "Download file", true],
+  ["DELETE", "/api/files/:id", "Delete file", true],
+  ["POST", "/api/documents/:id/sign", "Sign document placeholder", true],
+  ["GET", "/api/payments", "Payments by date", true],
+  ["GET", "/api/payments/export", "Payments CSV export", true],
+  ["POST", "/api/payments", "Create payment", true],
+  ["GET", "/api/debtors", "List debtors", true],
+  ["GET", "/api/reports/day", "Day report", true],
+  ["GET", "/api/reports/period", "Period report", true],
+  ["GET", "/api/analytics/business", "Business analytics dashboard data", true],
+  ["GET", "/api/notifications", "List notifications", true],
+  ["POST", "/api/notifications/generate", "Generate system notifications", true],
+  ["PATCH", "/api/notifications/:id/read", "Mark notification read", true],
+  ["GET", "/api/audit-logs", "List audit logs", true],
+  ["GET", "/api/audit-logs/export", "Audit logs CSV export", true],
+  ["GET", "/api/conversations", "List CRM conversations", true],
+  ["POST", "/api/conversations", "Create CRM conversation", true],
+  ["GET", "/api/conversations/:id", "Conversation details", true],
+  ["PATCH", "/api/conversations/:id/status", "Update conversation status", true],
+  ["GET", "/api/conversations/:id/messages", "Conversation messages", true],
+  ["POST", "/api/conversations/:id/messages", "Send or store conversation message", true],
+  ["POST", "/api/conversations/:id/ai-draft", "Create AI reply draft", true],
+  ["GET", "/api/inventory", "List inventory", true],
+  ["POST", "/api/inventory", "Create inventory item", true],
+  ["PATCH", "/api/inventory/:id/quantity", "Adjust inventory quantity", true],
+  ["GET", "/api/price-items", "List price items", true],
+  ["POST", "/api/price-items", "Create price item", true],
+  ["PUT", "/api/price-items/:id", "Update price item", true],
+  ["PATCH", "/api/price-items/:id/active", "Toggle price item active status", true],
+  ["GET", "/api/invoices", "List invoices", true],
+  ["POST", "/api/invoices", "Create invoice", true],
+  ["GET", "/api/invoices/:id", "Invoice details", true],
+  ["POST", "/api/invoices/:id/pay", "Pay invoice", true],
+  ["GET", "/api/stock-movements", "List stock movements", true],
+  ["POST", "/api/stock-movements", "Create stock movement", true],
+  ["GET", "/api/users", "List users", true],
+  ["POST", "/api/users", "Create user", true],
+  ["PUT", "/api/users/:id", "Update user", true],
+];
+
+function openApiPath(pathname) {
+  return pathname.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
+}
+
+function openApiParameters(pathname) {
+  const matches = [...pathname.matchAll(/:([A-Za-z0-9_]+)/g)];
+  return matches.map((match) => ({
+    name: match[1],
+    in: "path",
+    required: true,
+    schema: { type: "string" },
+  }));
+}
+
+export function getOpenApiSpec() {
+  const paths = {};
+  for (const [method, pathname, summary, isProtected] of API_ENDPOINTS) {
+    const pathKey = openApiPath(pathname);
+    if (!paths[pathKey]) paths[pathKey] = {};
+    paths[pathKey][method.toLowerCase()] = {
+      summary,
+      tags: [pathname.split("/")[2] || "system"],
+      security: isProtected ? [{ bearerAuth: [] }, { cookieAuth: [] }] : [],
+      parameters: openApiParameters(pathname),
+      responses: {
+        200: { description: "Success" },
+        400: { description: "Bad request" },
+        401: { description: "Unauthorized" },
+        403: { description: "Forbidden" },
+        404: { description: "Not found" },
+      },
+    };
+  }
+  return {
+    openapi: "3.0.3",
+    info: {
+      title: "NeuroDent Backend API",
+      version: "1.0.0",
+      description: "Server-side REST API for NeuroDent CRM.",
+    },
+    servers: [{ url: "http://localhost:3000" }],
+    paths,
+    components: {
+      securitySchemes: {
+        bearerAuth: { type: "http", scheme: "bearer" },
+        cookieAuth: { type: "apiKey", in: "cookie", name: "nd_token" },
+      },
+    },
+  };
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export function getApiDocsHtml() {
+  const rows = API_ENDPOINTS.map(([method, pathname, summary, isProtected]) => `
+    <tr>
+      <td><span class="method">${escapeHtml(method)}</span></td>
+      <td><code>${escapeHtml(pathname)}</code></td>
+      <td>${escapeHtml(summary)}</td>
+      <td>${isProtected ? "auth" : "public"}</td>
+    </tr>
+  `).join("");
+  return `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NeuroDent Backend API</title>
+  <style>
+    body { margin: 0; font-family: Georgia, "Times New Roman", serif; background: #f6f2e9; color: #1f2933; }
+    main { max-width: 1100px; margin: 0 auto; padding: 40px 20px; }
+    h1 { font-size: 42px; margin: 0 0 10px; }
+    p { font-size: 18px; line-height: 1.6; }
+    a { color: #075e54; }
+    table { width: 100%; border-collapse: collapse; background: white; border: 1px solid #e3dccf; border-radius: 16px; overflow: hidden; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid #eee7da; text-align: left; vertical-align: top; }
+    th { background: #0f3d36; color: white; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
+    code { font-family: "SFMono-Regular", Consolas, monospace; }
+    .method { display: inline-block; min-width: 54px; font-weight: 700; color: #0f3d36; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>NeuroDent Backend API</h1>
+    <p>REST API работает на сервере, хранит данные в SQLite и защищает рабочие route-ы через <code>nd_token</code> cookie или Bearer token.</p>
+    <p>OpenAPI JSON: <a href="/api/openapi.json">/api/openapi.json</a></p>
+    <table>
+      <thead><tr><th>Method</th><th>Route</th><th>Description</th><th>Access</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </main>
+</body>
+</html>`;
 }
 
 export async function sendPatientReminder(patientId, message = "", options = {}) {
