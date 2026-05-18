@@ -9,11 +9,8 @@ import { useAuth } from "@/lib/AuthContext";
 export default function LoginPage() {
   const router = useRouter();
   const { saveUser } = useAuth();
-  const [mode, setMode] = useState("login");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [accepted, setAccepted] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -37,26 +34,6 @@ export default function LoginPage() {
       setLoading(false);
     }
   }
-
-  function handleRegister(e) {
-    e.preventDefault();
-    setMessage("");
-
-    if (!fullName || !phone || !password) {
-      setMessage("Заполните все обязательные поля");
-      return;
-    }
-
-    if (!accepted) {
-      setMessage("Подтвердите согласие с условиями");
-      return;
-    }
-
-    setMode("login");
-    setMessage("Регистрация будет подключена после интеграции backend API");
-  }
-
-  const isLogin = mode === "login";
 
   return (
     <main className="auth-shell">
@@ -289,36 +266,16 @@ export default function LoginPage() {
         <span>Neurodent</span>
       </div>
 
-      <section className="auth-card" aria-label={isLogin ? "Вход в Neurodent" : "Регистрация в Neurodent"}>
+      <section className="auth-card" aria-label="Вход в Neurodent">
         <h1 className="auth-title">
-          {isLogin ? (
-            <>
-              Войдите в <span>Neurodent</span>
-            </>
-          ) : (
-            "Регистрация"
-          )}
+          Войдите в <span>Neurodent</span>
         </h1>
 
         <p className="auth-subtitle">
-          {isLogin ? "Впервые в Neurodent? " : "Уже являетесь пользователем Neurodent? "}
-          <button className="auth-link" type="button" onClick={() => { setMode(isLogin ? "register" : "login"); setMessage(""); }}>
-            {isLogin ? "Зарегистрируйтесь бесплатно" : "Войти"}
-          </button>
+          Доступ только для сотрудников и пациентов клиники
         </p>
 
-        <form className="auth-form" onSubmit={isLogin ? handleLogin : handleRegister} noValidate>
-          {!isLogin && (
-            <input
-              className="auth-input"
-              type="text"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder="Полное имя"
-              autoComplete="name"
-            />
-          )}
-
+        <form className="auth-form" onSubmit={handleLogin} noValidate>
           <input
             className="auth-input"
             type="tel"
@@ -334,45 +291,23 @@ export default function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Пароль (+8 символов)"
-            autoComplete={isLogin ? "current-password" : "new-password"}
+            autoComplete="current-password"
           />
 
-          {isLogin && (
-            <button className="auth-link" type="button" style={{ justifySelf: "start", fontSize: 12 }}>
-              Забыли пароль?
-            </button>
-          )}
-
-          <label className="auth-row">
-            <input
-              type="checkbox"
-              checked={accepted}
-              onChange={(e) => setAccepted(e.target.checked)}
-            />
-            <span>
-              Я согласен с <span className="auth-link">Положениями и условиями Neurodent</span> и признаю{" "}
-              <span className="auth-link">Политику конфиденциальности</span>.
-            </span>
-          </label>
+          <button className="auth-link" type="button" style={{ justifySelf: "start", fontSize: 12 }}>
+            Забыли пароль?
+          </button>
 
           <div className="auth-message" role="status" aria-live="polite">{message}</div>
 
           <button className="auth-submit" type="submit" disabled={loading}>
-            {loading ? "Входим..." : isLogin ? "Войти" : "Зарегистрироваться"}
+            {loading ? "Входим..." : "Войти"}
           </button>
-
-          {!isLogin && (
-            <button className="auth-google" type="button">
-              Продолжить с учетной записью Google
-            </button>
-          )}
         </form>
 
-        {isLogin && (
-          <p className="auth-demo">
-            Demo password: <code>1234</code>, <code>admin</code>, <code>doctor</code>, <code>patient</code>
-          </p>
-        )}
+        <p className="auth-demo">
+          Demo password: <code>1234</code>, <code>admin</code>, <code>doctor</code>, <code>patient</code>
+        </p>
       </section>
     </main>
   );

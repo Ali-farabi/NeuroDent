@@ -200,7 +200,7 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
           })}
         </nav>
 
-        <div style={{ padding: isPatient ? "0 14px 34px" : "0 14px 30px", display: "grid", gap: 18 }}>
+        <div style={{ marginTop: "auto", padding: isPatient ? "0 14px 34px" : "0 14px 30px", display: "grid", gap: 18 }}>
           <button
             type="button"
             style={{
