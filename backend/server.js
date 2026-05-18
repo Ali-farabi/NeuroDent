@@ -202,6 +202,14 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { ok: true, service: "neurodent-backend" });
   }
 
+  if (method === "GET" && pathname === "/api/openapi.json") {
+    return sendJson(res, 200, api.getOpenApiSpec());
+  }
+
+  if (method === "GET" && pathname === "/api/docs") {
+    return sendText(res, 200, api.getApiDocsHtml(), "text/html; charset=utf-8");
+  }
+
   if (method === "POST" && pathname === "/api/auth/login") {
     const body = await readJsonBody(req);
     const result = await api.login(body.phone, body.password);
@@ -224,6 +232,21 @@ async function handleApi(req, res, url) {
     const user = await requireRole(req, ["owner", "admin", "doctor", "assistant"]);
     const body = await readJsonBody(req);
     return sendJson(res, 200, await api.changePassword(user.id, body.currentPassword, body.nextPassword));
+  }
+
+  if (method === "GET" && pathname === "/api/reference/icd10") {
+    await requireRole(req, ["owner", "admin", "doctor", "assistant"]);
+    return sendJson(res, 200, await api.getIcd10Reference(searchParams.get("q") || ""));
+  }
+
+  if (method === "POST" && pathname === "/api/ai/analyze-transcript") {
+    await requireRole(req, ["owner", "doctor", "assistant"]);
+    return sendJson(res, 200, await api.analyzeClinicalTranscript(await readJsonBody(req)));
+  }
+
+  if (method === "POST" && pathname === "/api/ai/protocol-draft") {
+    const user = await requireRole(req, ["owner", "doctor", "assistant"]);
+    return sendJson(res, 200, await api.draftClinicalProtocol(await readJsonBody(req), { actorUserId: user.id }));
   }
 
   if (method === "GET" && pathname === "/api/doctors") {
@@ -297,6 +320,26 @@ async function handleApi(req, res, url) {
     const user = await requireRole(req, ["owner", "admin", "doctor", "assistant", "patient"]);
     assertPatientAccess(user, patientPlanParams.id);
     return sendJson(res, 200, await api.getPatientTreatmentPlan(patientPlanParams.id));
+  }
+
+  const patientAiContextParams = routeParams(pathname, "/api/patients/:id/ai-context");
+  if (method === "GET" && patientAiContextParams) {
+    const user = await requireRole(req, ["owner", "admin", "doctor", "assistant", "patient"]);
+    assertPatientAccess(user, patientAiContextParams.id);
+    return sendJson(res, 200, await api.getPatientAiContext(patientAiContextParams.id));
+  }
+
+  const patientToothChartParams = routeParams(pathname, "/api/patients/:id/tooth-chart");
+  if (method === "GET" && patientToothChartParams) {
+    const user = await requireRole(req, ["owner", "admin", "doctor", "assistant", "patient"]);
+    assertPatientAccess(user, patientToothChartParams.id);
+    const context = await api.getPatientAiContext(patientToothChartParams.id);
+    return sendJson(res, 200, context.toothChart);
+  }
+
+  if (method === "PUT" && patientToothChartParams) {
+    const user = await requireRole(req, ["owner", "doctor", "assistant"]);
+    return sendJson(res, 200, await api.savePatientToothChart(patientToothChartParams.id, await readJsonBody(req), { actorUserId: user.id }));
   }
 
   const patientReminderParams = routeParams(pathname, "/api/patients/:id/reminders");
@@ -442,6 +485,18 @@ async function handleApi(req, res, url) {
     );
   }
 
+  if (method === "GET" && pathname === "/api/analytics/business") {
+    await requireRole(req, ["owner", "admin"]);
+    return sendJson(
+      res,
+      200,
+      await api.getBusinessAnalytics({
+        dateFrom: searchParams.get("dateFrom") || "",
+        dateTo: searchParams.get("dateTo") || "",
+      }),
+    );
+  }
+
   if (method === "GET" && pathname === "/api/notifications") {
     const user = await requireRole(req, ["owner", "admin", "doctor", "assistant", "patient"]);
     return sendJson(
@@ -466,6 +521,62 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, await api.markNotificationRead(notificationReadParams.id, body.isRead !== false));
   }
 
+  if (method === "GET" && pathname === "/api/conversations") {
+    await requireRole(req, ["owner", "admin", "doctor", "assistant"]);
+    return sendJson(
+      res,
+      200,
+      await api.getConversations({
+        query: searchParams.get("q") || "",
+        channel: searchParams.get("channel") || "",
+        status: searchParams.get("status") || "",
+        patientId: searchParams.get("patientId") || "",
+        limit: Number(searchParams.get("limit") || 100),
+      }),
+    );
+  }
+
+  if (method === "POST" && pathname === "/api/conversations") {
+    const user = await requireRole(req, ["owner", "admin", "doctor", "assistant"]);
+    return sendJson(res, 201, await api.createConversation(await readJsonBody(req), { actorUserId: user.id }));
+  }
+
+  const conversationMessagesParams = routeParams(pathname, "/api/conversations/:id/messages");
+  if (method === "GET" && conversationMessagesParams) {
+    await requireRole(req, ["owner", "admin", "doctor", "assistant"]);
+    return sendJson(
+      res,
+      200,
+      await api.getConversationMessages(conversationMessagesParams.id, {
+        limit: Number(searchParams.get("limit") || 100),
+      }),
+    );
+  }
+
+  if (method === "POST" && conversationMessagesParams) {
+    const user = await requireRole(req, ["owner", "admin", "doctor", "assistant"]);
+    return sendJson(res, 201, await api.sendConversationMessage(conversationMessagesParams.id, await readJsonBody(req), { actorUserId: user.id }));
+  }
+
+  const conversationDraftParams = routeParams(pathname, "/api/conversations/:id/ai-draft");
+  if (method === "POST" && conversationDraftParams) {
+    const user = await requireRole(req, ["owner", "admin", "doctor", "assistant"]);
+    return sendJson(res, 201, await api.createConversationAiDraft(conversationDraftParams.id, await readJsonBody(req), { actorUserId: user.id }));
+  }
+
+  const conversationStatusParams = routeParams(pathname, "/api/conversations/:id/status");
+  if (method === "PATCH" && conversationStatusParams) {
+    const user = await requireRole(req, ["owner", "admin", "doctor", "assistant"]);
+    const body = await readJsonBody(req);
+    return sendJson(res, 200, await api.updateConversationStatus(conversationStatusParams.id, body.status, { actorUserId: user.id }));
+  }
+
+  const conversationParams = routeParams(pathname, "/api/conversations/:id");
+  if (method === "GET" && conversationParams) {
+    await requireRole(req, ["owner", "admin", "doctor", "assistant"]);
+    return sendJson(res, 200, await api.getConversation(conversationParams.id));
+  }
+
   if (method === "GET" && pathname === "/api/audit-logs") {
     await requireRole(req, ["owner"]);
     return sendJson(
@@ -474,8 +585,26 @@ async function handleApi(req, res, url) {
       await api.getAuditLogs({
         entityType: searchParams.get("entityType") || "",
         entityId: searchParams.get("entityId") || "",
+        dateFrom: searchParams.get("dateFrom") || "",
+        dateTo: searchParams.get("dateTo") || "",
         limit: Number(searchParams.get("limit") || 100),
       }),
+    );
+  }
+
+  if (method === "GET" && pathname === "/api/audit-logs/export") {
+    await requireRole(req, ["owner"]);
+    return sendText(
+      res,
+      200,
+      await api.exportAuditLogsCsv({
+        entityType: searchParams.get("entityType") || "",
+        entityId: searchParams.get("entityId") || "",
+        dateFrom: searchParams.get("dateFrom") || "",
+        dateTo: searchParams.get("dateTo") || "",
+        limit: Number(searchParams.get("limit") || 500),
+      }),
+      "text/csv; charset=utf-8",
     );
   }
 

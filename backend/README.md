@@ -48,6 +48,9 @@ POST  /api/auth/login
 GET   /api/auth/me
 POST  /api/auth/logout
 POST  /api/auth/change-password
+GET   /api/reference/icd10?q=
+POST  /api/ai/analyze-transcript
+POST  /api/ai/protocol-draft
 GET   /api/doctors
 GET   /api/schedule?doctorId=&date=
 POST  /api/appointments
@@ -58,6 +61,9 @@ GET   /api/patients/:id
 GET   /api/patients/:id/protocol
 GET   /api/patients/:id/medical-card
 GET   /api/patients/:id/treatment-plan
+GET   /api/patients/:id/ai-context
+GET   /api/patients/:id/tooth-chart
+PUT   /api/patients/:id/tooth-chart
 POST  /api/patients/:id/reminders
 POST  /api/patients/:id/documents/protocol
 POST  /api/patients
@@ -78,10 +84,19 @@ POST  /api/payments
 GET   /api/debtors?q=
 GET   /api/reports/day?date=
 GET   /api/reports/period?dateFrom=&dateTo=
+GET   /api/analytics/business?dateFrom=&dateTo=
 GET   /api/notifications
 POST  /api/notifications/generate
 PATCH /api/notifications/:id/read
 GET   /api/audit-logs
+GET   /api/audit-logs/export?entityType=&entityId=&dateFrom=&dateTo=
+GET   /api/conversations?q=&channel=&status=&patientId=
+POST  /api/conversations
+GET   /api/conversations/:id
+PATCH /api/conversations/:id/status
+GET   /api/conversations/:id/messages
+POST  /api/conversations/:id/messages
+POST  /api/conversations/:id/ai-draft
 GET   /api/inventory
 POST  /api/inventory
 PATCH /api/inventory/:id/quantity
@@ -98,4 +113,11 @@ POST  /api/stock-movements
 GET   /api/users?q=
 POST  /api/users
 PUT   /api/users/:id
+```
+
+API documentation:
+
+```text
+GET /api/docs
+GET /api/openapi.json
 ```
