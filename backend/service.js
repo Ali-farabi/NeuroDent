@@ -312,7 +312,7 @@ function validateStatus(status) {
 }
 
 function validatePaymentMethod(method) {
-  const allowed = new Set(["cash", "card"]);
+  const allowed = new Set(["cash", "card", "kaspi", "terminal", "insurance", "transfer"]);
   if (!allowed.has(method)) throw new Error("Неверный метод оплаты");
 }
 
@@ -1239,6 +1239,18 @@ export async function getPaymentsByDate(date) {
   return clone(list);
 }
 
+export async function getPaymentsByPatient(patientId) {
+  await delay(250);
+  if (!patientId) throw new Error("Пациент не выбран");
+  const patient = getPatient(patientId);
+  if (!patient) throw new Error("Пациент не найден");
+  const list = db.payments
+    .filter((payment) => payment.patientId === patientId)
+    .sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
+    .map((payment) => ({ ...payment, patientName: patient.name }));
+  return clone(list);
+}
+
 // Формирует CSV по платежам за дату на backend.
 // Backend: GET /payments/export?date= → text/csv
 export async function exportPaymentsCsv(date) {
@@ -1440,6 +1452,38 @@ export async function getVisitsByPatient(patientId) {
       cariesType: v.cariesType || "",
       toothNumber: v.toothNumber || "",
       isFinal: !!v.isFinal,
+    }));
+  return clone(list);
+}
+
+export async function getAllVisits({ query = "", doctorId = "", from = "", to = "", dateFrom = "", dateTo = "" } = {}) {
+  await delay(350);
+  const q = String(query || "").trim().toLowerCase();
+  const start = String(from || dateFrom || "");
+  const end = String(to || dateTo || "");
+  const list = (db.visits || [])
+    .filter((visit) => {
+      const patient = getPatient(visit.patientId);
+      const doctor = getDoctor(visit.doctorId);
+      const date = String(visit.startedAt || "").slice(0, 10);
+      if (doctorId && visit.doctorId !== doctorId) return false;
+      if (start && date < start) return false;
+      if (end && date > end) return false;
+      if (!q) return true;
+      return [
+        patient?.name,
+        patient?.phone,
+        doctor?.name,
+        visit.diagnosis,
+        visit.diagnosisCode,
+        visit.toothNumber,
+      ].filter(Boolean).some((value) => String(value).toLowerCase().includes(q));
+    })
+    .sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")))
+    .map((visit) => ({
+      ...visit,
+      patientName: getPatientName(visit.patientId),
+      doctorName: getDoctorName(visit.doctorId),
     }));
   return clone(list);
 }
@@ -2372,6 +2416,7 @@ const API_ENDPOINTS = [
   ["POST", "/api/visits/start", "Start visit", true],
   ["POST", "/api/visits/finish", "Finish visit", true],
   ["GET", "/api/visits", "List visits", true],
+  ["GET", "/api/visits/all", "List all visits with filters", true],
   ["GET", "/api/visits/:id/materials", "Visit materials", true],
   ["GET", "/api/visits/:id/services", "Visit services", true],
   ["GET", "/api/files", "List files", true],
@@ -2380,6 +2425,7 @@ const API_ENDPOINTS = [
   ["DELETE", "/api/files/:id", "Delete file", true],
   ["POST", "/api/documents/:id/sign", "Sign document placeholder", true],
   ["GET", "/api/payments", "Payments by date", true],
+  ["GET", "/api/payments/patient/:id", "Payments by patient", true],
   ["GET", "/api/payments/export", "Payments CSV export", true],
   ["POST", "/api/payments", "Create payment", true],
   ["GET", "/api/debtors", "List debtors", true],

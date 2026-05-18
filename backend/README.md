@@ -71,6 +71,7 @@ PUT   /api/patients/:id
 POST  /api/visits/start
 POST  /api/visits/finish
 GET   /api/visits?patientId=
+GET   /api/visits/all?q=&doctorId=&from=&to=
 GET   /api/visits/:id/materials
 GET   /api/visits/:id/services
 GET   /api/files?patientId=&visitId=
@@ -79,6 +80,7 @@ GET   /api/files/:id/download
 DELETE /api/files/:id
 POST  /api/documents/:id/sign
 GET   /api/payments?date=
+GET   /api/payments/patient/:id
 GET   /api/payments/export?date=
 POST  /api/payments
 GET   /api/debtors?q=

@@ -389,6 +389,20 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, await api.getVisitsByPatient(patientId));
   }
 
+  if (method === "GET" && pathname === "/api/visits/all") {
+    await requireRole(req, ["owner", "admin", "doctor", "assistant"]);
+    return sendJson(
+      res,
+      200,
+      await api.getAllVisits({
+        query: searchParams.get("q") || "",
+        doctorId: searchParams.get("doctorId") || "",
+        from: searchParams.get("from") || searchParams.get("dateFrom") || "",
+        to: searchParams.get("to") || searchParams.get("dateTo") || "",
+      }),
+    );
+  }
+
   const visitMaterialsParams = routeParams(pathname, "/api/visits/:id/materials");
   if (method === "GET" && visitMaterialsParams) {
     await requireRole(req, ["owner", "admin", "doctor", "assistant"]);
@@ -446,6 +460,13 @@ async function handleApi(req, res, url) {
   if (method === "GET" && pathname === "/api/payments") {
     await requireRole(req, ["owner", "admin"]);
     return sendJson(res, 200, await api.getPaymentsByDate(searchParams.get("date")));
+  }
+
+  const patientPaymentsParams = routeParams(pathname, "/api/payments/patient/:id");
+  if (method === "GET" && patientPaymentsParams) {
+    const user = await requireRole(req, ["owner", "admin", "doctor", "assistant", "patient"]);
+    assertPatientAccess(user, patientPaymentsParams.id);
+    return sendJson(res, 200, await api.getPaymentsByPatient(patientPaymentsParams.id));
   }
 
   if (method === "GET" && pathname === "/api/payments/export") {
