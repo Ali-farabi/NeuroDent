@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    profiles:
+      - postgres
+    container_name: neurodent-postgres
+    environment:
+      POSTGRES_DB: neurodent
+      POSTGRES_USER: neurodent
+      POSTGRES_PASSWORD: neurodent
+    ports:
+      - "5432:5432"
+    volumes:
+      - neurodent-postgres:/var/lib/postgresql/data
+      - ./backend/postgres/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    restart: unless-stopped
+
+  neurodent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: neurodent-app
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NEURODENT_CORS_ORIGIN: http://localhost:3000
+      NEURODENT_DATABASE_URL: ""
+      NEURODENT_EXPOSE_RESET_TOKEN: "false"
+      NEURODENT_RATE_LIMIT_MAX: 300
+      NEURODENT_RATE_LIMIT_WINDOW_MS: 60000
+      NEURODENT_LOGIN_RATE_LIMIT_MAX: 20
+      NEURODENT_MAX_BODY_BYTES: 1000000
+      NEURODENT_EMAIL_WEBHOOK_URL: ""
+      NEURODENT_SMS_WEBHOOK_URL: ""
+      NEURODENT_WHATSAPP_WEBHOOK_URL: ""
+      NEURODENT_FILE_STORAGE_WEBHOOK_URL: ""
+      NEURODENT_FISCALIZATION_WEBHOOK_URL: ""
+      NEURODENT_ESIGN_WEBHOOK_URL: ""
+      NEURODENT_AI_WEBHOOK_URL: ""
+    ports:
+      - "3000:3000"
+    volumes:
+      - neurodent-data:/app/backend/data
+    restart: unless-stopped
+
+volumes:
+  neurodent-data:
+  neurodent-postgres:

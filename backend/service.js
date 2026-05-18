@@ -12,6 +12,16 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  getIntegrationStatus,
+  requestESignature,
+  requestExternalAi,
+  sendEmail,
+  sendFiscalReceipt,
+  sendSms,
+  sendWhatsApp,
+  uploadExternalFile,
+} from "./integrations.js";
+import {
   checkpointDatabase,
   createAuditLogRecord,
   createConversationMessageRecord,
@@ -875,13 +885,26 @@ export async function requestPasswordReset(phone) {
 
   audit("request_password_reset", "user", user.id, { phone: maskPhone(user.phone), expiresAt }, "");
 
+  const resetMessage = `NeuroDent password reset token: ${token}. It expires at ${expiresAt}.`;
+  const deliveries = [];
+  deliveries.push(await sendSms({
+    to: user.phone,
+    message: resetMessage,
+    metadata: { type: "password_reset", userId: user.id },
+  }));
+  if (user.email) {
+    deliveries.push(await sendEmail({
+      to: user.email,
+      subject: "NeuroDent password reset",
+      text: resetMessage,
+      metadata: { type: "password_reset", userId: user.id },
+    }));
+  }
+
   return {
     ...response,
     expiresAt,
-    delivery: {
-      channel: "manual",
-      destination: maskPhone(user.phone),
-    },
+    delivery: deliveries,
     ...(EXPOSE_RESET_TOKEN ? { resetToken: token } : {}),
   };
 }
@@ -1316,7 +1339,14 @@ export async function createPayment(data, options = {}) {
   validateIsoDate(payment.date);
   db.payments.push(payment);
   saveDb();
-  audit("create", "payment", payment.id, { patientId, amount, method }, actorIdFromOptions(options));
+  const fiscalization = await sendFiscalReceipt({
+    payment,
+    patient: getPatient(patientId),
+    metadata: { type: "payment_created", actorUserId: actorIdFromOptions(options) },
+  });
+  payment.fiscalization = fiscalization;
+  saveDb();
+  audit("create", "payment", payment.id, { patientId, amount, method, fiscalization }, actorIdFromOptions(options));
   return clone(payment);
 }
 
@@ -1835,6 +1865,12 @@ export async function uploadFile(data, options = {}) {
   if (!bytes.length) throw new Error("Файл пустой");
 
   const stored = writeStoredFile(UPLOADS_DIR, fileName, bytes);
+  const externalStorage = await uploadExternalFile({
+    fileName,
+    mimeType,
+    base64: cleanBase64,
+    metadata: { patientId, visitId, kind: data?.kind || "upload" },
+  });
   const record = createFileRecord({
     id: stored.id,
     patientId,
@@ -1843,7 +1879,7 @@ export async function uploadFile(data, options = {}) {
     mimeType,
     storagePath: stored.storagePath,
     createdAt: new Date().toISOString(),
-    extra: { kind: data?.kind || "upload" },
+    extra: { kind: data?.kind || "upload", externalStorage },
   });
   audit("create", "file", record.id, { patientId, visitId, fileName: record.fileName }, actorIdFromOptions(options));
   const { storagePath, ...safeRecord } = record;
@@ -1910,6 +1946,19 @@ export async function signDocument(fileId, data = {}, options = {}) {
   const file = getFileRecord(fileId);
   if (!file) throw new Error("Документ не найден");
   const signatureId = genId("sign");
+  const provider = data.provider || "egov";
+  const eSignature = await requestESignature({
+    file: {
+      id: file.id,
+      fileName: file.fileName,
+      mimeType: file.mimeType,
+    },
+    signer: {
+      name: data.signerName || data.signer || "",
+      provider,
+    },
+    metadata: { signatureId, actorUserId: actorIdFromOptions(options) },
+  });
   const notification = createNotificationRecord({
     id: genId("notif"),
     type: "document_signed",
@@ -1918,18 +1967,20 @@ export async function signDocument(fileId, data = {}, options = {}) {
     role: "owner",
     isRead: false,
     createdAt: new Date().toISOString(),
-    extra: { fileId, signatureId },
+    extra: { fileId, signatureId, eSignature },
   });
   audit("sign", "document", fileId, {
     signatureId,
-    provider: data.provider || "egov",
+    provider,
+    eSignature,
     notificationId: notification.id,
   }, actorIdFromOptions(options));
   return {
     ok: true,
     fileId,
     signatureId,
-    provider: data.provider || "egov",
+    provider,
+    eSignature,
     signedAt: new Date().toISOString(),
   };
 }
@@ -2334,12 +2385,18 @@ export async function analyzeClinicalTranscript(data = {}) {
   const signals = detectClinicalSignals(text, data);
   const patient = data?.patientId ? getPatient(String(data.patientId)) : null;
   const visits = patient ? visitsForPatient(patient.id) : [];
+  const externalAi = await requestExternalAi({
+    task: "analyze_clinical_transcript",
+    input: data,
+    metadata: { patientId: patient?.id || "" },
+  });
   return clone({
     ...signals,
     icdSuggestions: DENTAL_ICD10
       .filter((item) => item.code === signals.diagnosisCode || item.cariesType === signals.cariesType)
       .slice(0, 5),
     riskAlerts: clinicalRiskAlerts(patient, visits, signals),
+    externalAi,
   });
 }
 
@@ -2365,7 +2422,13 @@ export async function draftClinicalProtocol(data = {}, options = {}) {
     riskAlerts: clinicalRiskAlerts(patient, patient ? visitsForPatient(patient.id) : [], signals),
     createdAt: new Date().toISOString(),
   };
-  audit("draft", "clinical_protocol", patient?.id || "anonymous", { diagnosisCode: signals.diagnosisCode }, actorIdFromOptions(options));
+  const externalAi = await requestExternalAi({
+    task: "draft_clinical_protocol",
+    input: data,
+    metadata: { patientId: patient?.id || "", actorUserId: actorIdFromOptions(options) },
+  });
+  protocol.externalAi = externalAi;
+  audit("draft", "clinical_protocol", patient?.id || "anonymous", { diagnosisCode: signals.diagnosisCode, externalAi }, actorIdFromOptions(options));
   return clone(protocol);
 }
 
@@ -2524,6 +2587,11 @@ export async function getSystemStatus() {
   };
 }
 
+export async function getAdminIntegrations() {
+  await delay(60);
+  return getIntegrationStatus();
+}
+
 export async function createDatabaseBackup(options = {}) {
   await delay(120);
   checkpointDatabase();
@@ -2589,6 +2657,7 @@ const API_ENDPOINTS = [
   ["POST", "/api/auth/request-password-reset", "Request password reset token", false],
   ["POST", "/api/auth/reset-password", "Reset password with token", false],
   ["GET", "/api/admin/system", "Backend system status", true],
+  ["GET", "/api/admin/integrations", "External integration status", true],
   ["GET", "/api/admin/backups", "List database backups", true],
   ["POST", "/api/admin/backups", "Create database backup", true],
   ["GET", "/api/admin/backups/:fileName/download", "Download database backup", true],
@@ -2675,22 +2744,374 @@ function openApiParameters(pathname) {
   }));
 }
 
+function schemaRef(name) {
+  return { $ref: `#/components/schemas/${name}` };
+}
+
+function arraySchema(itemSchema) {
+  return { type: "array", items: itemSchema };
+}
+
+function jsonContent(schema) {
+  return {
+    content: {
+      "application/json": {
+        schema,
+      },
+    },
+  };
+}
+
+function requestBody(schema, required = true) {
+  return {
+    required,
+    ...jsonContent(schema),
+  };
+}
+
+function objectSchema(properties = {}, required = []) {
+  return {
+    type: "object",
+    properties,
+    ...(required.length ? { required } : {}),
+    additionalProperties: true,
+  };
+}
+
+function openApiRequestBody(method, pathname) {
+  if (method === "GET" || method === "DELETE") return null;
+  if (pathname === "/api/auth/login") {
+    return requestBody(objectSchema({
+      phone: { type: "string", example: "87001234567" },
+      password: { type: "string", example: "1234" },
+    }, ["phone", "password"]));
+  }
+  if (pathname === "/api/auth/change-password") {
+    return requestBody(objectSchema({
+      currentPassword: { type: "string" },
+      nextPassword: { type: "string", minLength: 4 },
+    }, ["currentPassword", "nextPassword"]));
+  }
+  if (pathname === "/api/auth/request-password-reset") {
+    return requestBody(objectSchema({ phone: { type: "string" } }, ["phone"]));
+  }
+  if (pathname === "/api/auth/reset-password") {
+    return requestBody(objectSchema({
+      token: { type: "string" },
+      nextPassword: { type: "string", minLength: 4 },
+    }, ["token", "nextPassword"]));
+  }
+  if (pathname === "/api/appointments") return requestBody(schemaRef("AppointmentInput"));
+  if (pathname === "/api/appointments/:id/status") {
+    return requestBody(objectSchema({ status: { type: "string", enum: ["scheduled", "arrived", "completed", "cancelled"] } }, ["status"]));
+  }
+  if (pathname === "/api/patients" || pathname === "/api/patients/:id") return requestBody(schemaRef("PatientInput"));
+  if (pathname === "/api/patients/:id/tooth-chart") return requestBody(schemaRef("ToothChart"));
+  if (pathname === "/api/patients/:id/reminders") {
+    return requestBody(objectSchema({
+      message: { type: "string" },
+      channel: { type: "string", enum: ["sms", "whatsapp"] },
+    }));
+  }
+  if (pathname === "/api/visits/start") return requestBody(objectSchema({ appointmentId: { type: "string" } }, ["appointmentId"]));
+  if (pathname === "/api/visits/finish") return requestBody(schemaRef("VisitFinishInput"));
+  if (pathname === "/api/files") return requestBody(schemaRef("FileUploadInput"));
+  if (pathname === "/api/documents/:id/sign") return requestBody(schemaRef("DocumentSignInput"));
+  if (pathname === "/api/payments") return requestBody(schemaRef("PaymentInput"));
+  if (pathname === "/api/conversations") return requestBody(schemaRef("ConversationInput"));
+  if (pathname === "/api/conversations/:id/status") {
+    return requestBody(objectSchema({ status: { type: "string", enum: ["open", "pending", "closed"] } }, ["status"]));
+  }
+  if (pathname === "/api/conversations/:id/messages") return requestBody(schemaRef("ConversationMessageInput"));
+  if (pathname === "/api/conversations/:id/ai-draft") return requestBody(objectSchema({ tone: { type: "string" }, language: { type: "string" } }));
+  if (pathname === "/api/inventory") return requestBody(schemaRef("InventoryInput"));
+  if (pathname === "/api/inventory/:id/quantity") return requestBody(objectSchema({ delta: { type: "number" } }, ["delta"]));
+  if (pathname === "/api/price-items" || pathname === "/api/price-items/:id") return requestBody(schemaRef("PriceItemInput"));
+  if (pathname === "/api/price-items/:id/active") return requestBody(objectSchema({ isActive: { type: "boolean" } }, ["isActive"]));
+  if (pathname === "/api/invoices") return requestBody(schemaRef("InvoiceInput"));
+  if (pathname === "/api/invoices/:id/pay") return requestBody(objectSchema({
+    amount: { type: "number", minimum: 0 },
+    method: { type: "string", enum: ["cash", "card", "kaspi", "terminal", "insurance", "transfer"] },
+  }, ["amount", "method"]));
+  if (pathname === "/api/stock-movements") return requestBody(schemaRef("StockMovementInput"));
+  if (pathname === "/api/users" || pathname === "/api/users/:id") return requestBody(schemaRef("UserInput"));
+  if (pathname.startsWith("/api/ai/")) return requestBody(objectSchema());
+  return method === "POST" || method === "PUT" || method === "PATCH" ? requestBody(objectSchema(), false) : null;
+}
+
+function openApiResponseSchema(method, pathname) {
+  if (pathname === "/api/health") return schemaRef("HealthResponse");
+  if (pathname === "/api/auth/login") return schemaRef("LoginResponse");
+  if (pathname === "/api/auth/me") return objectSchema({ user: schemaRef("User") });
+  if (pathname.startsWith("/api/auth/")) return schemaRef("StatusResponse");
+  if (pathname === "/api/admin/system") return schemaRef("SystemStatus");
+  if (pathname === "/api/admin/integrations") return arraySchema(schemaRef("IntegrationStatus"));
+  if (pathname === "/api/admin/backups") return method === "GET" ? arraySchema(schemaRef("Backup")) : schemaRef("Backup");
+  if (pathname.includes("/download") || pathname.includes("/export") || pathname === "/api/docs") return null;
+  if (pathname === "/api/doctors") return arraySchema(schemaRef("Doctor"));
+  if (pathname === "/api/schedule") return arraySchema(schemaRef("Appointment"));
+  if (pathname.startsWith("/api/appointments")) return schemaRef("Appointment");
+  if (pathname === "/api/patients") return method === "GET" ? arraySchema(schemaRef("Patient")) : schemaRef("Patient");
+  if (pathname === "/api/patients/:id") return schemaRef("Patient");
+  if (pathname.includes("/medical-card")) return schemaRef("MedicalCard");
+  if (pathname.includes("/treatment-plan")) return arraySchema(schemaRef("TreatmentPlanItem"));
+  if (pathname.includes("/tooth-chart")) return schemaRef("ToothChart");
+  if (pathname.includes("/protocol")) return objectSchema({ text: { type: "string" }, document: schemaRef("FileRecord") });
+  if (pathname.startsWith("/api/visits")) return pathname.includes("/materials") || pathname.includes("/services") ? arraySchema(objectSchema()) : arraySchema(schemaRef("Visit"));
+  if (pathname === "/api/files") return method === "GET" ? arraySchema(schemaRef("FileRecord")) : schemaRef("FileRecord");
+  if (pathname === "/api/payments" || pathname.startsWith("/api/payments/patient")) return method === "GET" ? arraySchema(schemaRef("Payment")) : schemaRef("Payment");
+  if (pathname === "/api/debtors") return arraySchema(schemaRef("Debtor"));
+  if (pathname.startsWith("/api/reports") || pathname === "/api/analytics/business") return schemaRef("Report");
+  if (pathname === "/api/notifications") return arraySchema(schemaRef("Notification"));
+  if (pathname.startsWith("/api/notifications")) return schemaRef("Notification");
+  if (pathname === "/api/audit-logs") return arraySchema(schemaRef("AuditLog"));
+  if (pathname === "/api/conversations") return method === "GET" ? arraySchema(schemaRef("Conversation")) : schemaRef("Conversation");
+  if (pathname.includes("/messages")) return method === "GET" ? arraySchema(schemaRef("ConversationMessage")) : schemaRef("ConversationMessage");
+  if (pathname.includes("/ai-draft")) return objectSchema({ draft: { type: "string" } });
+  if (pathname.startsWith("/api/conversations")) return schemaRef("Conversation");
+  if (pathname === "/api/inventory") return method === "GET" ? arraySchema(schemaRef("InventoryItem")) : schemaRef("InventoryItem");
+  if (pathname.startsWith("/api/inventory")) return schemaRef("InventoryItem");
+  if (pathname === "/api/price-items") return method === "GET" ? arraySchema(schemaRef("PriceItem")) : schemaRef("PriceItem");
+  if (pathname.startsWith("/api/price-items")) return schemaRef("PriceItem");
+  if (pathname === "/api/invoices") return method === "GET" ? arraySchema(schemaRef("Invoice")) : schemaRef("Invoice");
+  if (pathname.startsWith("/api/invoices")) return schemaRef("Invoice");
+  if (pathname === "/api/stock-movements") return method === "GET" ? arraySchema(schemaRef("StockMovement")) : schemaRef("StockMovement");
+  if (pathname === "/api/users") return method === "GET" ? arraySchema(schemaRef("User")) : schemaRef("User");
+  if (pathname.startsWith("/api/users")) return schemaRef("User");
+  return objectSchema();
+}
+
+function openApiSuccessResponse(method, pathname) {
+  const schema = openApiResponseSchema(method, pathname);
+  if (!schema) return { description: "Success" };
+  return {
+    description: "Success",
+    ...jsonContent(schema),
+  };
+}
+
+function openApiSchemas() {
+  const id = { type: "string" };
+  const date = { type: "string", format: "date" };
+  const dateTime = { type: "string", format: "date-time" };
+  const phone = { type: "string", example: "87001234567" };
+  return {
+    Error: objectSchema({ error: { type: "string" } }, ["error"]),
+    StatusResponse: objectSchema({ ok: { type: "boolean" }, message: { type: "string" } }),
+    HealthResponse: objectSchema({ ok: { type: "boolean" }, service: { type: "string" } }, ["ok", "service"]),
+    User: objectSchema({
+      id,
+      name: { type: "string" },
+      phone,
+      email: { type: "string" },
+      role: { type: "string", enum: ["owner", "admin", "doctor", "assistant", "patient"] },
+      isActive: { type: "boolean" },
+      patientId: id,
+    }, ["id", "name", "phone", "role"]),
+    UserInput: objectSchema({
+      name: { type: "string" },
+      phone,
+      email: { type: "string" },
+      role: { type: "string" },
+      password: { type: "string" },
+      isActive: { type: "boolean" },
+      patientId: id,
+    }),
+    LoginResponse: objectSchema({
+      token: { type: "string" },
+      expiresAt: dateTime,
+      user: schemaRef("User"),
+    }, ["token", "expiresAt", "user"]),
+    Patient: objectSchema({
+      id,
+      name: { type: "string" },
+      phone,
+      birthDate: date,
+      email: { type: "string" },
+      address: { type: "string" },
+      createdAt: dateTime,
+    }, ["id", "name", "phone"]),
+    PatientInput: objectSchema({
+      name: { type: "string" },
+      phone,
+      birthDate: date,
+      email: { type: "string" },
+      address: { type: "string" },
+    }, ["name", "phone"]),
+    Doctor: objectSchema({ id, name: { type: "string" }, specialty: { type: "string" } }, ["id", "name"]),
+    Appointment: objectSchema({
+      id,
+      doctorId: id,
+      patientId: id,
+      date,
+      time: { type: "string", example: "09:30" },
+      duration: { type: "integer" },
+      status: { type: "string" },
+      visitId: id,
+    }, ["id", "doctorId", "patientId", "date", "time", "status"]),
+    AppointmentInput: objectSchema({
+      doctorId: id,
+      patientId: id,
+      date,
+      time: { type: "string", example: "09:30" },
+      duration: { type: "integer", minimum: 10, maximum: 240 },
+    }, ["doctorId", "patientId", "date", "time"]),
+    Visit: objectSchema({
+      id,
+      appointmentId: id,
+      doctorId: id,
+      patientId: id,
+      startedAt: dateTime,
+      finishedAt: dateTime,
+      complaint: { type: "string" },
+      diagnosis: { type: "string" },
+      isFinal: { type: "boolean" },
+      diagnosisCode: { type: "string" },
+      toothNumber: { type: "string" },
+    }, ["id", "doctorId", "patientId"]),
+    VisitFinishInput: objectSchema({
+      appointmentId: id,
+      complaint: { type: "string" },
+      diagnosis: { type: "string" },
+      notes: { type: "string" },
+      diagnosisCode: { type: "string" },
+      toothNumber: { type: "string" },
+      materials: arraySchema(objectSchema()),
+    }, ["appointmentId", "complaint", "diagnosis"]),
+    Payment: objectSchema({
+      id,
+      patientId: id,
+      visitId: id,
+      amount: { type: "number" },
+      method: { type: "string" },
+      date,
+      time: { type: "string" },
+    }, ["id", "patientId", "amount", "method"]),
+    PaymentInput: objectSchema({
+      patientId: id,
+      visitId: id,
+      amount: { type: "number", minimum: 0 },
+      method: { type: "string" },
+      date,
+    }, ["patientId", "amount", "method"]),
+    InventoryItem: objectSchema({
+      id,
+      name: { type: "string" },
+      category: { type: "string" },
+      quantity: { type: "number" },
+      minQuantity: { type: "number" },
+      unit: { type: "string" },
+    }, ["id", "name", "quantity"]),
+    InventoryInput: objectSchema({
+      name: { type: "string" },
+      category: { type: "string" },
+      quantity: { type: "number" },
+      minQuantity: { type: "number" },
+      unit: { type: "string" },
+    }, ["name", "category"]),
+    Invoice: objectSchema({
+      id,
+      patientId: id,
+      visitId: id,
+      status: { type: "string", enum: ["open", "partial", "paid"] },
+      subtotal: { type: "number" },
+      discount: { type: "number" },
+      total: { type: "number" },
+      paid: { type: "number" },
+      items: arraySchema(objectSchema()),
+    }, ["id", "patientId", "status", "total"]),
+    InvoiceInput: objectSchema({
+      patientId: id,
+      visitId: id,
+      discount: { type: "number" },
+      items: arraySchema(objectSchema({
+        priceItemId: id,
+        name: { type: "string" },
+        quantity: { type: "number" },
+        unitPrice: { type: "number" },
+      })),
+    }, ["patientId", "items"]),
+    PriceItem: objectSchema({
+      id,
+      code: { type: "string" },
+      name: { type: "string" },
+      category: { type: "string" },
+      price: { type: "number" },
+      isActive: { type: "boolean" },
+    }, ["id", "code", "name", "price"]),
+    PriceItemInput: objectSchema({
+      code: { type: "string" },
+      name: { type: "string" },
+      category: { type: "string" },
+      price: { type: "number" },
+      isActive: { type: "boolean" },
+    }, ["code", "name", "price"]),
+    StockMovement: objectSchema({
+      id,
+      inventoryId: id,
+      type: { type: "string", enum: ["in", "out", "adjustment"] },
+      quantity: { type: "number" },
+      balanceAfter: { type: "number" },
+      reason: { type: "string" },
+      createdAt: dateTime,
+    }, ["id", "inventoryId", "type", "quantity"]),
+    StockMovementInput: objectSchema({
+      inventoryId: id,
+      type: { type: "string", enum: ["in", "out", "adjustment"] },
+      quantity: { type: "number" },
+      reason: { type: "string" },
+      visitId: id,
+    }, ["inventoryId", "type", "quantity"]),
+    FileRecord: objectSchema({ id, patientId: id, visitId: id, fileName: { type: "string" }, mimeType: { type: "string" }, createdAt: dateTime }),
+    FileUploadInput: objectSchema({ patientId: id, visitId: id, fileName: { type: "string" }, mimeType: { type: "string" }, base64: { type: "string" } }, ["fileName", "base64"]),
+    DocumentSignInput: objectSchema({ signerName: { type: "string" }, signature: { type: "string" } }),
+    Notification: objectSchema({ id, type: { type: "string" }, title: { type: "string" }, body: { type: "string" }, role: { type: "string" }, isRead: { type: "boolean" }, createdAt: dateTime }),
+    AuditLog: objectSchema({ id: { type: "integer" }, actorUserId: id, action: { type: "string" }, entityType: { type: "string" }, entityId: id, createdAt: dateTime }),
+    Conversation: objectSchema({ id, patientId: id, channel: { type: "string" }, title: { type: "string" }, status: { type: "string" }, lastMessageAt: dateTime }),
+    ConversationInput: objectSchema({ patientId: id, channel: { type: "string" }, title: { type: "string" }, externalId: { type: "string" } }, ["channel"]),
+    ConversationMessage: objectSchema({ id, conversationId: id, direction: { type: "string" }, senderName: { type: "string" }, body: { type: "string" }, status: { type: "string" }, createdAt: dateTime }),
+    ConversationMessageInput: objectSchema({ direction: { type: "string" }, senderName: { type: "string" }, body: { type: "string" }, status: { type: "string" } }, ["body"]),
+    ToothChart: objectSchema({ bite: { type: "string" }, teeth: objectSchema(), updatedAt: dateTime }),
+    MedicalCard: objectSchema({ patient: schemaRef("Patient"), visits: arraySchema(schemaRef("Visit")), payments: arraySchema(schemaRef("Payment")) }),
+    TreatmentPlanItem: objectSchema({ id, toothNumber: { type: "string" }, text: { type: "string" }, status: { type: "string" } }),
+    Debtor: objectSchema({ patientId: id, patientName: { type: "string" }, debt: { type: "number" } }),
+    Report: objectSchema(),
+    Backup: objectSchema({ fileName: { type: "string" }, size: { type: "integer" }, createdAt: dateTime }),
+    IntegrationStatus: objectSchema({
+      provider: { type: "string", enum: ["email", "sms", "whatsapp", "fileStorage", "fiscalization", "eSignature", "ai"] },
+      configured: { type: "boolean" },
+      urlEnv: { type: "string" },
+      tokenEnv: { type: "string" },
+    }, ["provider", "configured"]),
+    SystemStatus: objectSchema({
+      ok: { type: "boolean" },
+      service: { type: "string" },
+      storage: objectSchema({ driver: { type: "string" }, file: { type: "string" }, size: { type: "integer" } }),
+      counts: objectSchema(),
+    }),
+  };
+}
+
 export function getOpenApiSpec() {
   const paths = {};
   for (const [method, pathname, summary, isProtected] of API_ENDPOINTS) {
     const pathKey = openApiPath(pathname);
+    const request = openApiRequestBody(method, pathname);
     if (!paths[pathKey]) paths[pathKey] = {};
     paths[pathKey][method.toLowerCase()] = {
       summary,
       tags: [pathname.split("/")[2] || "system"],
       security: isProtected ? [{ bearerAuth: [] }, { cookieAuth: [] }] : [],
       parameters: openApiParameters(pathname),
+      ...(request ? { requestBody: request } : {}),
       responses: {
-        200: { description: "Success" },
-        400: { description: "Bad request" },
-        401: { description: "Unauthorized" },
-        403: { description: "Forbidden" },
-        404: { description: "Not found" },
+        200: openApiSuccessResponse(method, pathname),
+        201: openApiSuccessResponse(method, pathname),
+        400: { description: "Bad request", ...jsonContent(schemaRef("Error")) },
+        401: { description: "Unauthorized", ...jsonContent(schemaRef("Error")) },
+        403: { description: "Forbidden", ...jsonContent(schemaRef("Error")) },
+        404: { description: "Not found", ...jsonContent(schemaRef("Error")) },
+        429: { description: "Too many requests", ...jsonContent(schemaRef("Error")) },
       },
     };
   }
@@ -2708,6 +3129,7 @@ export function getOpenApiSpec() {
         bearerAuth: { type: "http", scheme: "bearer" },
         cookieAuth: { type: "apiKey", in: "cookie", name: "nd_token" },
       },
+      schemas: openApiSchemas(),
     },
   };
 }
@@ -2767,6 +3189,10 @@ export async function sendPatientReminder(patientId, message = "", options = {})
   const patient = getPatient(patientId);
   if (!patient) throw new Error("Пациент не найден");
   const text = String(message || `Здравствуйте, ${patient.name}. Напоминаем о визите в NeuroDent.`);
+  const channel = String(options.channel || "sms").toLowerCase();
+  const delivery = channel === "whatsapp"
+    ? await sendWhatsApp({ to: patient.phone, message: text, metadata: { type: "patient_reminder", patientId } })
+    : await sendSms({ to: patient.phone, message: text, metadata: { type: "patient_reminder", patientId } });
   const notification = createNotificationRecord({
     id: genId("notif"),
     type: "reminder_sent",
@@ -2775,14 +3201,16 @@ export async function sendPatientReminder(patientId, message = "", options = {})
     role: "admin",
     isRead: false,
     createdAt: new Date().toISOString(),
-    extra: { patientId },
+    extra: { patientId, channel, delivery },
   });
-  audit("send_reminder", "patient", patientId, { message: text, notificationId: notification.id }, actorIdFromOptions(options));
+  audit("send_reminder", "patient", patientId, { message: text, notificationId: notification.id, channel, delivery }, actorIdFromOptions(options));
   return {
     ok: true,
     patientId,
     phone: patient.phone,
     message: text,
+    channel,
+    delivery,
     notification,
   };
 }

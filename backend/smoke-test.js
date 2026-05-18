@@ -1,4 +1,4 @@
-import { GET, POST } from "../next-app/app/api/[[...path]]/route.js";
+import { DELETE, GET, PATCH, POST, PUT } from "../next-app/app/api/[[...path]]/route.js";
 
 const BASE_URL = "http://localhost:3000";
 
@@ -11,7 +11,9 @@ async function request(method, pathname, { body, token } = {}) {
   if (body !== undefined) headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const handler = method === "POST" ? POST : GET;
+  const handlers = { DELETE, GET, PATCH, POST, PUT };
+  const handler = handlers[method];
+  assert(handler, `unsupported test method: ${method}`);
   const response = await handler(new Request(`${BASE_URL}${pathname}`, {
     method,
     headers,
@@ -46,9 +48,86 @@ assert(me.status === 200 && me.data.user?.role === "owner", "current user check 
 
 const doctors = await request("GET", "/api/doctors", { token });
 assert(doctors.status === 200 && Array.isArray(doctors.data), "doctors endpoint failed");
+assert(doctors.data.length > 0, "seed doctors are missing");
+
+const suffix = Date.now().toString().slice(-8);
+const testDate = new Date(Date.UTC(
+  2090 + (Number(suffix.slice(-4)) % 9),
+  Number(suffix.slice(-6, -4)) % 12,
+  (Number(suffix.slice(-8, -6)) % 28) + 1,
+)).toISOString().slice(0, 10);
+const startMinutes = Number(suffix.slice(-4)) % (23 * 60);
+const testTime = `${String(Math.floor(startMinutes / 60)).padStart(2, "0")}:${String(startMinutes % 60).padStart(2, "0")}`;
+const patient = await request("POST", "/api/patients", {
+  token,
+  body: {
+    name: `Smoke Test Patient ${suffix}`,
+    phone: `8700${suffix}`,
+    birthDate: "1995-05-10",
+    email: `smoke-${suffix}@neurodent.test`,
+  },
+});
+assert(patient.status === 201 && patient.data.id, "patient creation failed");
+
+const doctorId = doctors.data[0].id;
+const appointment = await request("POST", "/api/appointments", {
+  token,
+  body: {
+    doctorId,
+    patientId: patient.data.id,
+    date: testDate,
+    time: testTime,
+    duration: 30,
+  },
+});
+assert(appointment.status === 201 && appointment.data.id, "appointment creation failed");
+
+const conflict = await request("POST", "/api/appointments", {
+  token,
+  body: {
+    doctorId,
+    patientId: patient.data.id,
+    date: appointment.data.date,
+    time: appointment.data.time,
+    duration: 30,
+  },
+});
+assert(conflict.status === 400, "schedule conflict validation failed");
+
+const invoice = await request("POST", "/api/invoices", {
+  token,
+  body: {
+    patientId: patient.data.id,
+    items: [{ name: "Smoke test consultation", quantity: 1, unitPrice: 1000 }],
+  },
+});
+assert(invoice.status === 201 && invoice.data.id && invoice.data.total === 1000, "invoice creation failed");
+
+const payment = await request("POST", `/api/invoices/${invoice.data.id}/pay`, {
+  token,
+  body: { amount: 1000, method: "cash" },
+});
+assert(payment.status === 200 && payment.data.status === "paid", "invoice payment failed");
+
+const inventory = await request("GET", "/api/inventory", { token });
+assert(inventory.status === 200 && Array.isArray(inventory.data) && inventory.data.length > 0, "inventory endpoint failed");
+
+const stockMovement = await request("POST", "/api/stock-movements", {
+  token,
+  body: {
+    inventoryId: inventory.data[0].id,
+    type: "in",
+    quantity: 1,
+    reason: "Backend smoke test",
+  },
+});
+assert(stockMovement.status === 201 && stockMovement.data.id, "stock movement creation failed");
 
 const system = await request("GET", "/api/admin/system", { token });
 assert(system.status === 200 && system.data.storage?.driver === "sqlite", "system status failed");
+
+const integrations = await request("GET", "/api/admin/integrations", { token });
+assert(integrations.status === 200 && integrations.data.some((item) => item.provider === "sms"), "integration status failed");
 
 const backup = await request("POST", "/api/admin/backups", { token });
 assert(backup.status === 201 && backup.data.fileName, "database backup failed");
@@ -57,6 +136,15 @@ const resetUnknown = await request("POST", "/api/auth/request-password-reset", {
   body: { phone: "00000000000" },
 });
 assert(resetUnknown.status === 200 && resetUnknown.data.ok, "password reset request failed");
+
+const reminder = await request("POST", `/api/patients/${patient.data.id}/reminders`, {
+  token,
+  body: { message: "Smoke test reminder", channel: "whatsapp" },
+});
+assert(reminder.status === 201 && reminder.data.delivery?.provider === "whatsapp", "patient reminder integration failed");
+
+const auditLogs = await request("GET", "/api/audit-logs?limit=20", { token });
+assert(auditLogs.status === 200 && Array.isArray(auditLogs.data) && auditLogs.data.length > 0, "audit logs failed");
 
 const openapi = await request("GET", "/api/openapi.json");
 assert(openapi.status === 200 && openapi.data.paths?.["/api/admin/system"], "OpenAPI schema failed");

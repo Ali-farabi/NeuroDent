@@ -1,0 +1,12 @@
+.git
+.github
+.vercel
+backend/data
+frontend
+node_modules
+next-app/.next
+next-app/node_modules
+next-app/.env*
+npm-debug.log*
+Dockerfile
+docker-compose.yml

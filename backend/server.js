@@ -290,6 +290,11 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, await api.getSystemStatus());
   }
 
+  if (method === "GET" && pathname === "/api/admin/integrations") {
+    await requireRole(req, ["owner"]);
+    return sendJson(res, 200, await api.getAdminIntegrations());
+  }
+
   if (method === "GET" && pathname === "/api/admin/backups") {
     await requireRole(req, ["owner"]);
     return sendJson(res, 200, await api.listDatabaseBackups());
@@ -422,7 +427,7 @@ async function handleApi(req, res, url) {
     return sendJson(
       res,
       201,
-      await api.sendPatientReminder(patientReminderParams.id, body.message, { actorUserId: user.id }),
+      await api.sendPatientReminder(patientReminderParams.id, body.message, { actorUserId: user.id, channel: body.channel }),
     );
   }
 

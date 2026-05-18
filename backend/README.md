@@ -95,10 +95,34 @@ Owner-only operational routes:
 
 ```text
 GET  /api/admin/system
+GET  /api/admin/integrations
 GET  /api/admin/backups
 POST /api/admin/backups
 GET  /api/admin/backups/:fileName/download
 ```
+
+## External Integrations
+
+Email, SMS, WhatsApp, file storage, fiscalization, e-signature and AI delivery are implemented through webhook adapters. If provider URLs are not configured, delivery is safely marked as `skipped`.
+
+```text
+NEURODENT_EMAIL_WEBHOOK_URL=
+NEURODENT_EMAIL_WEBHOOK_TOKEN=
+NEURODENT_SMS_WEBHOOK_URL=
+NEURODENT_SMS_WEBHOOK_TOKEN=
+NEURODENT_WHATSAPP_WEBHOOK_URL=
+NEURODENT_WHATSAPP_WEBHOOK_TOKEN=
+NEURODENT_FILE_STORAGE_WEBHOOK_URL=
+NEURODENT_FILE_STORAGE_WEBHOOK_TOKEN=
+NEURODENT_FISCALIZATION_WEBHOOK_URL=
+NEURODENT_FISCALIZATION_WEBHOOK_TOKEN=
+NEURODENT_ESIGN_WEBHOOK_URL=
+NEURODENT_ESIGN_WEBHOOK_TOKEN=
+NEURODENT_AI_WEBHOOK_URL=
+NEURODENT_AI_WEBHOOK_TOKEN=
+```
+
+These adapters are used by password reset, patient reminders, file upload mirroring, payment fiscalization, document signing and AI clinical assistant logic.
 
 ## Backend Smoke Test
 
@@ -106,4 +130,36 @@ GET  /api/admin/backups/:fileName/download
 npm run test:backend
 ```
 
-The smoke test checks health, protected access, owner login, current session, doctors, system status, backup creation, password reset request and OpenAPI generation.
+The smoke test checks health, protected access, owner login, current session, doctors, patient creation, schedule conflict validation, invoice payment, stock movement, system status, backup creation, password reset request, audit logs and OpenAPI generation.
+
+## Docker
+
+The project includes a production Docker setup:
+
+```bash
+docker compose up --build
+```
+
+The container runs the Next.js application with the Node.js backend runtime. SQLite data is stored in the `neurodent-data` Docker volume and is not lost when the container restarts.
+
+Optional PostgreSQL service for production migration:
+
+```bash
+docker compose --profile postgres up -d postgres
+```
+
+PostgreSQL schema:
+
+```text
+backend/postgres/schema.sql
+```
+
+## CI
+
+GitHub Actions workflow:
+
+```text
+.github/workflows/backend.yml
+```
+
+The workflow installs Next.js dependencies, checks backend syntax, runs `npm run test:backend`, and builds the Next.js application.

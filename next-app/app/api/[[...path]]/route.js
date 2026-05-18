@@ -258,6 +258,11 @@ async function handleApi(request) {
     return json(await api.getSystemStatus());
   }
 
+  if (method === "GET" && pathname === "/api/admin/integrations") {
+    await requireRole(request, ["owner"]);
+    return json(await api.getAdminIntegrations());
+  }
+
   if (method === "GET" && pathname === "/api/admin/backups") {
     await requireRole(request, ["owner"]);
     return json(await api.listDatabaseBackups());
@@ -374,7 +379,7 @@ async function handleApi(request) {
   if (method === "POST" && patientReminderParams) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
     const body = await readJsonBody(request);
-    return json(await api.sendPatientReminder(patientReminderParams.id, body.message, { actorUserId: user.id }), 201);
+    return json(await api.sendPatientReminder(patientReminderParams.id, body.message, { actorUserId: user.id, channel: body.channel }), 201);
   }
 
   const patientDocumentParams = routeParams(pathname, "/api/patients/:id/documents/protocol");
