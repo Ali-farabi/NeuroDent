@@ -1,120 +1,33 @@
 # NeuroDent Backend
 
-Node.js backend без внешних npm-зависимостей. Он отдает frontend, предоставляет REST API для CRM и хранит данные в SQLite.
+NeuroDent backend is a Node.js 22+ server-side API with SQLite storage. It replaces frontend mock data with real backend logic, role-based access control, sessions, database persistence, audit logs and operational endpoints.
 
-Требуется Node.js 22+, потому что backend использует встроенный `node:sqlite`.
+## Architecture
 
-## Запуск
+The backend is split into three layers:
+
+- `backend/server.js` runs the standalone HTTP server and exposes REST routes.
+- `backend/service.js` contains business logic for auth, patients, doctors, appointments, visits, payments, invoices, inventory, CRM conversations, AI clinical assistant logic, reports and audit logs.
+- `backend/storage.js` owns SQLite schema creation, migrations and database read/write helpers.
+- `next-app/app/api/[[...path]]/route.js` connects the Next.js app to the same backend service layer through `/api`.
+
+## Run
 
 ```bash
 npm start
 ```
 
-После запуска приложение доступно по адресу:
+Next.js integrated mode:
 
-```text
-http://localhost:3000
+```bash
+cd next-app
+npm run dev
 ```
 
-Health-check:
+Health check:
 
 ```text
-GET http://localhost:3000/api/health
-```
-
-## Авторизация
-
-API использует cookie/Bearer session token `nd_token`. Все рабочие CRM-ручки, кроме `POST /api/auth/login` и `GET /api/health`, требуют авторизацию.
-
-Стартовые сотрудники создаются в SQLite при первом запуске. Для локального входа используйте реальные телефоны из seed-данных:
-
-```text
-owner:     87001234567 / 1234
-admin:     87007654321 / admin
-doctor:    87005551234 / doctor
-assistant: 87009871234 / assistant
-```
-
-Старый режим, где пароль `1234`, `admin` или `doctor` сам выбирал роль независимо от телефона, отключен. Роль `patient` ограничена только своим `patientId` на медицинских картах, визитах, файлах и счетах.
-
-## Хранение данных
-
-Данные сохраняются в `backend/data/neurodent.sqlite`. Файл создается автоматически при первом запуске и не коммитится в git. Если рядом есть старый `backend/data/db.json`, первый запуск импортирует его как стартовые данные.
-
-## Основные API
-
-```text
-POST  /api/auth/login
-GET   /api/auth/me
-POST  /api/auth/logout
-POST  /api/auth/change-password
-GET   /api/reference/icd10?q=
-POST  /api/ai/analyze-transcript
-POST  /api/ai/protocol-draft
-GET   /api/doctors
-GET   /api/schedule?doctorId=&date=
-POST  /api/appointments
-GET   /api/appointments/active?patientId=
-PATCH /api/appointments/:id/status
-GET   /api/patients?q=
-GET   /api/patients/:id
-GET   /api/patients/:id/protocol
-GET   /api/patients/:id/medical-card
-GET   /api/patients/:id/treatment-plan
-GET   /api/patients/:id/ai-context
-GET   /api/patients/:id/tooth-chart
-PUT   /api/patients/:id/tooth-chart
-POST  /api/patients/:id/reminders
-POST  /api/patients/:id/documents/protocol
-POST  /api/patients
-PUT   /api/patients/:id
-POST  /api/visits/start
-POST  /api/visits/finish
-GET   /api/visits?patientId=
-GET   /api/visits/all?q=&doctorId=&from=&to=
-GET   /api/visits/:id/materials
-GET   /api/visits/:id/services
-GET   /api/files?patientId=&visitId=
-POST  /api/files
-GET   /api/files/:id/download
-DELETE /api/files/:id
-POST  /api/documents/:id/sign
-GET   /api/payments?date=
-GET   /api/payments/patient/:id
-GET   /api/payments/export?date=
-POST  /api/payments
-GET   /api/debtors?q=
-GET   /api/reports/day?date=
-GET   /api/reports/period?dateFrom=&dateTo=
-GET   /api/analytics/business?dateFrom=&dateTo=
-GET   /api/notifications
-POST  /api/notifications/generate
-PATCH /api/notifications/:id/read
-GET   /api/audit-logs
-GET   /api/audit-logs/export?entityType=&entityId=&dateFrom=&dateTo=
-GET   /api/conversations?q=&channel=&status=&patientId=
-POST  /api/conversations
-GET   /api/conversations/:id
-PATCH /api/conversations/:id/status
-GET   /api/conversations/:id/messages
-POST  /api/conversations/:id/messages
-POST  /api/conversations/:id/ai-draft
-GET   /api/inventory
-POST  /api/inventory
-PATCH /api/inventory/:id/quantity
-GET   /api/price-items?q=&activeOnly=
-POST  /api/price-items
-PUT   /api/price-items/:id
-PATCH /api/price-items/:id/active
-GET   /api/invoices?patientId=&status=&dateFrom=&dateTo=
-POST  /api/invoices
-GET   /api/invoices/:id
-POST  /api/invoices/:id/pay
-GET   /api/stock-movements?inventoryId=&dateFrom=&dateTo=
-POST  /api/stock-movements
-GET   /api/users?q=
-POST  /api/users
-PUT   /api/users/:id
+GET /api/health
 ```
 
 API documentation:
@@ -123,3 +36,74 @@ API documentation:
 GET /api/docs
 GET /api/openapi.json
 ```
+
+## Authentication
+
+The API uses phone/password login. A successful login creates a server-side session and returns a token. The token can be sent as the `nd_token` cookie or as `Authorization: Bearer <token>`.
+
+Seed users:
+
+```text
+owner:     87001234567 / 1234
+admin:     87007654321 / admin
+doctor:    87005551234 / doctor
+assistant: 87009871234 / assistant
+```
+
+Roles:
+
+```text
+owner, admin, doctor, assistant, patient
+```
+
+Security features:
+
+- Password hashes are generated with Node.js `scrypt`.
+- Protected endpoints return `401 Unauthorized` without a valid session.
+- Role restrictions return `403 Forbidden` when the user has no permission.
+- Patient users are scoped to their own `patientId`.
+- Login and API requests have in-memory rate limiting.
+- Request body size is limited by `NEURODENT_MAX_BODY_BYTES`.
+- Password reset endpoints use time-limited reset tokens.
+
+## Storage
+
+SQLite database file:
+
+```text
+backend/data/neurodent.sqlite
+```
+
+Runtime data is ignored by Git. Database backups are created under:
+
+```text
+backend/data/backups/
+```
+
+Main tables include:
+
+```text
+users, patients, doctors, appointments, visits, payments, invoices,
+invoice_items, inventory, stock_movements, files, notifications,
+audit_logs, conversations, conversation_messages, sessions,
+schema_migrations
+```
+
+## Admin Operations
+
+Owner-only operational routes:
+
+```text
+GET  /api/admin/system
+GET  /api/admin/backups
+POST /api/admin/backups
+GET  /api/admin/backups/:fileName/download
+```
+
+## Backend Smoke Test
+
+```bash
+npm run test:backend
+```
+
+The smoke test checks health, protected access, owner login, current session, doctors, system status, backup creation, password reset request and OpenAPI generation.

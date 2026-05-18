@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node --no-warnings backend/server.js",
-    "dev": "node --no-warnings backend/server.js"
+    "dev": "node --no-warnings backend/server.js",
+    "test:backend": "node --no-warnings backend/smoke-test.js"
   },
   "engines": {
     "node": ">=22"

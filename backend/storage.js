@@ -16,6 +16,10 @@ export function getSqliteFilePath() {
   return SQLITE_FILE;
 }
 
+export function checkpointDatabase() {
+  getDb().exec("PRAGMA wal_checkpoint(FULL)");
+}
+
 function getDb() {
   if (!db) {
     mkdirSync(DATA_DIR, { recursive: true });

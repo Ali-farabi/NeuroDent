@@ -11,8 +11,16 @@ const ROOT_DIR = path.resolve(__dirname, "..");
 const FRONTEND_DIR = path.join(ROOT_DIR, "frontend");
 const DATA_FILE = getSqliteFilePath();
 const PORT = Number(process.env.PORT || 3000);
+const CORS_ORIGIN = process.env.NEURODENT_CORS_ORIGIN || "*";
+const COOKIE_SECURE = process.env.NODE_ENV === "production";
+const API_RATE_LIMIT_MAX = Number(process.env.NEURODENT_RATE_LIMIT_MAX || 300);
+const API_RATE_LIMIT_WINDOW_MS = Number(process.env.NEURODENT_RATE_LIMIT_WINDOW_MS || 60_000);
+const LOGIN_RATE_LIMIT_MAX = Number(process.env.NEURODENT_LOGIN_RATE_LIMIT_MAX || 20);
+const MAX_BODY_BYTES = Number(process.env.NEURODENT_MAX_BODY_BYTES || 1_000_000);
 
 const api = await import("./service.js");
+const apiBuckets = new Map();
+const loginBuckets = new Map();
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -26,9 +34,10 @@ const MIME_TYPES = {
 };
 
 function setCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Origin", CORS_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (CORS_ORIGIN !== "*") res.setHeader("Access-Control-Allow-Credentials", "true");
 }
 
 function sendJson(res, statusCode, payload) {
@@ -74,15 +83,45 @@ function getAuthToken(req) {
   return parseCookies(req).nd_token || "";
 }
 
+function clientKey(req) {
+  const forwarded = req.headers["x-forwarded-for"] || "";
+  return String(forwarded).split(",")[0].trim() || req.socket.remoteAddress || "local";
+}
+
+function assertBucketLimit(buckets, key, limit, windowMs) {
+  const now = Date.now();
+  const bucket = (buckets.get(key) || []).filter((time) => now - time < windowMs);
+  if (bucket.length >= limit) {
+    const err = new Error("Too many requests. Please try again later.");
+    err.statusCode = 429;
+    throw err;
+  }
+  bucket.push(now);
+  buckets.set(key, bucket);
+}
+
+function assertApiRateLimit(req, pathname) {
+  assertBucketLimit(
+    apiBuckets,
+    `${clientKey(req)}:${req.method}:${pathname}`,
+    API_RATE_LIMIT_MAX,
+    API_RATE_LIMIT_WINDOW_MS,
+  );
+}
+
+function assertLoginRateLimit(req) {
+  assertBucketLimit(loginBuckets, clientKey(req), LOGIN_RATE_LIMIT_MAX, 5 * 60 * 1000);
+}
+
 function setAuthCookie(res, token) {
   res.setHeader(
     "Set-Cookie",
-    `nd_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${7 * 24 * 60 * 60}`,
+    `nd_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${7 * 24 * 60 * 60}${COOKIE_SECURE ? "; Secure" : ""}`,
   );
 }
 
 function clearAuthCookie(res) {
-  res.setHeader("Set-Cookie", "nd_token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
+  res.setHeader("Set-Cookie", `nd_token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${COOKIE_SECURE ? "; Secure" : ""}`);
 }
 
 async function getRequestUser(req) {
@@ -154,7 +193,7 @@ async function readJsonBody(req) {
 
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 1_000_000) {
+    if (size > MAX_BODY_BYTES) {
       const err = new Error("Слишком большой запрос");
       err.statusCode = 413;
       throw err;
@@ -197,6 +236,7 @@ function routeParams(pathname, pattern) {
 async function handleApi(req, res, url) {
   const { pathname, searchParams } = url;
   const method = req.method || "GET";
+  assertApiRateLimit(req, pathname);
 
   if (method === "GET" && pathname === "/api/health") {
     return sendJson(res, 200, { ok: true, service: "neurodent-backend" });
@@ -211,6 +251,7 @@ async function handleApi(req, res, url) {
   }
 
   if (method === "POST" && pathname === "/api/auth/login") {
+    assertLoginRateLimit(req);
     const body = await readJsonBody(req);
     const result = await api.login(body.phone, body.password);
     setAuthCookie(res, result.token);
@@ -232,6 +273,38 @@ async function handleApi(req, res, url) {
     const user = await requireRole(req, ["owner", "admin", "doctor", "assistant"]);
     const body = await readJsonBody(req);
     return sendJson(res, 200, await api.changePassword(user.id, body.currentPassword, body.nextPassword));
+  }
+
+  if (method === "POST" && pathname === "/api/auth/request-password-reset") {
+    const body = await readJsonBody(req);
+    return sendJson(res, 200, await api.requestPasswordReset(body.phone));
+  }
+
+  if (method === "POST" && pathname === "/api/auth/reset-password") {
+    const body = await readJsonBody(req);
+    return sendJson(res, 200, await api.resetPassword(body.token, body.nextPassword));
+  }
+
+  if (method === "GET" && pathname === "/api/admin/system") {
+    await requireRole(req, ["owner"]);
+    return sendJson(res, 200, await api.getSystemStatus());
+  }
+
+  if (method === "GET" && pathname === "/api/admin/backups") {
+    await requireRole(req, ["owner"]);
+    return sendJson(res, 200, await api.listDatabaseBackups());
+  }
+
+  if (method === "POST" && pathname === "/api/admin/backups") {
+    const user = await requireRole(req, ["owner"]);
+    return sendJson(res, 201, await api.createDatabaseBackup({ actorUserId: user.id }));
+  }
+
+  const backupDownloadParams = routeParams(pathname, "/api/admin/backups/:fileName/download");
+  if (method === "GET" && backupDownloadParams) {
+    await requireRole(req, ["owner"]);
+    const file = await api.getDatabaseBackupDownload(backupDownloadParams.fileName);
+    return sendBinary(res, 200, file.bytes, { contentType: file.mimeType, fileName: file.fileName });
   }
 
   if (method === "GET" && pathname === "/api/reference/icd10") {

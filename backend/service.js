@@ -1,8 +1,18 @@
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  checkpointDatabase,
   createAuditLogRecord,
   createConversationMessageRecord,
   createFileRecord,
@@ -18,6 +28,7 @@ import {
   getInvoiceRecord,
   getPriceItemRecord,
   getSessionRecord,
+  getSqliteFilePath,
   initializeStore,
   listAuditLogRecords,
   listConversationMessageRecords,
@@ -64,12 +75,15 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, "data");
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 const DOCUMENTS_DIR = path.join(DATA_DIR, "documents");
+const BACKUPS_DIR = path.join(DATA_DIR, "backups");
 
 const TODAY = new Date().toISOString().slice(0, 10);
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const SESSION_TTL_MS = Number(process.env.NEURODENT_SESSION_TTL_MS || 7 * 24 * 60 * 60 * 1000);
+const PASSWORD_RESET_TTL_MS = Number(process.env.NEURODENT_PASSWORD_RESET_TTL_MS || 30 * 60 * 1000);
+const EXPOSE_RESET_TOKEN = process.env.NEURODENT_EXPOSE_RESET_TOKEN !== "false" && process.env.NODE_ENV !== "production";
 
-function delay(ms = 600) {
-  return new Promise((res) => setTimeout(res, ms));
+function delay(_ms = 0) {
+  return Promise.resolve();
 }
 
 function maybeFail() {}
@@ -134,6 +148,20 @@ function appointmentsForPatient(patientId) {
 
 function cleanPhone(phone) {
   return String(phone || "").replace(/\D/g, "");
+}
+
+function maskPhone(phone) {
+  const digits = cleanPhone(phone);
+  if (digits.length <= 4) return digits;
+  return `${digits.slice(0, 2)}******${digits.slice(-4)}`;
+}
+
+function hashToken(token) {
+  return createHash("sha256").update(String(token || "")).digest("hex");
+}
+
+function resetSessionToken(token) {
+  return `password_reset:${hashToken(token)}`;
 }
 
 function publicUser(user) {
@@ -819,8 +847,73 @@ export async function changePassword(userId, currentPassword, nextPassword) {
   return { ok: true };
 }
 
-// Возвращает список всех врачей клиники.
-// Backend: GET /doctors → Doctor[]
+// Creates a time-limited password reset token.
+// Backend: POST /auth/request-password-reset -> { ok, expiresAt }
+export async function requestPasswordReset(phone) {
+  await delay(100);
+  const phoneDigits = cleanPhone(phone);
+  const user = (db.users || []).find((entry) => cleanPhone(entry.phone) === phoneDigits && entry.isActive !== false);
+  const response = {
+    ok: true,
+    message: "If the user exists, password reset instructions will be prepared.",
+  };
+
+  if (!user) return response;
+
+  deleteExpiredSessions();
+  const token = randomBytes(32).toString("hex");
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS).toISOString();
+
+  createSessionRecord({
+    token: resetSessionToken(token),
+    subjectType: "password_reset",
+    subjectId: user.id,
+    createdAt,
+    expiresAt,
+  });
+
+  audit("request_password_reset", "user", user.id, { phone: maskPhone(user.phone), expiresAt }, "");
+
+  return {
+    ...response,
+    expiresAt,
+    delivery: {
+      channel: "manual",
+      destination: maskPhone(user.phone),
+    },
+    ...(EXPOSE_RESET_TOKEN ? { resetToken: token } : {}),
+  };
+}
+
+export async function resetPassword(token, nextPassword) {
+  await delay(100);
+  const resetToken = String(token || "").trim();
+  const password = String(nextPassword || "");
+  if (!resetToken) throw new Error("Password reset token is required");
+  if (password.length < 4) throw new Error("New password is too short");
+
+  const sessionKey = resetSessionToken(resetToken);
+  const session = getSessionRecord(sessionKey);
+  if (!session || session.subjectType !== "password_reset") {
+    const err = new Error("Password reset token is invalid or expired");
+    err.statusCode = 401;
+    throw err;
+  }
+
+  const user = db.users.find((entry) => entry.id === session.subjectId && entry.isActive !== false);
+  if (!user) throw new Error("User not found");
+
+  Object.assign(user, hashPassword(password));
+  saveDb();
+  deleteSessionRecord(sessionKey);
+  audit("reset_password", "user", user.id, {}, user.id);
+
+  return { ok: true };
+}
+
+// Returns all clinic doctors.
+// Backend: GET /doctors -> Doctor[]
 export async function getDoctors() {
   await delay();
   return clone(db.doctors);
@@ -2385,6 +2478,106 @@ export async function getBusinessAnalytics({ dateFrom, dateTo } = {}) {
   });
 }
 
+function backupFileNameFromDate(date = new Date()) {
+  const stamp = date.toISOString().replace(/\.\d{3}Z$/, "").replace(/[-:]/g, "");
+  return `neurodent-backup-${stamp}-${randomBytes(3).toString("hex")}.sqlite`;
+}
+
+function resolveBackupPath(fileName) {
+  const safeName = safeFileName(path.basename(String(fileName || "")), "");
+  if (!/^neurodent-backup-\d{8}T\d{6}-[a-f0-9]{6}\.sqlite$/.test(safeName)) {
+    const err = new Error("Invalid backup file name");
+    err.statusCode = 400;
+    throw err;
+  }
+  return path.join(BACKUPS_DIR, safeName);
+}
+
+export async function getSystemStatus() {
+  await delay(80);
+  const sqlitePath = getSqliteFilePath();
+  const sqliteSize = existsSync(sqlitePath) ? statSync(sqlitePath).size : 0;
+  return {
+    ok: true,
+    service: "neurodent-backend",
+    storage: {
+      driver: "sqlite",
+      file: sqlitePath,
+      size: sqliteSize,
+    },
+    counts: {
+      doctors: db.doctors.length,
+      patients: db.patients.length,
+      users: db.users.length,
+      appointments: db.appointments.length,
+      visits: db.visits.length,
+      payments: db.payments.length,
+      inventory: db.inventory.length,
+      files: listFileRecords().length,
+      notifications: listNotificationRecords().length,
+      auditLogs: listAuditLogRecords({ limit: 10000 }).length,
+      conversations: listConversationRecords({ limit: 10000 }).length,
+      priceItems: listPriceItemRecords().length,
+      invoices: listInvoiceRecords().length,
+      stockMovements: listStockMovementRecords({ limit: 10000 }).length,
+    },
+  };
+}
+
+export async function createDatabaseBackup(options = {}) {
+  await delay(120);
+  checkpointDatabase();
+  mkdirSync(BACKUPS_DIR, { recursive: true });
+
+  const sourcePath = getSqliteFilePath();
+  if (!existsSync(sourcePath)) throw new Error("SQLite database file was not found");
+
+  const fileName = backupFileNameFromDate();
+  const backupPath = path.join(BACKUPS_DIR, fileName);
+  copyFileSync(sourcePath, backupPath);
+  const stats = statSync(backupPath);
+
+  audit("create_backup", "system", fileName, { size: stats.size }, actorIdFromOptions(options));
+
+  return {
+    ok: true,
+    fileName,
+    size: stats.size,
+    createdAt: stats.mtime.toISOString(),
+  };
+}
+
+export async function listDatabaseBackups() {
+  await delay(80);
+  mkdirSync(BACKUPS_DIR, { recursive: true });
+  return readdirSync(BACKUPS_DIR)
+    .filter((fileName) => /^neurodent-backup-\d{8}T\d{6}-[a-f0-9]{6}\.sqlite$/.test(fileName))
+    .map((fileName) => {
+      const stats = statSync(path.join(BACKUPS_DIR, fileName));
+      return {
+        fileName,
+        size: stats.size,
+        createdAt: stats.mtime.toISOString(),
+      };
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function getDatabaseBackupDownload(fileName) {
+  await delay(80);
+  const backupPath = resolveBackupPath(fileName);
+  if (!existsSync(backupPath)) {
+    const err = new Error("Backup file was not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  return {
+    fileName: path.basename(backupPath),
+    mimeType: "application/vnd.sqlite3",
+    bytes: readFileSync(backupPath),
+  };
+}
+
 const API_ENDPOINTS = [
   ["GET", "/api/health", "Backend health check", false],
   ["GET", "/api/docs", "HTML API documentation", false],
@@ -2393,6 +2586,12 @@ const API_ENDPOINTS = [
   ["GET", "/api/auth/me", "Current session user", true],
   ["POST", "/api/auth/logout", "Logout current session", true],
   ["POST", "/api/auth/change-password", "Change current password", true],
+  ["POST", "/api/auth/request-password-reset", "Request password reset token", false],
+  ["POST", "/api/auth/reset-password", "Reset password with token", false],
+  ["GET", "/api/admin/system", "Backend system status", true],
+  ["GET", "/api/admin/backups", "List database backups", true],
+  ["POST", "/api/admin/backups", "Create database backup", true],
+  ["GET", "/api/admin/backups/:fileName/download", "Download database backup", true],
   ["GET", "/api/reference/icd10", "Dental ICD-10 reference", true],
   ["POST", "/api/ai/analyze-transcript", "Analyze clinical transcript", true],
   ["POST", "/api/ai/protocol-draft", "Create clinical protocol draft", true],

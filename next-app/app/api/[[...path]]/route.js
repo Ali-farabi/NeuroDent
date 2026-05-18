@@ -3,11 +3,22 @@ import * as api from "../../../../backend/service.js";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const CORS_ORIGIN = process.env.NEURODENT_CORS_ORIGIN || "*";
+const COOKIE_SECURE = process.env.NODE_ENV === "production";
+const MAX_BODY_BYTES = Number(process.env.NEURODENT_MAX_BODY_BYTES || 1_000_000);
+const API_RATE_LIMIT_MAX = Number(process.env.NEURODENT_RATE_LIMIT_MAX || 300);
+const API_RATE_LIMIT_WINDOW_MS = Number(process.env.NEURODENT_RATE_LIMIT_WINDOW_MS || 60_000);
+const LOGIN_RATE_LIMIT_MAX = Number(process.env.NEURODENT_LOGIN_RATE_LIMIT_MAX || 20);
+
 const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": CORS_ORIGIN,
   "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  ...(CORS_ORIGIN === "*" ? {} : { "Access-Control-Allow-Credentials": "true" }),
 };
+
+const apiBuckets = globalThis.__neurodentApiBuckets || new Map();
+globalThis.__neurodentApiBuckets = apiBuckets;
 
 const loginBuckets = globalThis.__neurodentLoginBuckets || new Map();
 globalThis.__neurodentLoginBuckets = loginBuckets;
@@ -66,11 +77,11 @@ function getAuthToken(request) {
 }
 
 function authCookie(token) {
-  return `nd_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${7 * 24 * 60 * 60}`;
+  return `nd_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${7 * 24 * 60 * 60}${COOKIE_SECURE ? "; Secure" : ""}`;
 }
 
 function clearAuthCookie() {
-  return "nd_token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0";
+  return `nd_token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${COOKIE_SECURE ? "; Secure" : ""}`;
 }
 
 async function getRequestUser(request) {
@@ -141,6 +152,11 @@ function routeParams(pathname, pattern) {
 async function readJsonBody(request) {
   const textBody = await request.text();
   if (!textBody.trim()) return {};
+  if (textBody.length > MAX_BODY_BYTES) {
+    const err = new Error("Request body is too large");
+    err.statusCode = 413;
+    throw err;
+  }
   try {
     return JSON.parse(textBody);
   } catch {
@@ -155,12 +171,25 @@ function clientKey(request) {
   return forwarded.split(",")[0].trim() || request.headers.get("x-real-ip") || "local";
 }
 
+function assertRateLimit(request) {
+  const key = `${clientKey(request)}:${request.method}:${new URL(request.url).pathname}`;
+  const now = Date.now();
+  const bucket = (apiBuckets.get(key) || []).filter((time) => now - time < API_RATE_LIMIT_WINDOW_MS);
+  if (bucket.length >= API_RATE_LIMIT_MAX) {
+    const err = new Error("Too many requests. Please try again later.");
+    err.statusCode = 429;
+    throw err;
+  }
+  bucket.push(now);
+  apiBuckets.set(key, bucket);
+}
+
 function assertLoginRateLimit(request) {
   const key = clientKey(request);
   const now = Date.now();
   const windowMs = 5 * 60 * 1000;
   const bucket = (loginBuckets.get(key) || []).filter((time) => now - time < windowMs);
-  if (bucket.length >= 20) {
+  if (bucket.length >= LOGIN_RATE_LIMIT_MAX) {
     const err = new Error("Слишком много попыток входа. Попробуйте позже.");
     err.statusCode = 429;
     throw err;
@@ -212,6 +241,38 @@ async function handleApi(request) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
     const body = await readJsonBody(request);
     return json(await api.changePassword(user.id, body.currentPassword, body.nextPassword));
+  }
+
+  if (method === "POST" && pathname === "/api/auth/request-password-reset") {
+    const body = await readJsonBody(request);
+    return json(await api.requestPasswordReset(body.phone));
+  }
+
+  if (method === "POST" && pathname === "/api/auth/reset-password") {
+    const body = await readJsonBody(request);
+    return json(await api.resetPassword(body.token, body.nextPassword));
+  }
+
+  if (method === "GET" && pathname === "/api/admin/system") {
+    await requireRole(request, ["owner"]);
+    return json(await api.getSystemStatus());
+  }
+
+  if (method === "GET" && pathname === "/api/admin/backups") {
+    await requireRole(request, ["owner"]);
+    return json(await api.listDatabaseBackups());
+  }
+
+  if (method === "POST" && pathname === "/api/admin/backups") {
+    const user = await requireRole(request, ["owner"]);
+    return json(await api.createDatabaseBackup({ actorUserId: user.id }), 201);
+  }
+
+  const backupDownloadParams = routeParams(pathname, "/api/admin/backups/:fileName/download");
+  if (method === "GET" && backupDownloadParams) {
+    await requireRole(request, ["owner"]);
+    const file = await api.getDatabaseBackupDownload(backupDownloadParams.fileName);
+    return binary(file.bytes, 200, { contentType: file.mimeType, fileName: file.fileName });
   }
 
   if (method === "GET" && pathname === "/api/reference/icd10") {
@@ -652,6 +713,7 @@ async function handleApi(request) {
 
 async function handler(request) {
   try {
+    if (request.method !== "OPTIONS") assertRateLimit(request);
     return await handleApi(request);
   } catch (err) {
     return errorResponse(err);
