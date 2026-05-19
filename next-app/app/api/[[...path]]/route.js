@@ -271,6 +271,11 @@ async function handleApi(request) {
     return json(await api.getAdminIntegrations());
   }
 
+  if (method === "POST" && pathname === "/api/admin/email/test") {
+    const user = await requireRole(request, ["owner"]);
+    return json(await api.sendAdminTestEmail(await readJsonBody(request), { actorUserId: user.id }));
+  }
+
   if (method === "GET" && pathname === "/api/admin/sessions") {
     await requireRole(request, ["owner"]);
     return json(await api.getAdminSessions({ limit: Number(searchParams.get("limit") || 200) }));

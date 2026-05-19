@@ -2696,6 +2696,33 @@ export async function getAdminIntegrations() {
   return getIntegrationStatus();
 }
 
+export async function sendAdminTestEmail({ to, subject = "", message = "" } = {}, options = {}) {
+  await delay(80);
+  const recipient = String(to || "").trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+    throw new Error("Valid recipient email is required");
+  }
+  const emailSubject = String(subject || "NeuroDent email integration test");
+  const text = String(message || "NeuroDent backend email integration is working.");
+  const delivery = await sendEmail({
+    to: recipient,
+    subject: emailSubject,
+    text,
+    html: `<p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>`,
+    metadata: {
+      type: "admin_test_email",
+      actorUserId: actorIdFromOptions(options),
+    },
+  });
+  audit("send_test_email", "system", recipient, { delivery }, actorIdFromOptions(options));
+  return {
+    ok: !!delivery?.ok,
+    to: recipient,
+    subject: emailSubject,
+    delivery,
+  };
+}
+
 export async function getAdminSessions({ limit = 200 } = {}) {
   await delay(60);
   return listSessionRecords({ limit }).map(publicSession);
@@ -2814,6 +2841,7 @@ const API_ENDPOINTS = [
   ["POST", "/api/auth/reset-password", "Reset password with token", false],
   ["GET", "/api/admin/system", "Backend system status", true],
   ["GET", "/api/admin/integrations", "External integration status", true],
+  ["POST", "/api/admin/email/test", "Send test email through configured provider", true],
   ["GET", "/api/admin/sessions", "List active backend sessions without raw tokens", true],
   ["GET", "/api/admin/export", "Export sanitized system data", true],
   ["POST", "/api/admin/maintenance/cleanup", "Clean expired sessions and old backups", true],
@@ -2964,6 +2992,13 @@ function openApiRequestBody(method, pathname) {
   if (pathname === "/api/admin/maintenance/cleanup") {
     return requestBody(objectSchema({ backupRetentionDays: { type: "integer", minimum: 0 } }), false);
   }
+  if (pathname === "/api/admin/email/test") {
+    return requestBody(objectSchema({
+      to: { type: "string", format: "email", example: "owner@example.com" },
+      subject: { type: "string", example: "NeuroDent email test" },
+      message: { type: "string", example: "Email integration is working." },
+    }, ["to"]));
+  }
   if (pathname === "/api/appointments") return requestBody(schemaRef("AppointmentInput"));
   if (pathname === "/api/appointments/:id/status") {
     return requestBody(objectSchema({ status: { type: "string", enum: ["scheduled", "arrived", "completed", "cancelled"] } }, ["status"]));
@@ -3011,6 +3046,7 @@ function openApiResponseSchema(method, pathname) {
   if (pathname.startsWith("/api/auth/")) return schemaRef("StatusResponse");
   if (pathname === "/api/admin/system") return schemaRef("SystemStatus");
   if (pathname === "/api/admin/integrations") return arraySchema(schemaRef("IntegrationStatus"));
+  if (pathname === "/api/admin/email/test") return schemaRef("EmailTestResult");
   if (pathname === "/api/admin/sessions") return arraySchema(schemaRef("SessionInfo"));
   if (pathname === "/api/admin/export") return schemaRef("SystemExport");
   if (pathname === "/api/admin/maintenance/cleanup") return schemaRef("MaintenanceResult");
@@ -3280,11 +3316,25 @@ function openApiSchemas() {
       data: objectSchema(),
     }),
     IntegrationStatus: objectSchema({
-      provider: { type: "string", enum: ["email", "sms", "whatsapp", "fileStorage", "fiscalization", "eSignature", "ai"] },
+      provider: { type: "string", enum: ["email", "sms", "whatsapp", "fileStorage", "fiscalization", "eSignature", "ai", "resend"] },
       configured: { type: "boolean" },
       urlEnv: { type: "string" },
       tokenEnv: { type: "string" },
     }, ["provider", "configured"]),
+    EmailTestResult: objectSchema({
+      ok: { type: "boolean" },
+      to: { type: "string", format: "email" },
+      subject: { type: "string" },
+      delivery: objectSchema({
+        ok: { type: "boolean" },
+        provider: { type: "string" },
+        status: { type: "string" },
+        statusCode: { type: "integer" },
+        id: { type: "string" },
+        reason: { type: "string" },
+        error: { type: "string" },
+      }),
+    }, ["ok", "to", "subject", "delivery"]),
     SystemStatus: objectSchema({
       ok: { type: "boolean" },
       service: { type: "string" },

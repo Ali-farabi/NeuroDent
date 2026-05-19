@@ -98,6 +98,7 @@ Owner-only operational routes:
 ```text
 GET  /api/admin/system
 GET  /api/admin/integrations
+POST /api/admin/email/test
 GET  /api/admin/sessions
 GET  /api/admin/export
 POST /api/admin/maintenance/cleanup
