@@ -682,7 +682,20 @@ export function deleteSessionRecord(token) {
 
 export function deleteExpiredSessions(nowIso = new Date().toISOString()) {
   const database = getDb();
-  database.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(nowIso);
+  const result = database.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(nowIso);
+  return Number(result?.changes || 0);
+}
+
+export function listSessionRecords({ limit = 200 } = {}) {
+  const database = getDb();
+  return database
+    .prepare(`
+      SELECT token, subject_type AS subjectType, subject_id AS subjectId, created_at AS createdAt, expires_at AS expiresAt
+      FROM sessions
+      ORDER BY expires_at DESC
+      LIMIT ?
+    `)
+    .all(Number(limit || 200));
 }
 
 function mapFile(row) {

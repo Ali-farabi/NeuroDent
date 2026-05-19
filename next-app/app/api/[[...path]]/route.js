@@ -212,6 +212,14 @@ async function handleApi(request) {
     return json({ ok: true, service: "neurodent-next-backend" });
   }
 
+  if (method === "GET" && pathname === "/api/ready") {
+    return json(await api.getReadinessStatus());
+  }
+
+  if (method === "GET" && pathname === "/api/capabilities") {
+    return json(await api.getBackendCapabilities());
+  }
+
   if (method === "GET" && pathname === "/api/openapi.json") {
     return json(api.getOpenApiSpec());
   }
@@ -263,6 +271,21 @@ async function handleApi(request) {
     return json(await api.getAdminIntegrations());
   }
 
+  if (method === "GET" && pathname === "/api/admin/sessions") {
+    await requireRole(request, ["owner"]);
+    return json(await api.getAdminSessions({ limit: Number(searchParams.get("limit") || 200) }));
+  }
+
+  if (method === "GET" && pathname === "/api/admin/export") {
+    await requireRole(request, ["owner"]);
+    return json(await api.exportSystemData());
+  }
+
+  if (method === "POST" && pathname === "/api/admin/maintenance/cleanup") {
+    const user = await requireRole(request, ["owner"]);
+    return json(await api.cleanupSystemMaintenance(await readJsonBody(request), { actorUserId: user.id }));
+  }
+
   if (method === "GET" && pathname === "/api/admin/backups") {
     await requireRole(request, ["owner"]);
     return json(await api.listDatabaseBackups());
@@ -271,6 +294,12 @@ async function handleApi(request) {
   if (method === "POST" && pathname === "/api/admin/backups") {
     const user = await requireRole(request, ["owner"]);
     return json(await api.createDatabaseBackup({ actorUserId: user.id }), 201);
+  }
+
+  const backupParams = routeParams(pathname, "/api/admin/backups/:fileName");
+  if (method === "DELETE" && backupParams) {
+    const user = await requireRole(request, ["owner"]);
+    return json(await api.deleteDatabaseBackup(backupParams.fileName, { actorUserId: user.id }));
   }
 
   const backupDownloadParams = routeParams(pathname, "/api/admin/backups/:fileName/download");

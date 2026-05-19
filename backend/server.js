@@ -242,6 +242,14 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { ok: true, service: "neurodent-backend" });
   }
 
+  if (method === "GET" && pathname === "/api/ready") {
+    return sendJson(res, 200, await api.getReadinessStatus());
+  }
+
+  if (method === "GET" && pathname === "/api/capabilities") {
+    return sendJson(res, 200, await api.getBackendCapabilities());
+  }
+
   if (method === "GET" && pathname === "/api/openapi.json") {
     return sendJson(res, 200, api.getOpenApiSpec());
   }
@@ -295,6 +303,21 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, await api.getAdminIntegrations());
   }
 
+  if (method === "GET" && pathname === "/api/admin/sessions") {
+    await requireRole(req, ["owner"]);
+    return sendJson(res, 200, await api.getAdminSessions({ limit: Number(searchParams.get("limit") || 200) }));
+  }
+
+  if (method === "GET" && pathname === "/api/admin/export") {
+    await requireRole(req, ["owner"]);
+    return sendJson(res, 200, await api.exportSystemData());
+  }
+
+  if (method === "POST" && pathname === "/api/admin/maintenance/cleanup") {
+    const user = await requireRole(req, ["owner"]);
+    return sendJson(res, 200, await api.cleanupSystemMaintenance(await readJsonBody(req), { actorUserId: user.id }));
+  }
+
   if (method === "GET" && pathname === "/api/admin/backups") {
     await requireRole(req, ["owner"]);
     return sendJson(res, 200, await api.listDatabaseBackups());
@@ -303,6 +326,12 @@ async function handleApi(req, res, url) {
   if (method === "POST" && pathname === "/api/admin/backups") {
     const user = await requireRole(req, ["owner"]);
     return sendJson(res, 201, await api.createDatabaseBackup({ actorUserId: user.id }));
+  }
+
+  const backupParams = routeParams(pathname, "/api/admin/backups/:fileName");
+  if (method === "DELETE" && backupParams) {
+    const user = await requireRole(req, ["owner"]);
+    return sendJson(res, 200, await api.deleteDatabaseBackup(backupParams.fileName, { actorUserId: user.id }));
   }
 
   const backupDownloadParams = routeParams(pathname, "/api/admin/backups/:fileName/download");

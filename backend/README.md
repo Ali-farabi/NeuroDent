@@ -28,6 +28,8 @@ Health check:
 
 ```text
 GET /api/health
+GET /api/ready
+GET /api/capabilities
 ```
 
 API documentation:
@@ -96,9 +98,13 @@ Owner-only operational routes:
 ```text
 GET  /api/admin/system
 GET  /api/admin/integrations
+GET  /api/admin/sessions
+GET  /api/admin/export
+POST /api/admin/maintenance/cleanup
 GET  /api/admin/backups
 POST /api/admin/backups
 GET  /api/admin/backups/:fileName/download
+DELETE /api/admin/backups/:fileName
 ```
 
 ## External Integrations

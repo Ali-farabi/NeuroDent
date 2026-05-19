@@ -34,6 +34,12 @@ async function request(method, pathname, { body, token } = {}) {
 const health = await request("GET", "/api/health");
 assert(health.status === 200 && health.data.ok, "health check failed");
 
+const ready = await request("GET", "/api/ready");
+assert(ready.status === 200 && ready.data.database?.ready, "readiness check failed");
+
+const capabilities = await request("GET", "/api/capabilities");
+assert(capabilities.status === 200 && capabilities.data.ai?.mode === "demo-rule-based", "capabilities endpoint failed");
+
 const unauthorized = await request("GET", "/api/doctors");
 assert(unauthorized.status === 401, "protected route should require auth");
 
@@ -129,8 +135,23 @@ assert(system.status === 200 && system.data.storage?.driver === "sqlite", "syste
 const integrations = await request("GET", "/api/admin/integrations", { token });
 assert(integrations.status === 200 && integrations.data.some((item) => item.provider === "sms"), "integration status failed");
 
+const sessions = await request("GET", "/api/admin/sessions", { token });
+assert(sessions.status === 200 && sessions.data.some((item) => item.subjectType === "user"), "sessions endpoint failed");
+
+const exportData = await request("GET", "/api/admin/export", { token });
+assert(exportData.status === 200 && exportData.data.format === "neurodent-json-v1", "admin export failed");
+
+const cleanup = await request("POST", "/api/admin/maintenance/cleanup", {
+  token,
+  body: { backupRetentionDays: 36500 },
+});
+assert(cleanup.status === 200 && cleanup.data.ok, "maintenance cleanup failed");
+
 const backup = await request("POST", "/api/admin/backups", { token });
 assert(backup.status === 201 && backup.data.fileName, "database backup failed");
+
+const deleteBackup = await request("DELETE", `/api/admin/backups/${backup.data.fileName}`, { token });
+assert(deleteBackup.status === 200 && deleteBackup.data.ok, "database backup delete failed");
 
 const resetUnknown = await request("POST", "/api/auth/request-password-reset", {
   body: { phone: "00000000000" },

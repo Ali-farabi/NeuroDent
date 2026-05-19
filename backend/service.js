@@ -47,6 +47,7 @@ import {
   listInvoiceRecords,
   listNotificationRecords,
   listPriceItemRecords,
+  listSessionRecords,
   listStockMovementRecords,
   loadDbSnapshot,
   markNotificationReadRecord,
@@ -2556,6 +2557,108 @@ function resolveBackupPath(fileName) {
   return path.join(BACKUPS_DIR, safeName);
 }
 
+function sessionPreview(token) {
+  const raw = String(token || "");
+  return `${raw.slice(0, 8)}...${raw.slice(-6)}`;
+}
+
+function publicSession(session) {
+  return {
+    tokenPreview: sessionPreview(session.token),
+    subjectType: session.subjectType,
+    subjectId: session.subjectId,
+    createdAt: session.createdAt,
+    expiresAt: session.expiresAt,
+    isExpired: new Date(session.expiresAt).getTime() <= Date.now(),
+  };
+}
+
+function redactFileRecord(file) {
+  const { storagePath, ...safeFile } = file;
+  return safeFile;
+}
+
+export async function getReadinessStatus() {
+  await delay(50);
+  const sqlitePath = getSqliteFilePath();
+  const hasDatabase = existsSync(sqlitePath);
+  return {
+    ok: hasDatabase,
+    service: "neurodent-backend",
+    database: {
+      driver: "sqlite",
+      ready: hasDatabase,
+      file: sqlitePath,
+    },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export async function getBackendCapabilities() {
+  await delay(60);
+  return {
+    service: "neurodent-backend",
+    storage: {
+      activeDriver: "sqlite",
+      postgresPrepared: true,
+      postgresRuntimeEnabled: false,
+    },
+    ai: {
+      mode: "demo-rule-based",
+      externalProviderPrepared: true,
+      requiresPaidKey: false,
+    },
+    modules: [
+      "auth",
+      "rbac",
+      "patients",
+      "doctors",
+      "appointments",
+      "visits",
+      "payments",
+      "invoices",
+      "inventory",
+      "files",
+      "documents",
+      "notifications",
+      "reports",
+      "analytics",
+      "crm",
+      "audit_logs",
+      "admin_operations",
+    ],
+    integrations: getIntegrationStatus(),
+  };
+}
+
+export async function exportSystemData() {
+  await delay(100);
+  const conversations = listConversationRecords({ limit: 10000 }).map((conversation) => ({
+    ...conversation,
+    messages: listConversationMessageRecords({ conversationId: conversation.id, limit: 10000 }),
+  }));
+  return {
+    exportedAt: new Date().toISOString(),
+    format: "neurodent-json-v1",
+    data: {
+      doctors: clone(db.doctors),
+      patients: clone(db.patients),
+      users: clone((db.users || []).map(publicUser)),
+      appointments: clone(db.appointments),
+      visits: clone(db.visits),
+      payments: clone(db.payments),
+      inventory: clone(db.inventory),
+      files: clone(listFileRecords().map(redactFileRecord)),
+      notifications: clone(listNotificationRecords()),
+      auditLogs: clone(listAuditLogRecords({ limit: 10000 })),
+      conversations: clone(conversations),
+      priceItems: clone(listPriceItemRecords()),
+      invoices: clone(listInvoiceRecords()),
+      stockMovements: clone(listStockMovementRecords({ limit: 10000 })),
+    },
+  };
+}
+
 export async function getSystemStatus() {
   await delay(80);
   const sqlitePath = getSqliteFilePath();
@@ -2583,6 +2686,7 @@ export async function getSystemStatus() {
       priceItems: listPriceItemRecords().length,
       invoices: listInvoiceRecords().length,
       stockMovements: listStockMovementRecords({ limit: 10000 }).length,
+      sessions: listSessionRecords({ limit: 10000 }).length,
     },
   };
 }
@@ -2590,6 +2694,11 @@ export async function getSystemStatus() {
 export async function getAdminIntegrations() {
   await delay(60);
   return getIntegrationStatus();
+}
+
+export async function getAdminSessions({ limit = 200 } = {}) {
+  await delay(60);
+  return listSessionRecords({ limit }).map(publicSession);
 }
 
 export async function createDatabaseBackup(options = {}) {
@@ -2631,6 +2740,24 @@ export async function listDatabaseBackups() {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+export async function deleteDatabaseBackup(fileName, options = {}) {
+  await delay(80);
+  const backupPath = resolveBackupPath(fileName);
+  if (!existsSync(backupPath)) {
+    const err = new Error("Backup file was not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  const stats = statSync(backupPath);
+  unlinkSync(backupPath);
+  audit("delete_backup", "system", path.basename(backupPath), { size: stats.size }, actorIdFromOptions(options));
+  return {
+    ok: true,
+    fileName: path.basename(backupPath),
+    deletedAt: new Date().toISOString(),
+  };
+}
+
 export async function getDatabaseBackupDownload(fileName) {
   await delay(80);
   const backupPath = resolveBackupPath(fileName);
@@ -2646,8 +2773,37 @@ export async function getDatabaseBackupDownload(fileName) {
   };
 }
 
+export async function cleanupSystemMaintenance({ backupRetentionDays = 30 } = {}, options = {}) {
+  await delay(100);
+  const expiredSessionsDeleted = deleteExpiredSessions();
+  let backupsDeleted = 0;
+  const retentionDays = Number(backupRetentionDays);
+  if (Number.isFinite(retentionDays) && retentionDays >= 0) {
+    mkdirSync(BACKUPS_DIR, { recursive: true });
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    for (const backup of await listDatabaseBackups()) {
+      const backupPath = resolveBackupPath(backup.fileName);
+      if (new Date(backup.createdAt).getTime() < cutoff && existsSync(backupPath)) {
+        unlinkSync(backupPath);
+        backupsDeleted += 1;
+      }
+    }
+  }
+  const result = {
+    ok: true,
+    expiredSessionsDeleted,
+    backupsDeleted,
+    retentionDays,
+    cleanedAt: new Date().toISOString(),
+  };
+  audit("cleanup", "system", "maintenance", result, actorIdFromOptions(options));
+  return result;
+}
+
 const API_ENDPOINTS = [
   ["GET", "/api/health", "Backend health check", false],
+  ["GET", "/api/ready", "Backend readiness check", false],
+  ["GET", "/api/capabilities", "Backend capabilities and enabled modules", false],
   ["GET", "/api/docs", "HTML API documentation", false],
   ["GET", "/api/openapi.json", "OpenAPI schema", false],
   ["POST", "/api/auth/login", "Login by phone and password", false],
@@ -2658,9 +2814,13 @@ const API_ENDPOINTS = [
   ["POST", "/api/auth/reset-password", "Reset password with token", false],
   ["GET", "/api/admin/system", "Backend system status", true],
   ["GET", "/api/admin/integrations", "External integration status", true],
+  ["GET", "/api/admin/sessions", "List active backend sessions without raw tokens", true],
+  ["GET", "/api/admin/export", "Export sanitized system data", true],
+  ["POST", "/api/admin/maintenance/cleanup", "Clean expired sessions and old backups", true],
   ["GET", "/api/admin/backups", "List database backups", true],
   ["POST", "/api/admin/backups", "Create database backup", true],
   ["GET", "/api/admin/backups/:fileName/download", "Download database backup", true],
+  ["DELETE", "/api/admin/backups/:fileName", "Delete database backup", true],
   ["GET", "/api/reference/icd10", "Dental ICD-10 reference", true],
   ["POST", "/api/ai/analyze-transcript", "Analyze clinical transcript", true],
   ["POST", "/api/ai/protocol-draft", "Create clinical protocol draft", true],
@@ -2801,6 +2961,9 @@ function openApiRequestBody(method, pathname) {
       nextPassword: { type: "string", minLength: 4 },
     }, ["token", "nextPassword"]));
   }
+  if (pathname === "/api/admin/maintenance/cleanup") {
+    return requestBody(objectSchema({ backupRetentionDays: { type: "integer", minimum: 0 } }), false);
+  }
   if (pathname === "/api/appointments") return requestBody(schemaRef("AppointmentInput"));
   if (pathname === "/api/appointments/:id/status") {
     return requestBody(objectSchema({ status: { type: "string", enum: ["scheduled", "arrived", "completed", "cancelled"] } }, ["status"]));
@@ -2841,12 +3004,18 @@ function openApiRequestBody(method, pathname) {
 
 function openApiResponseSchema(method, pathname) {
   if (pathname === "/api/health") return schemaRef("HealthResponse");
+  if (pathname === "/api/ready") return schemaRef("ReadinessResponse");
+  if (pathname === "/api/capabilities") return schemaRef("Capabilities");
   if (pathname === "/api/auth/login") return schemaRef("LoginResponse");
   if (pathname === "/api/auth/me") return objectSchema({ user: schemaRef("User") });
   if (pathname.startsWith("/api/auth/")) return schemaRef("StatusResponse");
   if (pathname === "/api/admin/system") return schemaRef("SystemStatus");
   if (pathname === "/api/admin/integrations") return arraySchema(schemaRef("IntegrationStatus"));
+  if (pathname === "/api/admin/sessions") return arraySchema(schemaRef("SessionInfo"));
+  if (pathname === "/api/admin/export") return schemaRef("SystemExport");
+  if (pathname === "/api/admin/maintenance/cleanup") return schemaRef("MaintenanceResult");
   if (pathname === "/api/admin/backups") return method === "GET" ? arraySchema(schemaRef("Backup")) : schemaRef("Backup");
+  if (pathname === "/api/admin/backups/:fileName") return schemaRef("StatusResponse");
   if (pathname.includes("/download") || pathname.includes("/export") || pathname === "/api/docs") return null;
   if (pathname === "/api/doctors") return arraySchema(schemaRef("Doctor"));
   if (pathname === "/api/schedule") return arraySchema(schemaRef("Appointment"));
@@ -2899,6 +3068,19 @@ function openApiSchemas() {
     Error: objectSchema({ error: { type: "string" } }, ["error"]),
     StatusResponse: objectSchema({ ok: { type: "boolean" }, message: { type: "string" } }),
     HealthResponse: objectSchema({ ok: { type: "boolean" }, service: { type: "string" } }, ["ok", "service"]),
+    ReadinessResponse: objectSchema({
+      ok: { type: "boolean" },
+      service: { type: "string" },
+      database: objectSchema({ driver: { type: "string" }, ready: { type: "boolean" }, file: { type: "string" } }),
+      timestamp: dateTime,
+    }, ["ok", "service", "database"]),
+    Capabilities: objectSchema({
+      service: { type: "string" },
+      storage: objectSchema(),
+      ai: objectSchema(),
+      modules: arraySchema({ type: "string" }),
+      integrations: arraySchema(schemaRef("IntegrationStatus")),
+    }),
     User: objectSchema({
       id,
       name: { type: "string" },
@@ -3077,6 +3259,26 @@ function openApiSchemas() {
     Debtor: objectSchema({ patientId: id, patientName: { type: "string" }, debt: { type: "number" } }),
     Report: objectSchema(),
     Backup: objectSchema({ fileName: { type: "string" }, size: { type: "integer" }, createdAt: dateTime }),
+    SessionInfo: objectSchema({
+      tokenPreview: { type: "string" },
+      subjectType: { type: "string" },
+      subjectId: { type: "string" },
+      createdAt: dateTime,
+      expiresAt: dateTime,
+      isExpired: { type: "boolean" },
+    }),
+    MaintenanceResult: objectSchema({
+      ok: { type: "boolean" },
+      expiredSessionsDeleted: { type: "integer" },
+      backupsDeleted: { type: "integer" },
+      retentionDays: { type: "integer" },
+      cleanedAt: dateTime,
+    }),
+    SystemExport: objectSchema({
+      exportedAt: dateTime,
+      format: { type: "string" },
+      data: objectSchema(),
+    }),
     IntegrationStatus: objectSchema({
       provider: { type: "string", enum: ["email", "sms", "whatsapp", "fileStorage", "fiscalization", "eSignature", "ai"] },
       configured: { type: "boolean" },
