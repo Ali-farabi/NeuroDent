@@ -112,6 +112,8 @@ DELETE /api/admin/backups/:fileName
 Email, SMS, WhatsApp, file storage, fiscalization, e-signature and AI delivery are implemented through webhook adapters. If provider URLs are not configured, delivery is safely marked as `skipped`.
 
 ```text
+RESEND_API_KEY=
+EMAIL_FROM=NeuroDent <onboarding@resend.dev>
 NEURODENT_EMAIL_WEBHOOK_URL=
 NEURODENT_EMAIL_WEBHOOK_TOKEN=
 NEURODENT_SMS_WEBHOOK_URL=

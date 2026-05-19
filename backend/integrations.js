@@ -48,6 +48,61 @@ function providerConfig(providerName) {
   };
 }
 
+async function sendResendEmail({ to, subject, text, html, metadata = {} }) {
+  const apiKey = process.env.RESEND_API_KEY || "";
+  if (!apiKey) return null;
+
+  const from = process.env.EMAIL_FROM || "NeuroDent <onboarding@resend.dev>";
+  let response;
+  try {
+    response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: Array.isArray(to) ? to : [to],
+        subject,
+        text,
+        html: html || `<p>${String(text || "").replace(/\n/g, "<br>")}</p>`,
+        headers: {
+          "X-NeuroDent-Source": "backend",
+        },
+        tags: Object.entries(metadata || {})
+          .filter(([, value]) => ["string", "number", "boolean"].includes(typeof value))
+          .slice(0, 10)
+          .map(([name, value]) => ({ name: String(name).slice(0, 40), value: String(value).slice(0, 256) })),
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      provider: "resend",
+      status: "failed",
+      error: err?.message || "request_failed",
+    };
+  }
+
+  let data = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+
+  return {
+    ok: response.ok,
+    provider: "resend",
+    status: response.ok ? "sent" : "failed",
+    statusCode: response.status,
+    id: data?.id || "",
+    error: data?.message || data?.error || "",
+  };
+}
+
 async function postWebhook(providerName, payload) {
   const config = providerConfig(providerName);
   if (!config.configured) {
@@ -88,7 +143,7 @@ async function postWebhook(providerName, payload) {
 }
 
 export function getIntegrationStatus() {
-  return Object.keys(PROVIDERS).map((providerName) => {
+  const statuses = Object.keys(PROVIDERS).map((providerName) => {
     const config = providerConfig(providerName);
     return {
       provider: providerName,
@@ -97,9 +152,18 @@ export function getIntegrationStatus() {
       tokenEnv: PROVIDERS[providerName].tokenEnv,
     };
   });
+  statuses.push({
+    provider: "resend",
+    configured: !!process.env.RESEND_API_KEY,
+    urlEnv: "RESEND_API_KEY",
+    tokenEnv: "RESEND_API_KEY",
+  });
+  return statuses;
 }
 
 export async function sendEmail({ to, subject, text, html, metadata = {} }) {
+  const resendResult = await sendResendEmail({ to, subject, text, html, metadata });
+  if (resendResult) return resendResult;
   return postWebhook("email", { to, subject, text, html, metadata });
 }
 
