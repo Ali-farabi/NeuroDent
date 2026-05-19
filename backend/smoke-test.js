@@ -109,6 +109,12 @@ const invoice = await request("POST", "/api/invoices", {
 });
 assert(invoice.status === 201 && invoice.data.id && invoice.data.total === 1000, "invoice creation failed");
 
+const invoiceEmail = await request("POST", `/api/invoices/${invoice.data.id}/send`, {
+  token,
+  body: { email: patient.data.email, message: "Smoke test invoice delivery" },
+});
+assert(invoiceEmail.status === 200 && invoiceEmail.data.invoiceId === invoice.data.id && invoiceEmail.data.delivery?.provider, "invoice email delivery failed");
+
 const payment = await request("POST", `/api/invoices/${invoice.data.id}/pay`, {
   token,
   body: { amount: 1000, method: "cash" },

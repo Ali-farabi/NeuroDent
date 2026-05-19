@@ -1066,8 +1066,11 @@ export async function createPatient(data, options = {}) {
   const name = String(data?.name || "").trim();
   const phone = String(data?.phone || "").replace(/\D/g, "");
   const birthDate = data?.birthDate ? String(data.birthDate) : "";
+  const email = String(data?.email || "").trim();
+  const address = String(data?.address || "").trim();
   if (name.length < 2) throw new Error("Имя слишком короткое");
   if (phone.length < 10) throw new Error("Неверный номер телефона");
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Valid email is required");
   if (db.patients.some((p) => p.phone === phone))
     throw new Error("Пациент с таким телефоном уже существует");
   const newPatient = { 
@@ -1075,6 +1078,8 @@ export async function createPatient(data, options = {}) {
     name, 
     phone, 
     birthDate,
+    email,
+    address,
     createdAt: TODAY // сохраняем дату регистрации
   };
   db.patients.push(newPatient);
@@ -1098,8 +1103,17 @@ export async function updatePatient(id, patch, options = {}) {
     patch?.birthDate !== undefined
       ? String(patch.birthDate || "")
       : p.birthDate;
+  const email =
+    patch?.email !== undefined
+      ? String(patch.email || "").trim()
+      : p.email || "";
+  const address =
+    patch?.address !== undefined
+      ? String(patch.address || "").trim()
+      : p.address || "";
   if (name.length < 2) throw new Error("Имя слишком короткое");
   if (phone.length < 10) throw new Error("Неверный номер телефона");
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Valid email is required");
   if (
     phone !== p.phone &&
     db.patients.some((x) => x.phone === phone && x.id !== id)
@@ -1109,6 +1123,8 @@ export async function updatePatient(id, patch, options = {}) {
   p.name = name;
   p.phone = phone;
   p.birthDate = birthDate;
+  p.email = email;
+  p.address = address;
   saveDb();
   audit("update", "patient", id, { patch }, actorIdFromOptions(options));
   return clone(p);
@@ -2910,6 +2926,7 @@ const API_ENDPOINTS = [
   ["GET", "/api/invoices", "List invoices", true],
   ["POST", "/api/invoices", "Create invoice", true],
   ["GET", "/api/invoices/:id", "Invoice details", true],
+  ["POST", "/api/invoices/:id/send", "Send invoice to patient email", true],
   ["POST", "/api/invoices/:id/pay", "Pay invoice", true],
   ["GET", "/api/stock-movements", "List stock movements", true],
   ["POST", "/api/stock-movements", "Create stock movement", true],
@@ -3008,7 +3025,7 @@ function openApiRequestBody(method, pathname) {
   if (pathname === "/api/patients/:id/reminders") {
     return requestBody(objectSchema({
       message: { type: "string" },
-      channel: { type: "string", enum: ["sms", "whatsapp"] },
+      channel: { type: "string", enum: ["sms", "whatsapp", "email"] },
     }));
   }
   if (pathname === "/api/visits/start") return requestBody(objectSchema({ appointmentId: { type: "string" } }, ["appointmentId"]));
@@ -3027,6 +3044,13 @@ function openApiRequestBody(method, pathname) {
   if (pathname === "/api/price-items" || pathname === "/api/price-items/:id") return requestBody(schemaRef("PriceItemInput"));
   if (pathname === "/api/price-items/:id/active") return requestBody(objectSchema({ isActive: { type: "boolean" } }, ["isActive"]));
   if (pathname === "/api/invoices") return requestBody(schemaRef("InvoiceInput"));
+  if (pathname === "/api/invoices/:id/send") {
+    return requestBody(objectSchema({
+      email: { type: "string", format: "email" },
+      subject: { type: "string" },
+      message: { type: "string" },
+    }), false);
+  }
   if (pathname === "/api/invoices/:id/pay") return requestBody(objectSchema({
     amount: { type: "number", minimum: 0 },
     method: { type: "string", enum: ["cash", "card", "kaspi", "terminal", "insurance", "transfer"] },
@@ -3079,6 +3103,7 @@ function openApiResponseSchema(method, pathname) {
   if (pathname === "/api/price-items") return method === "GET" ? arraySchema(schemaRef("PriceItem")) : schemaRef("PriceItem");
   if (pathname.startsWith("/api/price-items")) return schemaRef("PriceItem");
   if (pathname === "/api/invoices") return method === "GET" ? arraySchema(schemaRef("Invoice")) : schemaRef("Invoice");
+  if (pathname === "/api/invoices/:id/send") return schemaRef("InvoiceEmailResult");
   if (pathname.startsWith("/api/invoices")) return schemaRef("Invoice");
   if (pathname === "/api/stock-movements") return method === "GET" ? arraySchema(schemaRef("StockMovement")) : schemaRef("StockMovement");
   if (pathname === "/api/users") return method === "GET" ? arraySchema(schemaRef("User")) : schemaRef("User");
@@ -3335,6 +3360,15 @@ function openApiSchemas() {
         error: { type: "string" },
       }),
     }, ["ok", "to", "subject", "delivery"]),
+    InvoiceEmailResult: objectSchema({
+      ok: { type: "boolean" },
+      invoiceId: id,
+      patientId: id,
+      to: { type: "string", format: "email" },
+      subject: { type: "string" },
+      delivery: objectSchema(),
+      notification: schemaRef("Notification"),
+    }, ["ok", "invoiceId", "to", "delivery"]),
     SystemStatus: objectSchema({
       ok: { type: "boolean" },
       service: { type: "string" },
@@ -3442,9 +3476,27 @@ export async function sendPatientReminder(patientId, message = "", options = {})
   if (!patient) throw new Error("Пациент не найден");
   const text = String(message || `Здравствуйте, ${patient.name}. Напоминаем о визите в NeuroDent.`);
   const channel = String(options.channel || "sms").toLowerCase();
-  const delivery = channel === "whatsapp"
-    ? await sendWhatsApp({ to: patient.phone, message: text, metadata: { type: "patient_reminder", patientId } })
-    : await sendSms({ to: patient.phone, message: text, metadata: { type: "patient_reminder", patientId } });
+  if (!["sms", "whatsapp", "email"].includes(channel)) {
+    throw new Error("Unsupported reminder channel");
+  }
+  if (channel === "email" && !patient.email) {
+    throw new Error("Patient email is required for email reminder");
+  }
+  const metadata = { type: "patient_reminder", patientId };
+  let delivery;
+  if (channel === "email") {
+    delivery = await sendEmail({
+      to: patient.email,
+      subject: "NeuroDent appointment reminder",
+      text,
+      html: `<p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>`,
+      metadata,
+    });
+  } else if (channel === "whatsapp") {
+    delivery = await sendWhatsApp({ to: patient.phone, message: text, metadata });
+  } else {
+    delivery = await sendSms({ to: patient.phone, message: text, metadata });
+  }
   const notification = createNotificationRecord({
     id: genId("notif"),
     type: "reminder_sent",
@@ -3460,6 +3512,7 @@ export async function sendPatientReminder(patientId, message = "", options = {})
     ok: true,
     patientId,
     phone: patient.phone,
+    email: patient.email || "",
     message: text,
     channel,
     delivery,
@@ -3643,6 +3696,92 @@ export async function getInvoice(id) {
   const invoice = getInvoiceRecord(id);
   if (!invoice) throw new Error("Счет не найден");
   return clone(invoice);
+}
+
+function formatInvoiceAmount(amount) {
+  return `${Math.round(Number(amount || 0)).toLocaleString("ru-RU")} KZT`;
+}
+
+function invoiceEmailText(invoice, patient, message = "") {
+  const lines = [
+    message ? String(message) : `Hello, ${patient.name}. NeuroDent has prepared your invoice.`,
+    "",
+    `Invoice: ${invoice.id}`,
+    `Date: ${invoice.date}`,
+    `Status: ${invoice.status}`,
+    "",
+    "Items:",
+    ...(invoice.items || []).map((item, index) => `${index + 1}. ${item.name} x ${item.quantity} = ${formatInvoiceAmount(item.total)}`),
+    "",
+    `Subtotal: ${formatInvoiceAmount(invoice.subtotal)}`,
+    `Discount: ${formatInvoiceAmount(invoice.discount)}`,
+    `Total: ${formatInvoiceAmount(invoice.total)}`,
+    `Paid: ${formatInvoiceAmount(invoice.paid)}`,
+    `Debt: ${formatInvoiceAmount(Math.max(0, Number(invoice.total || 0) - Number(invoice.paid || 0)))}`,
+  ];
+  return lines.join("\n");
+}
+
+function invoiceEmailHtml(invoice, patient, message = "") {
+  const items = (invoice.items || [])
+    .map((item) => `<li>${escapeHtml(item.name)} x ${escapeHtml(item.quantity)} = ${escapeHtml(formatInvoiceAmount(item.total))}</li>`)
+    .join("");
+  return `
+    <p>${escapeHtml(message || `Hello, ${patient.name}. NeuroDent has prepared your invoice.`)}</p>
+    <p><strong>Invoice:</strong> ${escapeHtml(invoice.id)}<br>
+    <strong>Date:</strong> ${escapeHtml(invoice.date)}<br>
+    <strong>Status:</strong> ${escapeHtml(invoice.status)}</p>
+    <ul>${items}</ul>
+    <p><strong>Total:</strong> ${escapeHtml(formatInvoiceAmount(invoice.total))}<br>
+    <strong>Paid:</strong> ${escapeHtml(formatInvoiceAmount(invoice.paid))}<br>
+    <strong>Debt:</strong> ${escapeHtml(formatInvoiceAmount(Math.max(0, Number(invoice.total || 0) - Number(invoice.paid || 0))))}</p>
+  `;
+}
+
+export async function sendInvoiceEmail(id, data = {}, options = {}) {
+  await delay(150);
+  const invoice = getInvoiceRecord(id);
+  if (!invoice) throw new Error("Invoice not found");
+  const patient = getPatient(invoice.patientId);
+  if (!patient) throw new Error("Patient not found");
+  const recipient = String(data.email || data.to || patient.email || "").trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+    throw new Error("Valid patient email is required");
+  }
+  const subject = String(data.subject || `NeuroDent invoice ${invoice.id}`);
+  const message = String(data.message || "");
+  const delivery = await sendEmail({
+    to: recipient,
+    subject,
+    text: invoiceEmailText(invoice, patient, message),
+    html: invoiceEmailHtml(invoice, patient, message),
+    metadata: {
+      type: "invoice_email",
+      invoiceId: invoice.id,
+      patientId: patient.id,
+      actorUserId: actorIdFromOptions(options),
+    },
+  });
+  const notification = createNotificationRecord({
+    id: genId("notif"),
+    type: "invoice_email_sent",
+    title: "Invoice email sent",
+    body: `${patient.name}: ${invoice.id}`,
+    role: "admin",
+    isRead: false,
+    createdAt: new Date().toISOString(),
+    extra: { invoiceId: invoice.id, patientId: patient.id, to: recipient, delivery },
+  });
+  audit("send_invoice_email", "invoice", invoice.id, { patientId: patient.id, to: recipient, delivery, notificationId: notification.id }, actorIdFromOptions(options));
+  return {
+    ok: !!delivery?.ok,
+    invoiceId: invoice.id,
+    patientId: patient.id,
+    to: recipient,
+    subject,
+    delivery,
+    notification,
+  };
 }
 
 export async function payInvoice(id, data = {}, options = {}) {

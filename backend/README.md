@@ -110,7 +110,7 @@ DELETE /api/admin/backups/:fileName
 
 ## External Integrations
 
-Email, SMS, WhatsApp, file storage, fiscalization, e-signature and AI delivery are implemented through webhook adapters. If provider URLs are not configured, delivery is safely marked as `skipped`.
+Email, SMS, WhatsApp, file storage, fiscalization, e-signature and AI delivery are implemented through webhook adapters. Email also supports direct Resend delivery through `RESEND_API_KEY`. If provider URLs are not configured, delivery is safely marked as `skipped`.
 
 ```text
 RESEND_API_KEY=
@@ -131,7 +131,14 @@ NEURODENT_AI_WEBHOOK_URL=
 NEURODENT_AI_WEBHOOK_TOKEN=
 ```
 
-These adapters are used by password reset, patient reminders, file upload mirroring, payment fiscalization, document signing and AI clinical assistant logic.
+These adapters are used by password reset, patient reminders, invoice email delivery, file upload mirroring, payment fiscalization, document signing and AI clinical assistant logic.
+
+Business delivery routes:
+
+```text
+POST /api/patients/:id/reminders
+POST /api/invoices/:id/send
+```
 
 ## Backend Smoke Test
 
@@ -139,7 +146,7 @@ These adapters are used by password reset, patient reminders, file upload mirror
 npm run test:backend
 ```
 
-The smoke test checks health, protected access, owner login, current session, doctors, patient creation, schedule conflict validation, invoice payment, stock movement, system status, backup creation, password reset request, audit logs and OpenAPI generation.
+The smoke test checks health, protected access, owner login, current session, doctors, patient creation, schedule conflict validation, invoice email delivery, invoice payment, stock movement, system status, backup creation, password reset request, reminders, audit logs and OpenAPI generation.
 
 ## Docker
 

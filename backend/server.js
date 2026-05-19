@@ -808,6 +808,12 @@ async function handleApi(req, res, url) {
     return sendJson(res, 201, await api.createInvoice(await readJsonBody(req), { actorUserId: user.id }));
   }
 
+  const invoiceSendParams = routeParams(pathname, "/api/invoices/:id/send");
+  if (method === "POST" && invoiceSendParams) {
+    const user = await requireRole(req, ["owner", "admin"]);
+    return sendJson(res, 200, await api.sendInvoiceEmail(invoiceSendParams.id, await readJsonBody(req), { actorUserId: user.id }));
+  }
+
   const invoicePayParams = routeParams(pathname, "/api/invoices/:id/pay");
   if (method === "POST" && invoicePayParams) {
     const user = await requireRole(req, ["owner", "admin"]);

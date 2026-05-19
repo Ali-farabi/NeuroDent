@@ -702,6 +702,12 @@ async function handleApi(request) {
     return json(await api.createInvoice(await readJsonBody(request), { actorUserId: user.id }), 201);
   }
 
+  const invoiceSendParams = routeParams(pathname, "/api/invoices/:id/send");
+  if (method === "POST" && invoiceSendParams) {
+    const user = await requireRole(request, ["owner", "admin"]);
+    return json(await api.sendInvoiceEmail(invoiceSendParams.id, await readJsonBody(request), { actorUserId: user.id }));
+  }
+
   const invoicePayParams = routeParams(pathname, "/api/invoices/:id/pay");
   if (method === "POST" && invoicePayParams) {
     const user = await requireRole(request, ["owner", "admin"]);
