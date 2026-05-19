@@ -9,6 +9,10 @@ import {
   getActiveAppointmentByPatient,
   finishVisit,
   getVisitsByPatient,
+  getPatientAiContext,
+  analyzeClinicalTranscript,
+  draftClinicalProtocol,
+  savePatientToothChart,
 } from "@/lib/api";
 import {
   Bot,
@@ -503,6 +507,7 @@ function IcdTree({ activeCode, dataset, onSelect }: { activeCode: string; datase
   useEffect(() => {
     const m: Record<string, boolean> = {};
     dataset.groups.forEach((g) => { m[g.code] = !!g.open; });
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOpenGroups(m);
     setSearch("");
   }, [dataset]);
@@ -701,11 +706,16 @@ function AiCorePage({ patientId }: { patientId: string }) {
       getPatientById(patientId) as Promise<Patient>,
       getActiveAppointmentByPatient(patientId) as Promise<Appointment | null>,
       getVisitsByPatient(patientId) as Promise<Visit[]>,
+      getPatientAiContext(patientId),
     ])
-      .then(([patient, appt, visitList]) => {
+      .then(([patient, appt, visitList, aiContext]) => {
         setPatientData(patient);
         setActiveAppointment(appt);
         setVisits(visitList);
+        if (aiContext?.toothChart?.bite) setBite(aiContext.toothChart.bite);
+        if (aiContext?.toothChart?.teeth) setTeeth(aiContext.toothChart.teeth);
+        if (aiContext?.aiSummary?.suggestedDiagnosisCode) setDiagnosisCode(aiContext.aiSummary.suggestedDiagnosisCode);
+        if (aiContext?.aiSummary?.lastDiagnosis) setDiagnosisText(aiContext.aiSummary.lastDiagnosis);
         if (appt?.visitId) setVisitFinished(true);
       })
       .catch(console.error)
@@ -815,6 +825,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
     if (patientAge == null) return;
     const suggestedBite = patientAge <= 12 ? "milk" : "permanent";
     if (suggestedBite !== bite) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       switchBite(suggestedBite, false);
     }
   }, [bite, patientAge, switchBite]);
@@ -859,6 +870,13 @@ function AiCorePage({ patientId }: { patientId: string }) {
     if (text.length < 5) { setAiStatus("Слушаю..."); return; }
     setAiStatus("Запись сохранена");
     if (!complaints.trim()) setComplaints(text);
+    analyzeClinicalTranscript({ transcript: text, patientId })
+      .then((result) => {
+        if (result?.diagnosisCode) setDiagnosisCode(result.diagnosisCode);
+        if (result?.cariesType) setCariesType(result.cariesType);
+        if (result?.objective && !objective.trim()) setObjective(result.objective);
+      })
+      .catch(() => {});
     const low = text.toLowerCase();
     if (low.includes("глубок")) setCariesType("deep");
     else if (low.includes("средн")) setCariesType("medium");
@@ -877,6 +895,9 @@ function AiCorePage({ patientId }: { patientId: string }) {
     setSelectedTooth(n);
     const next = STATUS_ORDER[(STATUS_ORDER.indexOf(cur) + 1) % STATUS_ORDER.length];
     setTeeth((p) => ({ ...p, [n]: next }));
+    if (patientId) {
+      savePatientToothChart(patientId, { bite, teeth: { ...teeth, [n]: next } }).catch(() => {});
+    }
     if (next === "caries") { setSurfacePopupTooth(n); setActiveSurfaces([]); } else setSurfacePopupTooth(null);
     setDiagnosisText((p) => `${p.replace(/\(\d{1,2}\)\s*$/u, "").trim()} (${n})`.trim());
   }
@@ -916,6 +937,8 @@ function AiCorePage({ patientId }: { patientId: string }) {
     if (!activeAppointment?.id) { alert("Запись не найдена."); return; }
     setFinishing(true);
     try {
+      const draft = await draftClinicalProtocol({ patientId, transcript: transcriptRef.current, visitData: readVisitData() }).catch(() => null);
+      if (draft?.protocol?.treatment && !treatment.trim()) setTreatment(draft.protocol.treatment);
       await finishVisit(activeAppointment.id, readVisitData());
       setVisitFinished(true);
       const matList = materials.map((m) => `${m.name} (${m.qty})`).join(", ");

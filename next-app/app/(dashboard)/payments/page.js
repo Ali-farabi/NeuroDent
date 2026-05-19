@@ -4,10 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import {
   addInventoryItem,
   createPayment,
+  getDebtors,
   getDoctors,
   getInventoryItems,
   getPaymentsByDate,
   searchPatients,
+  sendPatientReminder,
   updateInventoryQuantity,
 } from "@/lib/api";
 import {
@@ -364,23 +366,28 @@ function KassaTab() {
 function DebtorsTab() {
   const [query, setQuery] = useState("");
   const [patients, setPatients] = useState([]);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
-    searchPatients("").then(setPatients);
+    getDebtors("").then(setPatients);
   }, []);
 
   const debtors = useMemo(() => {
     const q = query.trim().toLowerCase();
     return patients
-      .filter((patient) => patient.balance < 0)
       .filter((patient) => !q || patient.name.toLowerCase().includes(q) || String(patient.phone || "").includes(q));
   }, [patients, query]);
-  const totalDebt = debtors.reduce((sum, patient) => sum + Math.abs(patient.balance || 0), 0);
+  const totalDebt = debtors.reduce((sum, patient) => sum + Number(patient.debt || Math.abs(patient.balance || 0)), 0);
 
-  function sendReminder(patient) {
-    const debt = Math.abs(patient.balance || 0).toLocaleString("ru-RU");
+  async function sendReminder(patient) {
+    const debt = Number(patient.debt || Math.abs(patient.balance || 0)).toLocaleString("ru-RU");
     const text = `Здравствуйте, ${patient.name}! Клиника NeuroDent. У вас задолженность ${debt} ₸. Просим погасить в удобное время.`;
-    window.open(`https://wa.me/${normalizePhone(patient.phone)}?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+    try {
+      await sendPatientReminder(patient.id, text, "whatsapp");
+      setMessage("Напоминание отправлено через backend");
+    } catch {
+      window.open(`https://wa.me/${normalizePhone(patient.phone)}?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+    }
   }
 
   return (
@@ -403,6 +410,7 @@ function DebtorsTab() {
       </div>
 
       <SearchInput value={query} onChange={setQuery} placeholder="Поиск пациента или телефона..." />
+      {message && <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">{message}</div>}
 
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard title="Общий долг" value={fmt(totalDebt)} helper="+12.4% с прошлого месяца" icon={Wallet} tone="#ef4444" />
@@ -443,7 +451,7 @@ function DebtorsTab() {
                       </div>
                     </td>
                     <td className="px-4 py-5">
-                      <div className="font-bold text-red-600">{fmt(Math.abs(patient.balance || 0))}</div>
+                      <div className="font-bold text-red-600">{fmt(patient.debt || Math.abs(patient.balance || 0))}</div>
                       <div className="mt-1 text-xs text-slate-500">{index % 2 ? "Остаток за лечение" : "Лечение кариеса"}</div>
                     </td>
                     <td className="px-4 py-5 text-slate-600">

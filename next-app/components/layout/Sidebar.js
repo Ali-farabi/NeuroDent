@@ -10,7 +10,7 @@ const menuItems = [
     route: "ai",
     href: "/ai",
     label: "AI Protocol",
-    roles: ["owner", "doctor"],
+    roles: ["owner", "doctor", "assistant"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
@@ -35,7 +35,7 @@ const menuItems = [
     route: "schedule",
     href: "/schedule",
     label: "CRM",
-    roles: ["owner", "admin", "doctor"],
+    roles: ["owner", "admin", "doctor", "assistant"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -49,7 +49,7 @@ const menuItems = [
     route: "visits",
     href: "/visits",
     label: "История визитов",
-    roles: ["owner", "admin", "doctor"],
+    roles: ["owner", "admin", "doctor", "assistant"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -76,7 +76,7 @@ const menuItems = [
     route: "patients",
     href: "/patients",
     label: "Пациентский модуль",
-    roles: ["owner", "admin", "doctor", "patient"],
+    roles: ["owner", "admin", "doctor", "assistant", "patient"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -94,6 +94,126 @@ const menuItems = [
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
         <circle cx="9" cy="7" r="4" />
         <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    ),
+  },
+  {
+    route: "notifications",
+    href: "/notifications",
+    label: "Уведомления",
+    roles: ["owner", "admin", "doctor", "assistant", "patient"],
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7" />
+        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+      </svg>
+    ),
+  },
+  {
+    route: "conversations",
+    href: "/conversations",
+    label: "Сообщения",
+    roles: ["owner", "admin", "doctor", "assistant"],
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 15a4 4 0 0 1-4 4H7l-4 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+      </svg>
+    ),
+  },
+  {
+    route: "files",
+    href: "/files",
+    label: "Документы",
+    roles: ["owner", "admin", "doctor", "assistant", "patient"],
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <path d="M14 2v6h6" />
+      </svg>
+    ),
+  },
+  {
+    route: "invoices",
+    href: "/invoices",
+    label: "Счета",
+    roles: ["owner", "admin", "doctor", "assistant", "patient"],
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M6 2h12v20l-3-2-3 2-3-2-3 2z" />
+        <path d="M9 8h6M9 12h6M9 16h4" />
+      </svg>
+    ),
+  },
+  {
+    route: "price-items",
+    href: "/price-items",
+    label: "Прайс-лист",
+    roles: ["owner", "admin", "doctor", "assistant"],
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M20.59 13.41 11 3H4v7l9.59 9.59a2 2 0 0 0 2.82 0l4.18-4.18a2 2 0 0 0 0-2.82z" />
+        <path d="M7 7h.01" />
+      </svg>
+    ),
+  },
+  {
+    route: "stock-movements",
+    href: "/stock-movements",
+    label: "Движение склада",
+    roles: ["owner", "admin"],
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+        <path d="M3.3 7 12 12l8.7-5" />
+      </svg>
+    ),
+  },
+  {
+    route: "audit-logs",
+    href: "/audit-logs",
+    label: "Аудит",
+    roles: ["owner"],
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M9 11l3 3L22 4" />
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+      </svg>
+    ),
+  },
+  {
+    route: "admin-system",
+    href: "/admin-system",
+    label: "Система",
+    roles: ["owner"],
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 .6 1.65 1.65 0 0 0-.33 1.82V22a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-.6-1 1.65 1.65 0 0 0-1.82-.33H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-.6 1.65 1.65 0 0 0 .33-1.82V2a2 2 0 0 1 4 0v.09A1.65 1.65 0 0 0 16 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.22.37.43.76.6 1.17H22a2 2 0 0 1 0 4h-.09A1.65 1.65 0 0 0 19.4 15z" />
+      </svg>
+    ),
+  },
+  {
+    route: "backups",
+    href: "/backups",
+    label: "Backups",
+    roles: ["owner"],
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <path d="M7 10l5 5 5-5" />
+        <path d="M12 15V3" />
+      </svg>
+    ),
+  },
+  {
+    route: "integrations",
+    href: "/integrations",
+    label: "Интеграции",
+    roles: ["owner"],
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
       </svg>
     ),
   },
@@ -171,7 +291,7 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
         </div>
 
         {/* Nav */}
-        <nav style={{ display: "flex", flexDirection: "column", gap: 8, padding: isPatient ? "36px 16px 0" : "34px 10px 0" }}>
+        <nav style={{ display: "flex", flexDirection: "column", gap: 8, padding: isPatient ? "36px 16px 0" : "34px 10px 0", overflowY: "auto" }}>
           {visibleItems.map((item) => {
             const isActive = pathname.startsWith(item.href);
             const label = isPatient && item.route === "patients" ? "Моя медкарта" : item.label;

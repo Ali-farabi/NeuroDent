@@ -1,8 +1,5 @@
-import { Geist } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/AuthContext";
-
-const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 
 export const metadata = {
   title: "NeuroDent",
@@ -11,7 +8,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="ru" className={geist.variable}>
+    <html lang="ru">
       <body>
         <AuthProvider>{children}</AuthProvider>
       </body>

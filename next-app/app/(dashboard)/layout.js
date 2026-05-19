@@ -11,10 +11,20 @@ const PAGE_ROLES = {
   "/report":   ["owner"],
   "/payments": ["owner", "admin"],
   "/users":    ["owner"],
-  "/ai":       ["owner", "doctor"],
-  "/schedule": ["owner", "admin", "doctor"],
-  "/visits":   ["owner", "admin", "doctor"],
-  "/patients": ["owner", "admin", "doctor", "patient"],
+  "/ai":       ["owner", "doctor", "assistant"],
+  "/schedule": ["owner", "admin", "doctor", "assistant"],
+  "/visits":   ["owner", "admin", "doctor", "assistant"],
+  "/patients": ["owner", "admin", "doctor", "assistant", "patient"],
+  "/invoices": ["owner", "admin", "doctor", "assistant", "patient"],
+  "/price-items": ["owner", "admin", "doctor", "assistant"],
+  "/notifications": ["owner", "admin", "doctor", "assistant", "patient"],
+  "/files": ["owner", "admin", "doctor", "assistant", "patient"],
+  "/audit-logs": ["owner"],
+  "/admin-system": ["owner"],
+  "/backups": ["owner"],
+  "/integrations": ["owner"],
+  "/conversations": ["owner", "admin", "doctor", "assistant"],
+  "/stock-movements": ["owner", "admin"],
 };
 
 function getAllowedRoles(path) {
@@ -36,6 +46,18 @@ export default function DashboardLayout({ children }) {
   const isPaymentsPage = pathname.startsWith("/payments");
   const isPatientsPage = pathname.startsWith("/patients");
   const isUsersPage = pathname.startsWith("/users");
+  const isNewModulePage = [
+    "/invoices",
+    "/price-items",
+    "/notifications",
+    "/files",
+    "/audit-logs",
+    "/admin-system",
+    "/backups",
+    "/integrations",
+    "/conversations",
+    "/stock-movements",
+  ].some((prefix) => pathname.startsWith(prefix));
 
   useEffect(() => {
     if (loading) return;
@@ -59,7 +81,7 @@ export default function DashboardLayout({ children }) {
         onLogout={() => { logout(); router.replace("/login"); }}
       />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        {!isAiPage && !isReportPage && !isSchedulePage && !isVisitsPage && !isPaymentsPage && !isPatientsPage && !isUsersPage && (
+        {!isAiPage && !isReportPage && !isSchedulePage && !isVisitsPage && !isPaymentsPage && !isPatientsPage && !isUsersPage && !isNewModulePage && (
           <Header
             onBurger={() => setSidebarOpen((v) => !v)}
           />
