@@ -500,13 +500,6 @@ function IcdTree({ activeCode, dataset, onSelect }: { activeCode: string; datase
   const [search, setSearch] = useState("");
   const q = search.toLowerCase().trim();
 
-  useEffect(() => {
-    const m: Record<string, boolean> = {};
-    dataset.groups.forEach((g) => { m[g.code] = !!g.open; });
-    setOpenGroups(m);
-    setSearch("");
-  }, [dataset]);
-
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm max-h-[680px] flex flex-col gap-4">
       <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 flex flex-col gap-2">
@@ -815,6 +808,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
     if (patientAge == null) return;
     const suggestedBite = patientAge <= 12 ? "milk" : "permanent";
     if (suggestedBite !== bite) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       switchBite(suggestedBite, false);
     }
   }, [bite, patientAge, switchBite]);
@@ -1323,7 +1317,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
               </div>
 
               {/* ICD */}
-              <IcdTree activeCode={diagnosisCode} dataset={activeIcdDataset} onSelect={(code, label) => { setDiagnosisCode(code); setDiagnosisText(label); }} />
+              <IcdTree key={bite} activeCode={diagnosisCode} dataset={activeIcdDataset} onSelect={(code, label) => { setDiagnosisCode(code); setDiagnosisText(label); }} />
             </div>
           </div>
         </div>
