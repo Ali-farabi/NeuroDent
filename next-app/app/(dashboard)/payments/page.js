@@ -105,7 +105,7 @@ function TopTabs({ active, onChange }) {
   ];
 
   return (
-    <div className="flex gap-7 border-b border-slate-200">
+    <div className="payments-tabs flex gap-7 border-b border-slate-200">
       {tabs.map(([id, label]) => (
         <button
           key={id}
@@ -803,7 +803,7 @@ export default function PaymentsPage() {
   const [tab, setTab] = useState("kassa");
 
   return (
-    <div className="min-h-full bg-white px-8 py-6 lg:px-9">
+    <div className="min-h-full bg-white px-4 py-4 sm:px-6 lg:px-9 lg:py-6">
       <style>{`
         .field-control {
           height: 39px;
@@ -819,6 +819,25 @@ export default function PaymentsPage() {
         .field-control:focus {
           border-color: #2563eb;
           box-shadow: 0 0 0 4px rgba(37,99,235,0.1);
+        }
+        @media (max-width: 760px) {
+          .payments-tabs {
+            gap: 18px;
+            overflow-x: auto;
+            padding-bottom: 1px;
+            -webkit-overflow-scrolling: touch;
+          }
+          .payments-tabs button {
+            flex: 0 0 auto;
+            min-height: 42px;
+          }
+          .field-control {
+            height: 42px;
+            font-size: 16px;
+          }
+          table {
+            min-width: 680px;
+          }
         }
       `}</style>
       <div className="mx-auto grid max-w-[1300px] gap-6">

@@ -1094,7 +1094,7 @@ function PatientListInner() {
   }
 
   return (
-    <div style={{ minHeight: "100%", background: "#fff", padding: "22px 24px 32px" }}>
+    <div className="patients-page" style={{ minHeight: "100%", background: "#fff", padding: "22px 24px 32px" }}>
       <style>{`
         .pat-table { width: 100%; border-collapse: collapse; }
         .pat-table th { text-align: left; padding: 12px 16px; font-size: 11px; font-weight: 700; color: var(--muted); border-bottom: 1px solid var(--border); background: #f8fafc; text-transform: uppercase; letter-spacing: 0.02em; }
@@ -1105,10 +1105,34 @@ function PatientListInner() {
         .pat-action-btn { width: 32px; height: 32px; border: 1px solid transparent; background: transparent; cursor: pointer; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: #64748b; transition: all 0.15s; }
         .pat-action-btn:hover { background: #f8fafc; border-color: var(--border); color: var(--primary); }
         .pat-action-btn.delete:hover { background: #fef2f2; color: var(--danger); }
+        @media (max-width: 760px) {
+          .patients-page {
+            padding: 16px 12px 24px !important;
+          }
+          .patients-header {
+            align-items: stretch !important;
+          }
+          .patients-header-actions {
+            width: 100%;
+            flex-direction: column;
+            align-items: stretch !important;
+          }
+          .patients-header-actions input,
+          .patients-header-actions button {
+            width: 100% !important;
+            min-height: 42px;
+          }
+          .patients-stats {
+            grid-template-columns: 1fr !important;
+          }
+          .pat-table {
+            min-width: 760px;
+          }
+        }
       `}</style>
 
       {/* Header */}
-      <div style={{
+      <div className="patients-header" style={{
         display: "flex", justifyContent: "space-between", alignItems: "center",
         gap: 16, flexWrap: "wrap", marginBottom: 18,
       }}>
@@ -1116,7 +1140,7 @@ function PatientListInner() {
           <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: "var(--text)" }}>Пациенты</h1>
           <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12 }}>База пациентов, контакты и история лечения</p>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <div className="patients-header-actions" style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <input
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Поиск пациента..."
@@ -1130,7 +1154,7 @@ function PatientListInner() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12, marginBottom: 18 }}>
+      <div className="patients-stats" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12, marginBottom: 18 }}>
         {[
           { label: "Всего пациентов", value: patients.length, note: loading ? "загрузка" : "в базе" },
           { label: "С долгом", value: activeDebtors, note: totalDebt ? fmtMoney(totalDebt) : "нет задолженности" },
