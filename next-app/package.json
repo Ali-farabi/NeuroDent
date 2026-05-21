@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "NODE_OPTIONS=--no-warnings next dev --webpack -p 3000",
+    "build": "NODE_OPTIONS=--no-warnings next build --webpack",
     "start": "next start",
     "lint": "eslint"
   },

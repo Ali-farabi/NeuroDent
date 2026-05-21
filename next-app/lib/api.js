@@ -37,10 +37,19 @@ async function request(path, options = {}) {
   }
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!response.ok) {
-    throw new Error(data?.error || data?.message || "Ошибка backend-запроса");
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
   }
+  if (!response.ok) {
+    const fallback = text?.startsWith("<!DOCTYPE")
+      ? "Backend вернул HTML-ошибку. Проверьте терминал Next.js."
+      : text;
+    throw new Error(data?.error || data?.message || fallback || "Ошибка backend-запроса");
+  }
+  if (text && data === null) throw new Error("Backend вернул некорректный JSON");
   return data;
 }
 

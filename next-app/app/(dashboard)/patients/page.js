@@ -3,7 +3,18 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/AuthContext";
-import { searchPatients, getPatientById, createPatient, updatePatient, getPatientVisits } from "@/lib/api";
+import {
+  searchPatients,
+  getPatientById,
+  createPatient,
+  updatePatient,
+  getPatientVisits,
+  getFiles,
+  uploadFile,
+  deleteFile,
+  getFileDownloadUrl,
+  createPatientProtocolDocument,
+} from "@/lib/api";
 import { Bot, HeartPulse, CalendarDays, FileDown, AlertTriangle, UserRound, Upload, ScanLine } from "lucide-react";
 
 // ── Date formatter ────────────────────────────────────────────────────────────
@@ -15,6 +26,15 @@ function fmtDate(iso) {
 
 function firstFilled(...values) {
   return values.find((value) => typeof value === "string" && value.trim()) || "";
+}
+
+function readAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
@@ -145,15 +165,54 @@ function PatientCard({ patient }) {
   const isDoctor = user?.role === "doctor";
   const [tab, setTab] = useState("info");
   const [visits, setVisits] = useState(null);
+  const [files, setFiles] = useState([]);
+  const [fileMessage, setFileMessage] = useState("");
 
   useEffect(() => {
     getPatientVisits(patient.id).then(setVisits);
+    getFiles({ patientId: patient.id }).then(setFiles).catch(() => setFiles([]));
   }, [patient.id]);
+
+  async function reloadFiles() {
+    setFiles(await getFiles({ patientId: patient.id }));
+  }
+
+  async function handleFileUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setFileMessage("");
+    try {
+      const base64 = await readAsBase64(file);
+      await uploadFile({ patientId: patient.id, fileName: file.name, mimeType: file.type || "application/octet-stream", base64 });
+      event.target.value = "";
+      await reloadFiles();
+      setFileMessage("Файл загружен");
+    } catch (error) {
+      setFileMessage(error?.message || "Не удалось загрузить файл");
+    }
+  }
+
+  async function handleCreateProtocolDocument() {
+    setFileMessage("");
+    try {
+      await createPatientProtocolDocument(patient.id);
+      await reloadFiles();
+      setFileMessage("Документ протокола создан");
+    } catch (error) {
+      setFileMessage(error?.message || "Не удалось создать документ");
+    }
+  }
+
+  async function handleDeleteFile(fileId) {
+    await deleteFile(fileId);
+    await reloadFiles();
+  }
 
   const TABS = [
     { key: "info",      label: "Информация" },
     { key: "treatment", label: "Лечение" },
     { key: "visits",    label: "Визиты" },
+    { key: "documents", label: "Документы" },
   ];
 
   return (
@@ -273,6 +332,36 @@ function PatientCard({ patient }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {tab === "documents" && (
+        <div style={{ display: "grid", gap: 12 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            <label style={{ ...btnPrimary, display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <Upload size={14} /> Загрузить файл
+              <input type="file" onChange={handleFileUpload} style={{ display: "none" }} />
+            </label>
+            <button type="button" onClick={handleCreateProtocolDocument} style={btnOutline}>
+              Создать AI protocol document
+            </button>
+          </div>
+          {fileMessage && <div style={{ fontSize: 12, color: "var(--muted)" }}>{fileMessage}</div>}
+          <div style={{ display: "grid", gap: 8 }}>
+            {files.map((file) => (
+              <div key={file.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 12 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.fileName}</div>
+                  <div style={{ color: "var(--muted)", fontSize: 11 }}>{file.mimeType} · {file.createdAt}</div>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <a href={getFileDownloadUrl(file.id)} style={btnOutline}>Скачать</a>
+                  {user?.role !== "patient" && <button type="button" onClick={() => handleDeleteFile(file.id)} style={btnOutline}>Удалить</button>}
+                </div>
+              </div>
+            ))}
+            {!files.length && <div style={{ color: "var(--muted)", fontSize: 13, padding: "24px 0", textAlign: "center" }}>Документов нет</div>}
+          </div>
         </div>
       )}
     </div>
@@ -946,7 +1035,7 @@ function PatientListInner() {
   }, [search]);
 
   const canCreate = ["owner", "admin"].includes(user?.role);
-  const canAI     = ["owner", "doctor"].includes(user?.role);
+  const canAI     = ["owner", "doctor", "assistant"].includes(user?.role);
   const totalDebt = patients.reduce((sum, patient) => sum + Math.abs(Math.min(patient.balance || 0, 0)), 0);
   const activeDebtors = patients.filter((patient) => (patient.balance || 0) < 0).length;
 

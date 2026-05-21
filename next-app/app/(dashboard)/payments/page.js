@@ -8,6 +8,7 @@ import {
   getDoctors,
   getInventoryItems,
   getPaymentsByDate,
+  getStockMovements,
   searchPatients,
   sendPatientReminder,
   updateInventoryQuantity,
@@ -23,7 +24,6 @@ import {
   MoreVertical,
   Package,
   Phone,
-  Plus,
   QrCode,
   Search,
   Send,
@@ -375,13 +375,17 @@ function DebtorsTab() {
   const debtors = useMemo(() => {
     const q = query.trim().toLowerCase();
     return patients
-      .filter((patient) => !q || patient.name.toLowerCase().includes(q) || String(patient.phone || "").includes(q));
+      .filter((patient) => {
+        const name = patient.name || patient.patientName || "Пациент";
+        return !q || name.toLowerCase().includes(q) || String(patient.phone || "").includes(q);
+      });
   }, [patients, query]);
   const totalDebt = debtors.reduce((sum, patient) => sum + Number(patient.debt || Math.abs(patient.balance || 0)), 0);
 
   async function sendReminder(patient) {
+    const patientName = patient.name || patient.patientName || "пациент";
     const debt = Number(patient.debt || Math.abs(patient.balance || 0)).toLocaleString("ru-RU");
-    const text = `Здравствуйте, ${patient.name}! Клиника NeuroDent. У вас задолженность ${debt} ₸. Просим погасить в удобное время.`;
+    const text = `Здравствуйте, ${patientName}! Клиника NeuroDent. У вас задолженность ${debt} ₸. Просим погасить в удобное время.`;
     try {
       await sendPatientReminder(patient.id, text, "whatsapp");
       setMessage("Напоминание отправлено через backend");
@@ -439,13 +443,15 @@ function DebtorsTab() {
                 </tr>
               </thead>
               <tbody>
-                {debtors.map((patient, index) => (
-                  <tr key={patient.id} className="border-b border-slate-100 last:border-0">
+                {debtors.map((patient, index) => {
+                  const patientName = patient.name || patient.patientName || "Пациент";
+                  return (
+                  <tr key={patient.id || `${patientName}-${index}`} className="border-b border-slate-100 last:border-0">
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-3">
-                        <div className="grid h-9 w-9 place-items-center rounded-full bg-blue-50 text-sm font-bold text-blue-600">{patient.name[0]}</div>
+                        <div className="grid h-9 w-9 place-items-center rounded-full bg-blue-50 text-sm font-bold text-blue-600">{patientName[0]}</div>
                         <div>
-                          <div className="font-semibold text-slate-950">{patient.name}</div>
+                          <div className="font-semibold text-slate-950">{patientName}</div>
                           <div className="text-xs text-slate-500">+{normalizePhone(patient.phone)}</div>
                         </div>
                       </div>
@@ -468,7 +474,8 @@ function DebtorsTab() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -480,18 +487,26 @@ function DebtorsTab() {
 
 function SkladTab() {
   const [items, setItems] = useState([]);
+  const [movements, setMovements] = useState([]);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
 
   async function refresh() {
-    setItems(await getInventoryItems());
+    const [inventoryItems, stockMovements] = await Promise.all([
+      getInventoryItems(),
+      getStockMovements({ limit: 10 }),
+    ]);
+    setItems(inventoryItems);
+    setMovements(stockMovements);
   }
 
   useEffect(() => {
     let active = true;
-    getInventoryItems().then((data) => {
-      if (active) setItems(data);
+    Promise.all([getInventoryItems(), getStockMovements({ limit: 10 })]).then(([inventoryItems, stockMovements]) => {
+      if (!active) return;
+      setItems(inventoryItems);
+      setMovements(stockMovements);
     });
     return () => {
       active = false;
@@ -637,26 +652,43 @@ function SkladTab() {
         </div>
       </div>
 
-      <div className="max-w-[640px] rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="m-0 text-lg font-semibold text-slate-950">Последние поступления</h2>
-          <button className="text-sm font-semibold text-blue-600">См. все отчеты</button>
+          <div className="p-6 pb-2">
+            <h2 className="m-0 text-lg font-semibold text-slate-950">Журнал склада</h2>
+            <p className="mt-1 text-sm text-slate-500">Последние приходы, списания и корректировки</p>
+          </div>
         </div>
-        <div className="grid gap-3">
-          {items.slice(0, 2).map((item, index) => (
-            <div key={item.id} className="flex items-center justify-between rounded-lg border border-slate-100 p-4">
-              <div className="flex items-center gap-3">
-                <div className="grid h-10 w-10 place-items-center rounded-full bg-emerald-100 text-emerald-600">
-                  <Plus size={19} />
-                </div>
-                <div>
-                  <div className="font-semibold text-slate-950">{item.name}</div>
-                  <div className="text-xs text-slate-500">Поставщик: МедФармТрейд • {index ? "Вчера, 16:20" : "Сегодня, 10:45"}</div>
-                </div>
-              </div>
-              <div className="font-bold text-emerald-600">+{fmt((index + 1) * 4200)}</div>
-            </div>
-          ))}
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th className="p-3">Дата</th>
+                <th className="p-3">Материал</th>
+                <th className="p-3">Тип</th>
+                <th className="p-3">Кол-во</th>
+                <th className="p-3">Баланс</th>
+                <th className="p-3">Причина</th>
+              </tr>
+            </thead>
+            <tbody>
+              {movements.map((movement) => (
+                <tr key={movement.id} className="border-t border-slate-100">
+                  <td className="p-3">{movement.createdAt}</td>
+                  <td className="p-3">{movement.inventoryName || movement.inventoryId}</td>
+                  <td className="p-3">{movement.type}</td>
+                  <td className="p-3">{movement.quantity}</td>
+                  <td className="p-3">{movement.balanceAfter}</td>
+                  <td className="p-3">{movement.reason || "—"}</td>
+                </tr>
+              ))}
+              {!movements.length && (
+                <tr>
+                  <td className="p-6 text-center text-slate-500" colSpan="6">Движений склада пока нет</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

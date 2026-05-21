@@ -15,16 +15,10 @@ const PAGE_ROLES = {
   "/schedule": ["owner", "admin", "doctor", "assistant"],
   "/visits":   ["owner", "admin", "doctor", "assistant"],
   "/patients": ["owner", "admin", "doctor", "assistant", "patient"],
-  "/invoices": ["owner", "admin", "doctor", "assistant", "patient"],
   "/price-items": ["owner", "admin", "doctor", "assistant"],
   "/notifications": ["owner", "admin", "doctor", "assistant", "patient"],
-  "/files": ["owner", "admin", "doctor", "assistant", "patient"],
   "/audit-logs": ["owner"],
   "/admin-system": ["owner"],
-  "/backups": ["owner"],
-  "/integrations": ["owner"],
-  "/conversations": ["owner", "admin", "doctor", "assistant"],
-  "/stock-movements": ["owner", "admin"],
 };
 
 function getAllowedRoles(path) {
@@ -47,16 +41,10 @@ export default function DashboardLayout({ children }) {
   const isPatientsPage = pathname.startsWith("/patients");
   const isUsersPage = pathname.startsWith("/users");
   const isNewModulePage = [
-    "/invoices",
     "/price-items",
     "/notifications",
-    "/files",
     "/audit-logs",
     "/admin-system",
-    "/backups",
-    "/integrations",
-    "/conversations",
-    "/stock-movements",
   ].some((prefix) => pathname.startsWith(prefix));
 
   useEffect(() => {

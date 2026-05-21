@@ -13,6 +13,10 @@ import {
   analyzeClinicalTranscript,
   draftClinicalProtocol,
   savePatientToothChart,
+  createPatientProtocolDocument,
+  getFiles,
+  getFileDownloadUrl,
+  signDocument,
 } from "@/lib/api";
 import {
   Bot,
@@ -79,6 +83,17 @@ interface ModalState {
 interface ToothImageItem {
   id: string;
   url: string;
+}
+
+interface PatientFile {
+  id: string;
+  name?: string;
+  originalName?: string;
+  fileName?: string;
+  type?: string;
+  category?: string;
+  signedAt?: string;
+  createdAt?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -676,6 +691,9 @@ function AiCorePage({ patientId }: { patientId: string }) {
   // Modal & eGov
   const [modal, setModal] = useState<ModalState | null>(null);
   const [egovSigned, setEgovSigned] = useState(false);
+  const [patientFiles, setPatientFiles] = useState<PatientFile[]>([]);
+  const [protocolDocument, setProtocolDocument] = useState<PatientFile | null>(null);
+  const [documentMessage, setDocumentMessage] = useState("");
 
   // Toast
   const [toast, setToast] = useState<string | null>(null);
@@ -707,11 +725,14 @@ function AiCorePage({ patientId }: { patientId: string }) {
       getActiveAppointmentByPatient(patientId) as Promise<Appointment | null>,
       getVisitsByPatient(patientId) as Promise<Visit[]>,
       getPatientAiContext(patientId),
+      getFiles({ patientId }) as Promise<PatientFile[]>,
     ])
-      .then(([patient, appt, visitList, aiContext]) => {
+      .then(([patient, appt, visitList, aiContext, files]) => {
         setPatientData(patient);
         setActiveAppointment(appt);
         setVisits(visitList);
+        setPatientFiles(files || []);
+        setProtocolDocument((files || []).find((file) => file.category === "protocol") || null);
         if (aiContext?.toothChart?.bite) setBite(aiContext.toothChart.bite);
         if (aiContext?.toothChart?.teeth) setTeeth(aiContext.toothChart.teeth);
         if (aiContext?.aiSummary?.suggestedDiagnosisCode) setDiagnosisCode(aiContext.aiSummary.suggestedDiagnosisCode);
@@ -948,6 +969,53 @@ function AiCorePage({ patientId }: { patientId: string }) {
       alert(err instanceof Error ? err.message : "Ошибка");
     } finally {
       setFinishing(false);
+    }
+  }
+
+  async function reloadPatientFiles() {
+    const files = (await getFiles({ patientId })) as PatientFile[];
+    setPatientFiles(files || []);
+    const protocol = (files || []).find((file) => file.category === "protocol") || null;
+    setProtocolDocument(protocol);
+    return protocol;
+  }
+
+  async function handleExportProtocol() {
+    setDocumentMessage("");
+    setModal({ title: "Экспорт в PDF", phase: "loading" });
+    try {
+      const documentFile = (await createPatientProtocolDocument(patientId)) as PatientFile;
+      setProtocolDocument(documentFile);
+      await reloadPatientFiles();
+      setDocumentMessage("Протокол создан и сохранен в документах пациента.");
+      window.open(getFileDownloadUrl(documentFile.id), "_blank", "noopener,noreferrer");
+      setModal((prev) => (prev ? { ...prev, phase: "done" } : null));
+    } catch (err) {
+      setModal(null);
+      setDocumentMessage(err instanceof Error ? err.message : "Не удалось создать документ");
+    }
+  }
+
+  async function handleSignProtocol() {
+    setDocumentMessage("");
+    setModal({ title: "Подписание через eGov (ЭЦП)", phase: "signing" });
+    try {
+      let documentFile = protocolDocument;
+      if (!documentFile?.id) {
+        documentFile = (await createPatientProtocolDocument(patientId)) as PatientFile;
+        setProtocolDocument(documentFile);
+      }
+      await signDocument(documentFile.id, {
+        provider: "egov",
+        signerName: patientData?.name || "",
+      });
+      await reloadPatientFiles();
+      setEgovSigned(true);
+      setDocumentMessage("Протокол подписан и обновлен в документах пациента.");
+      setModal(null);
+    } catch (err) {
+      setModal(null);
+      setDocumentMessage(err instanceof Error ? err.message : "Не удалось подписать документ");
     }
   }
 
@@ -1324,10 +1392,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
                   <div className="grid grid-cols-2 gap-2 max-[992px]:grid-cols-1">
                     <button
                       className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
-                      onClick={() => {
-                        setModal({ title: "Экспорт в PDF", phase: "loading" });
-                        setTimeout(() => setModal((p) => p ? { ...p, phase: "done" } : null), 1800);
-                      }}
+                      onClick={handleExportProtocol}
                     >
                       <FileDown size={14} /> Экспорт PDF
                     </button>
@@ -1337,11 +1402,22 @@ function AiCorePage({ patientId }: { patientId: string }) {
                           ? "bg-green-50 border border-green-300 text-green-600 cursor-default"
                           : "text-gray-700 bg-white border border-gray-200 hover:bg-gray-50"
                       }`}
-                      onClick={egovSigned ? undefined : () => setModal({ title: "Подписание через eGov (ЭЦП)", phase: "select" })}
+                      onClick={egovSigned ? undefined : handleSignProtocol}
                     >
                       {egovSigned ? <><CheckCircle2 size={14} /> Подписано ЭЦП</> : <><Key size={14} /> Подпись eGov</>}
                     </button>
                   </div>
+                  {documentMessage && (
+                    <div className="text-[11px] text-blue-600 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                      {documentMessage}
+                    </div>
+                  )}
+                  {patientFiles.length > 0 && (
+                    <div className="text-[11px] text-gray-500">
+                      Документы пациента: {patientFiles.length}
+                      {protocolDocument?.id ? " · протокол создан" : ""}
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { getAllVisits, getDoctors } from "@/lib/api";
+import { useAuth } from "@/lib/AuthContext";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtDate(iso) {
@@ -81,6 +82,7 @@ const tdStyle = { padding: "10px 12px", verticalAlign: "middle" };
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function VisitsPage() {
   const router = useRouter();
+  const { user } = useAuth();
 
   const [visits, setVisits]     = useState([]);
   const [doctors, setDoctors]   = useState([]);
@@ -94,7 +96,7 @@ export default function VisitsPage() {
   async function load(q, dId, f, t) {
     setLoading(true);
     try {
-      const data = await getAllVisits({ query: q, doctorId: dId, from: f, to: t });
+      const data = await getAllVisits({ query: q, doctorId: user?.role === "doctor" ? "" : dId, from: f, to: t });
       setVisits(data);
     } finally {
       setLoading(false);
@@ -105,7 +107,7 @@ export default function VisitsPage() {
     getDoctors().then(setDoctors);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load("", "", MONTH_AGO, TODAY);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function onQueryChange(e) {
     const v = e.target.value;
@@ -219,12 +221,14 @@ export default function VisitsPage() {
             <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>По:</span>
             <input type="date" value={to} onChange={onToChange} style={inputStyle} />
           </div>
-          <select value={doctorId} onChange={onDoctorChange} style={inputStyle}>
-            <option value="">Все врачи</option>
-            {doctors.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
+          {user?.role !== "doctor" && (
+            <select value={doctorId} onChange={onDoctorChange} style={inputStyle}>
+              <option value="">Все врачи</option>
+              {doctors.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          )}
           <input
             type="text" value={query} onChange={onQueryChange}
             placeholder="Поиск по пациенту, диагнозу или врачу..."
