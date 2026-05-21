@@ -124,3 +124,88 @@ button:disabled,
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.mobile-dashboard-bar {
+  display: none;
+}
+
+.mobile-menu-button {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  align-items: center;
+  justify-content: center;
+}
+
+.responsive-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 760px) {
+  :root {
+    --header-h: 52px;
+  }
+
+  body {
+    font-size: 13px;
+    overflow-x: hidden;
+  }
+
+  .dashboard-shell {
+    height: 100dvh !important;
+  }
+
+  .dashboard-content {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .mobile-dashboard-bar {
+    display: flex;
+    height: var(--header-h);
+    flex-shrink: 0;
+    align-items: center;
+    gap: 10px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 80;
+  }
+
+  .mobile-menu-button {
+    display: inline-flex;
+  }
+
+  .mobile-dashboard-title {
+    min-width: 0;
+    font-size: 15px;
+    font-weight: 750;
+    color: var(--text);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  main.dashboard-main {
+    overflow-x: hidden !important;
+  }
+
+  .btn,
+  .btn-secondary {
+    min-height: 40px;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font-size: 16px;
+  }
+}

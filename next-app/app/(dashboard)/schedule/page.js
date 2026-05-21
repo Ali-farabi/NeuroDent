@@ -546,9 +546,9 @@ function CalendarTab({ doctors, patients, role }) {
   }
 
   return (
-    <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+    <div className="calendar-tab-shell" style={{ display: "flex", flex: 1, overflow: "hidden" }}>
       {/* Left panel */}
-      <div style={{ width: 290, flexShrink: 0, borderRight: "1px solid var(--border)", background: "var(--surface)", display: "flex", flexDirection: "column", overflowY: "hidden" }}>
+      <div className="calendar-side-panel" style={{ width: 290, flexShrink: 0, borderRight: "1px solid var(--border)", background: "var(--surface)", display: "flex", flexDirection: "column", overflowY: "hidden" }}>
         <div style={{ padding: "16px 16px 14px" }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", letterSpacing: 0.7, textTransform: "uppercase", marginBottom: 7 }}>Врач</div>
           <select value={doctorId} onChange={e => setDoctorId(e.target.value)} style={{ ...inputStyle, borderRadius: 0 }}>
@@ -588,7 +588,7 @@ function CalendarTab({ doctors, patients, role }) {
       </div>
 
       {/* Grid */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div className="calendar-grid-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <CalendarGrid doctors={visibleDoctors} appointments={appointments} onApptClick={handleApptClick} />
       </div>
 
@@ -740,9 +740,9 @@ function CrmTab({ patients, onNewAppt }) {
     : null;
 
   return (
-    <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+    <div className="crm-shell" style={{ display: "flex", flex: 1, overflow: "hidden" }}>
       {/* Patient list */}
-      <div style={{ width: 280, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", background: "var(--surface)" }}>
+      <div className="crm-list-panel" style={{ width: 280, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", background: "var(--surface)" }}>
         <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)" }}>
           <input type="text" placeholder="Поиск пациента..." value={search} onChange={e => setSearch(e.target.value)} style={inputStyle} />
         </div>
@@ -777,7 +777,7 @@ function CrmTab({ patients, onNewAppt }) {
       </div>
 
       {/* Chat */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#f6f8fc", minWidth: 0 }}>
+      <div className="crm-chat-panel" style={{ flex: 1, display: "flex", flexDirection: "column", background: "#f6f8fc", minWidth: 0 }}>
         <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border)", background: "var(--surface)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div>
             <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{selected?.name || "Выберите чат"}</div>
@@ -833,7 +833,7 @@ function CrmTab({ patients, onNewAppt }) {
       </div>
 
       {/* Patient card — dynamic */}
-      <div style={{ width: 240, flexShrink: 0, borderLeft: "1px solid var(--border)", background: "var(--surface)", display: "flex", flexDirection: "column" }}>
+      <div className="crm-card-panel" style={{ width: 240, flexShrink: 0, borderLeft: "1px solid var(--border)", background: "var(--surface)", display: "flex", flexDirection: "column" }}>
         {!selected ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--muted)", padding: 24, textAlign: "center", gap: 10 }}>
             <div style={{ fontSize: 40, display: "flex" }}><UserRound size={40} /></div>
@@ -909,7 +909,88 @@ export default function SchedulePage() {
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", borderBottom: "1px solid var(--border)", background: "var(--surface)", padding: "0 20px", flexShrink: 0 }}>
+      <style>{`
+        @media (max-width: 760px) {
+          .schedule-tabs {
+            overflow-x: auto;
+            padding: 0 12px !important;
+            -webkit-overflow-scrolling: touch;
+          }
+          .schedule-tabs button {
+            flex: 0 0 auto;
+            padding: 12px 10px !important;
+            font-size: 13px !important;
+          }
+          .calendar-tab-shell {
+            flex-direction: column !important;
+            overflow: auto !important;
+          }
+          .calendar-side-panel {
+            width: 100% !important;
+            border-right: 0 !important;
+            border-bottom: 1px solid var(--border);
+            overflow: visible !important;
+          }
+          .calendar-side-panel > div:nth-last-child(-n+2) {
+            display: none !important;
+          }
+          .calendar-grid-panel {
+            min-height: 620px;
+            overflow: auto !important;
+          }
+          .crm-shell {
+            flex-direction: column !important;
+            overflow: auto !important;
+          }
+          .crm-list-panel {
+            width: 100% !important;
+            max-height: 270px;
+            border-right: 0 !important;
+            border-bottom: 1px solid var(--border);
+          }
+          .crm-chat-panel {
+            min-height: 520px;
+          }
+          .crm-chat-panel > div:first-child {
+            align-items: flex-start !important;
+            gap: 10px;
+            flex-direction: column;
+          }
+          .crm-chat-panel > div:first-child > div:last-child {
+            width: 100%;
+            overflow-x: auto;
+            padding-bottom: 2px;
+          }
+          .crm-chat-panel > div:nth-child(2) {
+            padding: 14px 12px !important;
+          }
+          .crm-chat-panel > div:nth-child(2) > div > div {
+            max-width: 88% !important;
+          }
+          .crm-chat-panel > div:last-child {
+            padding: 10px 12px !important;
+          }
+          .crm-chat-panel > div:last-child > div:first-child {
+            overflow-x: auto;
+            padding-bottom: 3px;
+          }
+          .crm-chat-panel > div:last-child > div:first-child button {
+            flex: 0 0 auto;
+          }
+          .crm-chat-panel > div:last-child > div:nth-child(2) {
+            flex-direction: column;
+          }
+          .crm-chat-panel > div:last-child > div:nth-child(2) button {
+            min-height: 42px;
+          }
+          .crm-card-panel {
+            width: 100% !important;
+            border-left: 0 !important;
+            border-top: 1px solid var(--border);
+          }
+        }
+      `}</style>
+      <div className="schedule-tabs" style={{ display: "flex", borderBottom: "1px solid var(--border)", background: "var(--surface)", padding: "0 20px", flexShrink: 0 }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "13px 18px", border: "none", background: "transparent", borderBottom: tab===t.id?"2px solid var(--primary)":"2px solid transparent", color: tab===t.id?"var(--primary)":"var(--muted)", fontWeight: tab===t.id?700:400, fontSize: 14, cursor: "pointer", marginBottom: -1, display: "flex", alignItems: "center", gap: 7, transition: "color 0.15s" }}>
             {t.label}

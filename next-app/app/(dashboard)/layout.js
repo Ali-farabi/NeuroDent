@@ -60,21 +60,45 @@ export default function DashboardLayout({ children }) {
 
   if (loading || !user) return null;
 
+  const mobileTitle = (() => {
+    if (pathname.startsWith("/ai")) return "AI Protocol";
+    if (pathname.startsWith("/report")) return "Analytics";
+    if (pathname.startsWith("/schedule")) return "CRM";
+    if (pathname.startsWith("/visits")) return "История визитов";
+    if (pathname.startsWith("/payments")) return "Финансы и Склад";
+    if (pathname.startsWith("/patients")) return user.role === "patient" ? "Моя медкарта" : "Пациентский модуль";
+    if (pathname.startsWith("/users")) return "Пользователи";
+    if (pathname.startsWith("/price-items")) return "Прайс-лист";
+    if (pathname.startsWith("/notifications")) return "Уведомления";
+    if (pathname.startsWith("/admin-system")) return "Система";
+    return "NeuroDent";
+  })();
+
   return (
-    <div style={{ height: "100vh", display: "flex" }}>
+    <div className="dashboard-shell" style={{ height: "100vh", display: "flex" }}>
       <Sidebar
         role={user.role}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onLogout={() => { logout(); router.replace("/login"); }}
       />
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+      <div className="dashboard-content" style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <div className="mobile-dashboard-bar">
+          <button className="mobile-menu-button" type="button" onClick={() => setSidebarOpen((v) => !v)} aria-label="Открыть меню">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="4" y1="6" x2="20" y2="6" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="18" x2="20" y2="18" />
+            </svg>
+          </button>
+          <div className="mobile-dashboard-title">{mobileTitle}</div>
+        </div>
         {!isAiPage && !isReportPage && !isSchedulePage && !isVisitsPage && !isPaymentsPage && !isPatientsPage && !isUsersPage && !isNewModulePage && (
           <Header
             onBurger={() => setSidebarOpen((v) => !v)}
           />
         )}
-        <main style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
+        <main className="dashboard-main" style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
           {children}
         </main>
       </div>
