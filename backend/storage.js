@@ -5,7 +5,8 @@ import { DatabaseSync } from "node:sqlite";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.join(__dirname, "data");
+const DEFAULT_DATA_DIR = process.env.VERCEL ? path.join("/tmp", "neurodent-data") : path.join(__dirname, "data");
+const DATA_DIR = process.env.NEURODENT_DATA_DIR || DEFAULT_DATA_DIR;
 const SQLITE_FILE = path.join(DATA_DIR, "neurodent.sqlite");
 const LEGACY_JSON_FILE = path.join(DATA_DIR, "db.json");
 const INIT_LOCK_DIR = path.join(DATA_DIR, ".sqlite-init.lock");
