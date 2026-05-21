@@ -134,6 +134,28 @@ function getDoctor(doctorId) {
   return db.doctors.find((x) => x.id === doctorId) || null;
 }
 
+export function getAppointmentById(appointmentId) {
+  const appointment = (db.appointments || []).find((appt) => appt.id === appointmentId);
+  return appointment ? clone(appointment) : null;
+}
+
+function normalizePersonName(name = "") {
+  return String(name).trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export function getDoctorIdForUser(user = {}) {
+  if (!user || user.role !== "doctor") return "";
+  if (user.doctorId && getDoctor(user.doctorId)) return user.doctorId;
+  const byName = db.doctors.find((doctor) => normalizePersonName(doctor.name) === normalizePersonName(user.name));
+  return byName?.id || "";
+}
+
+export function patientBelongsToDoctor(patientId, doctorId) {
+  if (!patientId || !doctorId) return false;
+  return (db.appointments || []).some((appt) => appt.patientId === patientId && appt.doctorId === doctorId)
+    || (db.visits || []).some((visit) => visit.patientId === patientId && visit.doctorId === doctorId);
+}
+
 function estimateVisitCost(visit) {
   const type = visit?.cariesType || "";
   const byCariesType = {
@@ -234,6 +256,19 @@ function ensureSeedUserPasswords() {
     changed = true;
   }
   if (changed) saveDb();
+}
+
+export async function resetDemoUserPasswords() {
+  await delay(50);
+  const updated = [];
+  for (const user of db.users || []) {
+    const password = defaultPasswordForRole(user.role);
+    if (!password) continue;
+    Object.assign(user, hashPassword(password));
+    updated.push({ id: user.id, phone: user.phone, role: user.role, password });
+  }
+  if (updated.length) saveDb();
+  return clone(updated);
 }
 
 function createSession(subjectType, subjectId) {
@@ -992,9 +1027,10 @@ export async function createAppointment(data, options = {}) {
 
 // Поиск пациентов по имени или телефону. Если query пустой — возвращает всех.
 // Backend: GET /patients?q= → Patient[]
-export async function searchPatients(query = "") {
+export async function searchPatients(query = "", options = {}) {
   await delay();
   const q = String(query).trim().toLowerCase();
+  const doctorId = String(options?.doctorId || "");
   
   // Create an array of patients
   const patientsArray = Array.isArray(db.patients) ? db.patients : [];
@@ -1002,7 +1038,8 @@ export async function searchPatients(query = "") {
   const list = patientsArray
     .filter(
       (p) =>
-        !q || p.name.toLowerCase().includes(q) || String(p.phone).includes(q),
+        (!doctorId || patientBelongsToDoctor(p.id, doctorId)) &&
+        (!q || p.name.toLowerCase().includes(q) || String(p.phone).includes(q)),
     )
     .sort((a, b) => {
         // Сортировка по дате регистрации по убыванию (сначала новые)
@@ -1573,11 +1610,12 @@ export async function getDayReport(date) {
 
 // Возвращает историю всех завершённых визитов пациента (от новых к старым).
 // Backend: GET /visits?patientId= → Visit[]
-export async function getVisitsByPatient(patientId) {
+export async function getVisitsByPatient(patientId, options = {}) {
   await delay(500);
   if (!patientId) throw new Error("Пациент не выбран");
+  const doctorId = String(options?.doctorId || "");
   const list = db.visits
-    .filter((v) => v.patientId === patientId)
+    .filter((v) => v.patientId === patientId && (!doctorId || v.doctorId === doctorId))
     .sort((a, b) => {
       const aTime = a.startedAt || "";
       const bTime = b.startedAt || "";
@@ -2136,13 +2174,16 @@ function ensureDefaultConversations() {
 export async function getConversations(query = {}) {
   await delay(120);
   ensureDefaultConversations();
+  const doctorId = String(query?.doctorId || "");
   return clone(listConversationRecords({
     query: query?.query || query?.q || "",
     channel: query?.channel || "",
     status: query?.status || "",
     patientId: query?.patientId || "",
     limit: query?.limit || 100,
-  }).map(enrichConversation));
+  })
+    .filter((conversation) => !doctorId || patientBelongsToDoctor(conversation.patientId, doctorId))
+    .map(enrichConversation));
 }
 
 export async function createConversation(data = {}, options = {}) {
