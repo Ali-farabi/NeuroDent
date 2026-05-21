@@ -7,6 +7,7 @@ import {
   searchPatients,
   getPatientById,
   getActiveAppointmentByPatient,
+  startVisit,
   finishVisit,
   getVisitsByPatient,
   getPatientAiContext,
@@ -729,7 +730,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
         if (aiContext?.toothChart?.teeth) setTeeth(aiContext.toothChart.teeth);
         if (aiContext?.aiSummary?.suggestedDiagnosisCode) setDiagnosisCode(aiContext.aiSummary.suggestedDiagnosisCode);
         if (aiContext?.aiSummary?.lastDiagnosis) setDiagnosisText(aiContext.aiSummary.lastDiagnosis);
-        if (appt?.visitId) setVisitFinished(true);
+        if (appt?.visitId) setVisitStarted(true);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -946,10 +947,28 @@ function AiCorePage({ patientId }: { patientId: string }) {
     };
   }
 
+  async function handleStartVisit() {
+    if (!activeAppointment?.id) { alert("Активная запись не найдена."); return; }
+    try {
+      const visit = await startVisit(activeAppointment.id);
+      setActiveAppointment((prev) => prev ? { ...prev, visitId: visit.id, status: "arrived" } : prev);
+      setVisitStarted(true);
+      setVisitFinished(false);
+      showToast("Прием начат");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Не удалось начать прием");
+    }
+  }
+
   async function handleFinishVisit() {
     if (!activeAppointment?.id) { alert("Запись не найдена."); return; }
     setFinishing(true);
     try {
+      if (!visitStarted || !activeAppointment.visitId) {
+        const visit = await startVisit(activeAppointment.id);
+        setActiveAppointment((prev) => prev ? { ...prev, visitId: visit.id, status: "arrived" } : prev);
+        setVisitStarted(true);
+      }
       const draft = await draftClinicalProtocol({ patientId, transcript: transcriptRef.current, visitData: readVisitData() }).catch(() => null);
       if (draft?.protocol?.treatment && !treatment.trim()) setTreatment(draft.protocol.treatment);
       await finishVisit(activeAppointment.id, readVisitData());
@@ -1095,7 +1114,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
           {!visitStarted ? (
             <button
               className="px-3.5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
-              onClick={() => setVisitStarted(true)}
+              onClick={handleStartVisit}
             >
               ▶ Начать прием
             </button>

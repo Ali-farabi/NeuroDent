@@ -30,7 +30,7 @@ export default function LoginPage() {
     try {
       const user = await login(phone, password);
       saveUser(user);
-      router.push("/report");
+      router.push(user.role === "owner" ? "/report" : user.role === "patient" ? "/patients" : "/schedule");
     } catch (err) {
       setMessage(err?.message || "Ошибка входа");
     } finally {

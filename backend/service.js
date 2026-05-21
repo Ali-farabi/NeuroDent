@@ -1598,6 +1598,7 @@ export async function getDayReport(date) {
   const specialtyRevenue = Array.from(specialtyStats.entries())
     .map(([specialty, revenue]) => ({ specialty, revenue }))
     .sort((a, b) => b.revenue - a.revenue);
+  const lowInventory = (db.inventory || []).filter((item) => Number(item.quantity || 0) <= Number(item.minQuantity || 0));
 
   return clone({
     date,
@@ -1605,6 +1606,9 @@ export async function getDayReport(date) {
     totalAmount,
     visitsCompleted,
     aiSignals,
+    lowInventory,
+    doctorStats: doctorRevenue.map((item) => ({ ...item, id: item.doctorId, name: item.doctorName, visits: item.completedVisits })),
+    specialtyStats: specialtyRevenue.map((item) => ({ ...item, name: item.specialty })),
     doctorRevenue,
     specialtyRevenue,
   });

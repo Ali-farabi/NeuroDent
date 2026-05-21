@@ -70,8 +70,10 @@ function AlertCard({ type, title, text, icon }) {
 
 function DoctorRow({ rank, doctor, maxRevenue }) {
   const width = maxRevenue ? Math.max(8, Math.round((doctor.revenue / maxRevenue) * 100)) : 0;
-  const avg = doctor.visits ? Math.round(doctor.revenue / doctor.visits) : 0;
-  const protocol = rank === 1 ? 98 : rank === 2 ? 92 : 75;
+  const visits = doctor.visits || doctor.completedVisits || doctor.transactions || 0;
+  const avg = doctor.avgCheck || (visits ? Math.round(doctor.revenue / visits) : 0);
+  const protocol = doctor.protocolCompliance ?? (rank === 1 ? 98 : rank === 2 ? 92 : 75);
+  const name = doctor.name || doctor.doctorName || "Врач";
 
   return (
     <div className="py-3">
@@ -81,7 +83,7 @@ function DoctorRow({ rank, doctor, maxRevenue }) {
             {rank}
           </span>
           <div className="min-w-0">
-            <div className="truncate text-lg font-semibold text-black">{doctor.name}</div>
+            <div className="truncate text-lg font-semibold text-black">{name}</div>
             <div className="text-xs text-slate-500">{doctor.specialty || "Стоматолог"}</div>
           </div>
         </div>
@@ -178,8 +180,15 @@ export default function ReportPage() {
     };
   }, [date]);
 
-  const doctorStats = report?.doctorStats || [];
-  const specialtyStats = report?.specialtyStats || [];
+  const doctorStats = (report?.doctorStats || report?.doctorRevenue || []).map((doctor) => ({
+    ...doctor,
+    id: doctor.id || doctor.doctorId || doctor.doctorName,
+    name: doctor.name || doctor.doctorName,
+  }));
+  const specialtyStats = (report?.specialtyStats || report?.specialtyRevenue || []).map((item) => ({
+    ...item,
+    name: item.name || item.specialty || "Без направления",
+  }));
   const lowInventory = report?.lowInventory || [];
   const totalAmount = report?.totalAmount || 0;
   const visitsCompleted = report?.visitsCompleted || 0;

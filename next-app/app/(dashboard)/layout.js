@@ -63,13 +63,14 @@ export default function DashboardLayout({ children }) {
   const mobileTitle = (() => {
     if (pathname.startsWith("/ai")) return "AI Protocol";
     if (pathname.startsWith("/report")) return "Analytics";
-    if (pathname.startsWith("/schedule")) return "CRM";
+    if (pathname.startsWith("/schedule")) return "Calendar / CRM";
     if (pathname.startsWith("/visits")) return "История визитов";
     if (pathname.startsWith("/payments")) return "Финансы и Склад";
     if (pathname.startsWith("/patients")) return user.role === "patient" ? "Моя медкарта" : "Пациентский модуль";
     if (pathname.startsWith("/users")) return "Пользователи";
     if (pathname.startsWith("/price-items")) return "Прайс-лист";
     if (pathname.startsWith("/notifications")) return "Уведомления";
+    if (pathname.startsWith("/audit-logs")) return "Аудит";
     if (pathname.startsWith("/admin-system")) return "Система";
     return "NeuroDent";
   })();

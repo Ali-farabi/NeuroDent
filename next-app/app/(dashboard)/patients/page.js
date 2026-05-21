@@ -374,18 +374,35 @@ function PatientCabinet() {
   const [patientData, setPatientData] = useState(null);
   const [patientVisits, setPatientVisits] = useState([]);
   const [downloading, setDownloading] = useState(null);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    if (!user?.phone) return;
-    searchPatients(user.phone).then((list) => {
-      const p = list[0];
-      if (!p) return;
-      setPatientData(p);
-      getPatientVisits(p.id).then(setPatientVisits);
-    });
-  }, [user?.phone]);
+    const patientId = user?.patientId || user?.id;
+    if (!patientId) return;
+    let active = true;
 
-  const completedVisits = patientVisits.filter(v => v.visitId);
+    Promise.all([
+      getPatientById(patientId),
+      getPatientVisits(patientId),
+    ])
+      .then(([patient, visits]) => {
+        if (!active) return;
+        setLoadError("");
+        setPatientData(patient);
+        setPatientVisits((visits || []).map((visit) => {
+          const date = visit.date || String(visit.startedAt || "").slice(0, 10);
+          const time = visit.time || String(visit.startedAt || "").slice(11, 16);
+          return { ...visit, date, time };
+        }));
+      })
+      .catch((error) => {
+        if (active) setLoadError(error?.message || "Не удалось загрузить портал пациента");
+      });
+
+    return () => { active = false; };
+  }, [user?.id, user?.patientId]);
+
+  const completedVisits = patientVisits.filter(v => v.isFinal !== false);
   const patientName = patientData?.name || user?.name || "Пациент";
   const firstName = patientName.split(" ")[0] || patientName;
   const bonusPoints = Number(patientData?.bonusPoints ?? user?.bonusPoints ?? 0);
@@ -681,6 +698,12 @@ function PatientCabinet() {
             <span style={{ fontSize: 14, fontWeight: 600, color: "#a12b2b" }}>
               Аллергия: {patientData?.allergies || user?.allergies}
             </span>
+          </div>
+        )}
+
+        {loadError && (
+          <div className="patient-home-card" style={{ padding: "14px 18px", borderColor: "#fed7d7", background: "#fff7f7", color: "#a12b2b", fontSize: 14, fontWeight: 600 }}>
+            {loadError}
           </div>
         )}
 
