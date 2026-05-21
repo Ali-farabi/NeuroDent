@@ -13,6 +13,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   getIntegrationStatus,
+  deleteExternalFile,
+  downloadExternalFile,
   requestESignature,
   requestExternalAi,
   sendEmail,
@@ -1924,7 +1926,7 @@ export async function uploadFile(data, options = {}) {
     fileName,
     mimeType,
     base64: cleanBase64,
-    metadata: { patientId, visitId, kind: data?.kind || "upload" },
+    metadata: { fileId: stored.id, patientId, visitId, kind: data?.kind || "upload" },
   });
   const record = createFileRecord({
     id: stored.id,
@@ -1934,7 +1936,7 @@ export async function uploadFile(data, options = {}) {
     mimeType,
     storagePath: stored.storagePath,
     createdAt: new Date().toISOString(),
-    extra: { kind: data?.kind || "upload", externalStorage },
+    extra: { kind: data?.kind || "upload", cloudStorage: externalStorage, externalStorage },
   });
   audit("create", "file", record.id, { patientId, visitId, fileName: record.fileName }, actorIdFromOptions(options));
   const { storagePath, ...safeRecord } = record;
@@ -1950,17 +1952,25 @@ export async function getFiles({ patientId = "", visitId = "" } = {}) {
 export async function getFileDownload(fileId) {
   await delay(100);
   const file = getFileRecord(fileId);
-  if (!file || !existsSync(file.storagePath)) throw new Error("Файл не найден");
+  if (!file) throw new Error("Файл не найден");
+  let bytes = existsSync(file.storagePath) ? readFileSync(file.storagePath) : null;
+  let mimeType = file.mimeType;
+  if (!bytes) {
+    const cloudDownload = await downloadExternalFile(file.cloudStorage || file.externalStorage);
+    if (!cloudDownload.ok) throw new Error("Файл не найден");
+    bytes = cloudDownload.bytes;
+    mimeType = cloudDownload.mimeType || mimeType;
+  }
   return {
     file: {
       id: file.id,
       patientId: file.patientId,
       visitId: file.visitId,
       fileName: file.fileName,
-      mimeType: file.mimeType,
+      mimeType,
       createdAt: file.createdAt,
     },
-    bytes: readFileSync(file.storagePath),
+    bytes,
   };
 }
 
@@ -1969,9 +1979,10 @@ export async function deleteFile(fileId, options = {}) {
   const file = getFileRecord(fileId);
   if (!file) throw new Error("Файл не найден");
   if (existsSync(file.storagePath)) unlinkSync(file.storagePath);
+  const cloudDelete = await deleteExternalFile(file.cloudStorage || file.externalStorage);
   deleteFileRecord(fileId);
-  audit("delete", "file", fileId, { fileName: file.fileName }, actorIdFromOptions(options));
-  return { ok: true };
+  audit("delete", "file", fileId, { fileName: file.fileName, cloudDelete }, actorIdFromOptions(options));
+  return { ok: true, cloudDelete };
 }
 
 export async function createPatientProtocolDocument(patientId, options = {}) {
@@ -1981,15 +1992,22 @@ export async function createPatientProtocolDocument(patientId, options = {}) {
   const createdAt = new Date().toISOString();
   const bytes = Buffer.from(text, "utf8");
   const stored = writeStoredFile(DOCUMENTS_DIR, `AI_Protocol_${patientId}.txt`, bytes);
+  const visitId = latestFinalVisit(patientId)?.id || "";
+  const cloudStorage = await uploadExternalFile({
+    fileName: stored.fileName,
+    mimeType: "text/plain; charset=utf-8",
+    base64: bytes.toString("base64"),
+    metadata: { fileId: stored.id, patientId, visitId, kind: "ai-protocol" },
+  });
   const record = createFileRecord({
     id: stored.id,
     patientId,
-    visitId: latestFinalVisit(patientId)?.id || "",
+    visitId,
     fileName: stored.fileName,
     mimeType: "text/plain; charset=utf-8",
     storagePath: stored.storagePath,
     createdAt,
-    extra: { kind: "ai-protocol", patientName: patient?.name || "" },
+    extra: { kind: "ai-protocol", patientName: patient?.name || "", cloudStorage, externalStorage: cloudStorage },
   });
   audit("create", "document", record.id, { patientId, type: "ai-protocol" }, actorIdFromOptions(options));
   const { storagePath, ...safeRecord } = record;
@@ -3346,7 +3364,7 @@ function openApiSchemas() {
       reason: { type: "string" },
       visitId: id,
     }, ["inventoryId", "type", "quantity"]),
-    FileRecord: objectSchema({ id, patientId: id, visitId: id, fileName: { type: "string" }, mimeType: { type: "string" }, createdAt: dateTime }),
+    FileRecord: objectSchema({ id, patientId: id, visitId: id, fileName: { type: "string" }, mimeType: { type: "string" }, createdAt: dateTime, cloudStorage: objectSchema() }),
     FileUploadInput: objectSchema({ patientId: id, visitId: id, fileName: { type: "string" }, mimeType: { type: "string" }, base64: { type: "string" } }, ["fileName", "base64"]),
     DocumentSignInput: objectSchema({ signerName: { type: "string" }, signature: { type: "string" } }),
     Notification: objectSchema({ id, type: { type: "string" }, title: { type: "string" }, body: { type: "string" }, role: { type: "string" }, isRead: { type: "boolean" }, createdAt: dateTime }),
@@ -3382,10 +3400,11 @@ function openApiSchemas() {
       data: objectSchema(),
     }),
     IntegrationStatus: objectSchema({
-      provider: { type: "string", enum: ["email", "sms", "whatsapp", "fileStorage", "fiscalization", "eSignature", "ai", "resend"] },
+      provider: { type: "string", enum: ["email", "sms", "whatsapp", "fileStorage", "fiscalization", "eSignature", "ai", "resend", "supabaseStorage"] },
       configured: { type: "boolean" },
       urlEnv: { type: "string" },
       tokenEnv: { type: "string" },
+      bucketEnv: { type: "string" },
     }, ["provider", "configured"]),
     EmailTestResult: objectSchema({
       ok: { type: "boolean" },

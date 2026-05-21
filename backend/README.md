@@ -110,7 +110,7 @@ DELETE /api/admin/backups/:fileName
 
 ## External Integrations
 
-Email, SMS, WhatsApp, file storage, fiscalization, e-signature and AI delivery are implemented through webhook adapters. Email also supports direct Resend delivery through `RESEND_API_KEY`. If provider URLs are not configured, delivery is safely marked as `skipped`.
+Email, SMS, WhatsApp, file storage, fiscalization, e-signature and AI delivery are implemented through webhook adapters. Email also supports direct Resend delivery through `RESEND_API_KEY`. File storage also supports direct Supabase Storage delivery through server-only Supabase keys. If provider URLs or cloud keys are not configured, delivery is safely marked as `skipped`.
 
 ```text
 RESEND_API_KEY=
@@ -123,6 +123,11 @@ NEURODENT_WHATSAPP_WEBHOOK_URL=
 NEURODENT_WHATSAPP_WEBHOOK_TOKEN=
 NEURODENT_FILE_STORAGE_WEBHOOK_URL=
 NEURODENT_FILE_STORAGE_WEBHOOK_TOKEN=
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_STORAGE_BUCKET=neurodent-files
+SUPABASE_STORAGE_PREFIX=neurodent
+SUPABASE_STORAGE_PUBLIC=false
 NEURODENT_FISCALIZATION_WEBHOOK_URL=
 NEURODENT_FISCALIZATION_WEBHOOK_TOKEN=
 NEURODENT_ESIGN_WEBHOOK_URL=
@@ -131,7 +136,15 @@ NEURODENT_AI_WEBHOOK_URL=
 NEURODENT_AI_WEBHOOK_TOKEN=
 ```
 
-These adapters are used by password reset, patient reminders, invoice email delivery, file upload mirroring, payment fiscalization, document signing and AI clinical assistant logic.
+These adapters are used by password reset, patient reminders, invoice email delivery, file upload mirroring, payment fiscalization, document signing and AI clinical assistant logic. `SUPABASE_SERVICE_ROLE_KEY` must stay on the server only and must never be exposed as a `NEXT_PUBLIC_` variable.
+
+Cloud file storage behavior:
+
+```text
+POST /api/files
+```
+
+The backend always stores an uploaded file locally as a fallback. If Supabase Storage is configured, the same file is mirrored to the configured bucket and the cloud storage metadata is saved in the `files.extra_json` field. Download uses the local file first and falls back to cloud storage if the local copy is missing. Delete removes the local file and also attempts to remove the cloud object.
 
 Business delivery routes:
 
@@ -146,7 +159,7 @@ POST /api/invoices/:id/send
 npm run test:backend
 ```
 
-The smoke test checks health, protected access, owner login, current session, doctors, patient creation, schedule conflict validation, invoice email delivery, invoice payment, stock movement, system status, backup creation, password reset request, reminders, audit logs and OpenAPI generation.
+The smoke test checks health, protected access, owner login, current session, doctors, patient creation, schedule conflict validation, file upload/download/delete with cloud metadata, invoice email delivery, invoice payment, stock movement, system status, backup creation, password reset request, reminders, audit logs and OpenAPI generation.
 
 ## Docker
 

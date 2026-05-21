@@ -100,6 +100,20 @@ const conflict = await request("POST", "/api/appointments", {
 });
 assert(conflict.status === 400, "schedule conflict validation failed");
 
+const fileUpload = await request("POST", "/api/files", {
+  token,
+  body: {
+    patientId: patient.data.id,
+    fileName: "smoke-test.txt",
+    mimeType: "text/plain",
+    base64: Buffer.from("NeuroDent smoke file").toString("base64"),
+  },
+});
+assert(fileUpload.status === 201 && fileUpload.data.id && fileUpload.data.cloudStorage?.provider, "file upload with cloud metadata failed");
+
+const fileDownload = await request("GET", `/api/files/${fileUpload.data.id}/download`, { token });
+assert(fileDownload.status === 200 && String(fileDownload.data).includes("NeuroDent smoke file"), "file download failed");
+
 const invoice = await request("POST", "/api/invoices", {
   token,
   body: {
@@ -135,11 +149,15 @@ const stockMovement = await request("POST", "/api/stock-movements", {
 });
 assert(stockMovement.status === 201 && stockMovement.data.id, "stock movement creation failed");
 
+const fileDelete = await request("DELETE", `/api/files/${fileUpload.data.id}`, { token });
+assert(fileDelete.status === 200 && fileDelete.data.ok, "file delete failed");
+
 const system = await request("GET", "/api/admin/system", { token });
 assert(system.status === 200 && system.data.storage?.driver === "sqlite", "system status failed");
 
 const integrations = await request("GET", "/api/admin/integrations", { token });
 assert(integrations.status === 200 && integrations.data.some((item) => item.provider === "sms"), "integration status failed");
+assert(integrations.data.some((item) => item.provider === "supabaseStorage"), "Supabase storage integration status failed");
 
 const sessions = await request("GET", "/api/admin/sessions", { token });
 assert(sessions.status === 200 && sessions.data.some((item) => item.subjectType === "user"), "sessions endpoint failed");
