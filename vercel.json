@@ -1,0 +1,7 @@
+{
+  "buildCommand": "npm --prefix next-app run build",
+  "devCommand": "npm --prefix next-app run dev",
+  "installCommand": "npm --prefix next-app install",
+  "outputDirectory": "next-app/.next",
+  "framework": "nextjs"
+}
