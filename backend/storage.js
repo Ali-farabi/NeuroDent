@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
@@ -8,6 +8,7 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, "data");
 const SQLITE_FILE = path.join(DATA_DIR, "neurodent.sqlite");
 const LEGACY_JSON_FILE = path.join(DATA_DIR, "db.json");
+const INIT_LOCK_DIR = path.join(DATA_DIR, ".sqlite-init.lock");
 
 let db = null;
 let initialized = false;
@@ -17,7 +18,39 @@ export function getSqliteFilePath() {
 }
 
 export function checkpointDatabase() {
-  getDb().exec("PRAGMA wal_checkpoint(FULL)");
+  getDb().exec("PRAGMA optimize");
+}
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function acquireInitLock() {
+  mkdirSync(DATA_DIR, { recursive: true });
+  const startedAt = Date.now();
+  while (true) {
+    try {
+      mkdirSync(INIT_LOCK_DIR);
+      return () => {
+        rmSync(INIT_LOCK_DIR, { recursive: true, force: true });
+      };
+    } catch (err) {
+      if (err?.code !== "EEXIST") throw err;
+      try {
+        const ageMs = Date.now() - statSync(INIT_LOCK_DIR).mtimeMs;
+        if (ageMs > 30_000) {
+          rmSync(INIT_LOCK_DIR, { recursive: true, force: true });
+          continue;
+        }
+      } catch {
+        continue;
+      }
+      if (Date.now() - startedAt > 10_000) {
+        throw new Error("SQLite initialization is locked by another process");
+      }
+      sleepSync(100);
+    }
+  }
 }
 
 function getDb() {
@@ -25,7 +58,8 @@ function getDb() {
     mkdirSync(DATA_DIR, { recursive: true });
     db = new DatabaseSync(SQLITE_FILE);
     db.exec("PRAGMA foreign_keys = ON");
-    db.exec("PRAGMA journal_mode = WAL");
+    db.exec("PRAGMA journal_mode = DELETE");
+    db.exec("PRAGMA busy_timeout = 5000");
   }
   return db;
 }
@@ -503,19 +537,25 @@ function insertSnapshot(database, snapshot) {
 }
 
 export function initializeStore(seedSnapshot) {
-  const database = getDb();
   if (initialized) return;
-  createSchema(database);
-  runMigrations(database);
+  const releaseLock = acquireInitLock();
+  try {
+    if (initialized) return;
+    const database = getDb();
+    createSchema(database);
+    runMigrations(database);
 
-  if (tableIsEmpty(database, "doctors")) {
-    const legacySnapshot = readLegacyJson();
-    runTransaction(database, () => {
-      insertSnapshot(database, legacySnapshot || seedSnapshot);
-    });
+    if (tableIsEmpty(database, "doctors")) {
+      const legacySnapshot = readLegacyJson();
+      runTransaction(database, () => {
+        insertSnapshot(database, legacySnapshot || seedSnapshot);
+      });
+    }
+
+    initialized = true;
+  } finally {
+    releaseLock();
   }
-
-  initialized = true;
 }
 
 export function loadDbSnapshot() {

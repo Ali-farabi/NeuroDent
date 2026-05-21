@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node --no-warnings backend/server.js",
     "dev": "node --no-warnings backend/server.js",
+    "dev:next": "npm --prefix next-app run dev",
+    "build:next": "npm --prefix next-app run build",
+    "reset:dev-passwords": "node --no-warnings backend/reset-dev-passwords.js",
     "test:backend": "node --no-warnings backend/smoke-test.js"
   },
   "engines": {
