@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import {
   getDoctors, getSchedule, createAppointment, searchPatients,
   updateAppointmentStatus, getPatientById, getVisitsByPatient,
+  getConversations, getConversationMessages, sendConversationMessage,
+  createConversationAiDraft,
 } from "@/lib/api";
 import { useAuth } from "@/lib/AuthContext";
-import { Bot, Stethoscope, Phone, CalendarDays, MessageCircle, Sparkles, ClipboardList, Bell, UserRound } from "lucide-react";
+import { Bot, Stethoscope, Phone, CalendarDays, MessageCircle, Sparkles, ClipboardList, Bell, UserRound, X, Clock } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const TODAY    = new Date().toISOString().slice(0, 10);
@@ -28,6 +30,22 @@ function timeToY(time) {
   return (((h - 8) * 60 + m) / 30) * SLOT_H;
 }
 function durationToH(min) { return (min / 30) * SLOT_H; }
+function minutesFromTime(time) {
+  const [h, m] = String(time || "00:00").split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+function rangesOverlap(startA, endA, startB, endB) {
+  return startA < endB && startB < endA;
+}
+function makeTimeOptions(startHour = 8, endHour = 20, step = 15) {
+  const slots = [];
+  for (let minutes = startHour * 60; minutes <= endHour * 60; minutes += step) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    slots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+  }
+  return slots;
+}
 
 const STATUS_STYLE = {
   scheduled: { bg: "#f0f6ff", color: "#1d4ed8", border: "#bfdbfe", stripe: "#3b82f6", label: "SCHEDULED", ru: "Ожидает" },
@@ -183,8 +201,8 @@ function ApptDetailModal({ appt, doctors, role, onClose, onStatusChanged, onOpen
 
           {/* Action buttons */}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {/* AI button — doctor/owner */}
-            {["doctor","owner"].includes(role) && (
+            {/* AI button — doctor/assistant/owner */}
+            {["doctor","assistant","owner"].includes(role) && (
               <button onClick={() => { onOpenAi(appt.patientId); onClose(); }} style={{ ...btnPrimary, width: "100%", padding: "11px 0", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                 <Bot size={16} /> Открыть Core AI Layer
               </button>
@@ -213,14 +231,64 @@ function ApptDetailModal({ appt, doctors, role, onClose, onStatusChanged, onOpen
 }
 
 // ── New Appointment Modal ──────────────────────────────────────────────────────
-function ApptModal({ doctors, patients, date, onClose, onSaved }) {
-  const [form, setForm] = useState({ doctorId: "", patientId: "", date, time: "09:00", duration: "30" });
+function ApptModal({ doctors, patients, date, selectedDoctorId = "", dayAppointments = [], onClose, onSaved }) {
+  const [form, setForm] = useState({ doctorId: selectedDoctorId || doctors[0]?.id || "", patientId: "", date, time: "09:00", duration: "30" });
   const [saving, setSaving] = useState(false);
   const [err, setErr]       = useState("");
+  const [doctorAppointments, setDoctorAppointments] = useState([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const quickTimes = makeTimeOptions(8, 20, 15);
+  const durations = ["15", "30", "45", "60", "90"];
+  const durationMinutes = Number(form.duration || 30);
+
+  useEffect(() => {
+    if (!form.doctorId || !form.date) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDoctorAppointments([]);
+      return;
+    }
+
+    const sameDayAppointments = dayAppointments.filter((appt) => appt.doctorId === form.doctorId && appt.date === form.date);
+    if (sameDayAppointments.length) {
+      setDoctorAppointments(sameDayAppointments);
+      return;
+    }
+
+    let cancelled = false;
+    setSlotsLoading(true);
+    getSchedule(form.doctorId, form.date)
+      .then((items) => {
+        if (!cancelled) setDoctorAppointments(items || []);
+      })
+      .catch(() => {
+        if (!cancelled) setDoctorAppointments([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSlotsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [form.doctorId, form.date, dayAppointments]);
+
+  function slotIsAvailable(time) {
+    if (!form.doctorId || !form.date) return false;
+    const start = minutesFromTime(time);
+    const end = start + durationMinutes;
+    if (end > 20 * 60) return false;
+    return !doctorAppointments.some((appt) => {
+      if (appt.status === "cancelled") return false;
+      const apptStart = minutesFromTime(appt.time);
+      const apptEnd = apptStart + Number(appt.duration || 30);
+      return rangesOverlap(start, end, apptStart, apptEnd);
+    });
+  }
+
+  const selectedSlotAvailable = slotIsAvailable(form.time);
+  const availableCount = quickTimes.filter(slotIsAvailable).length;
 
   async function handleSubmit(e) {
     e.preventDefault(); setSaving(true); setErr("");
     try {
+      if (!selectedSlotAvailable) throw new Error("Выбранное время занято. Выберите свободный слот.");
       await createAppointment({ ...form, duration: Number(form.duration) });
       onSaved(form.date); onClose();
     } catch (e) { setErr(e?.message || "Ошибка"); }
@@ -229,29 +297,130 @@ function ApptModal({ doctors, patients, date, onClose, onSaved }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.4)", backdropFilter: "blur(3px)" }} />
-      <div style={{ position: "relative", width: "min(440px,94vw)", background: "var(--surface)", borderRadius: "var(--radius)", boxShadow: "0 24px 64px rgba(15,23,42,0.18)", padding: 28 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
-          <div style={{ fontWeight: 700, fontSize: 16 }}>Новая запись</div>
-          <button onClick={onClose} style={{ width: 30, height: 30, border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--surface-2)", cursor: "pointer", fontSize: 18, color: "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.46)", backdropFilter: "blur(4px)" }} />
+      <div style={{ position: "relative", width: "min(760px,94vw)", maxHeight: "92vh", overflow: "auto", background: "var(--surface)", borderRadius: 18, boxShadow: "0 28px 80px rgba(15,23,42,0.24)", border: "1px solid rgba(226,232,240,0.9)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 18, padding: "26px 28px 18px", borderBottom: "1px solid var(--border)" }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 24, color: "var(--text)", letterSpacing: 0 }}>Новая запись</div>
+            <div style={{ marginTop: 6, color: "var(--muted)", fontSize: 13 }}>Выберите врача, пациента и удобное время приема</div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Закрыть" style={{ width: 38, height: 38, border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface-2)", cursor: "pointer", color: "var(--muted)", display: "grid", placeItems: "center" }}>
+            <X size={18} />
+          </button>
         </div>
-        <form onSubmit={handleSubmit} style={{ display: "grid", gap: 13 }}>
-          {[
-            { label: "Врач *",       el: <select value={form.doctorId}  onChange={e => setForm(f=>({...f,doctorId:e.target.value}))}  style={inputStyle} required><option value="">— Выберите врача —</option>{doctors.map(d=><option key={d.id} value={d.id}>{d.name.split(" ").slice(0,2).join(" ")} ({d.specialty})</option>)}</select> },
-            { label: "Пациент *",    el: <select value={form.patientId} onChange={e => setForm(f=>({...f,patientId:e.target.value}))} style={inputStyle} required><option value="">— Выберите пациента —</option>{patients.map(p=><option key={p.id} value={p.id}>{p.name} — {p.phone}</option>)}</select> },
-            { label: "Дата *",       el: <input type="date" value={form.date}     onChange={e=>setForm(f=>({...f,date:e.target.value}))}     style={inputStyle} required /> },
-            { label: "Время *",      el: <input type="time" value={form.time}     onChange={e=>setForm(f=>({...f,time:e.target.value}))}     style={inputStyle} required /> },
-            { label: "Длительность", el: <select value={form.duration}  onChange={e=>setForm(f=>({...f,duration:e.target.value}))}  style={inputStyle}><option value="15">15 мин</option><option value="30">30 мин</option><option value="45">45 мин</option><option value="60">60 мин</option><option value="90">90 мин</option></select> },
-          ].map(({ label, el }) => (
-            <div key={label} style={{ display: "grid", gap: 5 }}>
-              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
-              {el}
+
+        <form onSubmit={handleSubmit} style={{ display: "grid", gap: 18, padding: 28 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div style={{ display: "grid", gap: 7 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Врач *</div>
+              <select value={form.doctorId} onChange={e => setForm(f=>({...f,doctorId:e.target.value}))} style={{ ...inputStyle, height: 44, borderRadius: 12, fontSize: 14 }} required>
+                <option value="">Выберите врача</option>
+                {doctors.map(d=><option key={d.id} value={d.id}>{d.name.split(" ").slice(0,2).join(" ")} ({d.specialty})</option>)}
+              </select>
             </div>
-          ))}
+            <div style={{ display: "grid", gap: 7 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Пациент *</div>
+              <select value={form.patientId} onChange={e => setForm(f=>({...f,patientId:e.target.value}))} style={{ ...inputStyle, height: 44, borderRadius: 12, fontSize: 14 }} required>
+                <option value="">Выберите пациента</option>
+                {patients.map(p=><option key={p.id} value={p.id}>{p.name} — {p.phone}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "210px 1fr", gap: 16 }}>
+            <div style={{ display: "grid", gap: 7 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Дата *</div>
+              <label style={{ position: "relative", display: "block" }}>
+                <CalendarDays size={17} style={{ position: "absolute", left: 13, top: 13, color: "var(--muted)", pointerEvents: "none" }} />
+                <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={{ ...inputStyle, height: 44, borderRadius: 12, fontSize: 14, paddingLeft: 40 }} required />
+              </label>
+            </div>
+            <div style={{ display: "grid", gap: 7 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Время *</div>
+              <label style={{ position: "relative", display: "block" }}>
+                <Clock size={17} style={{ position: "absolute", left: 13, top: 13, color: "var(--muted)", pointerEvents: "none" }} />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]{2}:[0-9]{2}"
+                  value={form.time}
+                  onChange={e=>setForm(f=>({...f,time:e.target.value}))}
+                  placeholder="09:00"
+                  style={{ ...inputStyle, height: 44, borderRadius: 12, fontSize: 14, paddingLeft: 40 }}
+                  required
+                />
+              </label>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Быстрое время</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 8 }}>
+              {quickTimes.map((time) => (
+                (() => {
+                  const available = slotIsAvailable(time);
+                  const active = form.time === time;
+                  return (
+                <button
+                  key={time}
+                  type="button"
+                  disabled={!available}
+                  onClick={() => available && setForm((f) => ({ ...f, time }))}
+                  style={{
+                    height: 36,
+                    borderRadius: 10,
+                    border: active ? "1px solid var(--primary)" : "1px solid var(--border)",
+                    background: active ? "rgba(59,130,246,0.1)" : available ? "var(--surface-2)" : "#f8fafc",
+                    color: active ? "var(--primary)" : available ? "var(--text)" : "#cbd5e1",
+                    fontWeight: 700,
+                    cursor: available ? "pointer" : "not-allowed",
+                    textDecoration: available ? "none" : "line-through",
+                  }}
+                >
+                  {time}
+                </button>
+                  );
+                })()
+              ))}
+            </div>
+            <div style={{ fontSize: 12, color: selectedSlotAvailable ? "var(--muted)" : "var(--danger)" }}>
+              {form.doctorId
+                ? slotsLoading
+                  ? "Проверяем занятость врача..."
+                  : `Свободных слотов: ${availableCount}. Занятое время отключено.`
+                : "Сначала выберите врача, чтобы увидеть свободное время."}
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Длительность</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {durations.map((duration) => (
+                <button
+                  key={duration}
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, duration }))}
+                  style={{
+                    height: 36,
+                    padding: "0 14px",
+                    borderRadius: 10,
+                    border: form.duration === duration ? "1px solid var(--primary)" : "1px solid var(--border)",
+                    background: form.duration === duration ? "var(--primary)" : "var(--surface)",
+                    color: form.duration === duration ? "#fff" : "var(--text)",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  {duration} мин
+                </button>
+              ))}
+            </div>
+          </div>
+
           {err && <div style={{ fontSize: 12, color: "var(--danger)", padding: "8px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "var(--radius-sm)" }}>{err}</div>}
-          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-            <button type="button" onClick={onClose} style={{ ...btnOutline, flex: 1 }}>Отмена</button>
-            <button type="submit" disabled={saving} style={{ ...btnPrimary, flex: 1 }}>{saving ? "Создаём..." : "Создать запись"}</button>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
+            <button type="button" onClick={onClose} style={{ ...btnOutline, height: 42, padding: "0 18px" }}>Отмена</button>
+            <button type="submit" disabled={saving || !selectedSlotAvailable} style={{ ...btnPrimary, height: 42, padding: "0 24px", opacity: saving || !selectedSlotAvailable ? 0.55 : 1, cursor: saving || !selectedSlotAvailable ? "not-allowed" : "pointer" }}>{saving ? "Создаём..." : "Создать запись"}</button>
           </div>
         </form>
       </div>
@@ -424,7 +593,7 @@ function CalendarTab({ doctors, patients, role }) {
       </div>
 
       {newModal && (
-        <ApptModal doctors={doctors} patients={patients} date={date}
+        <ApptModal doctors={doctors} patients={patients} date={date} selectedDoctorId={doctorId} dayAppointments={appointments}
           onClose={() => setNewModal(false)}
           onSaved={d => { setDate(d); reload(); setNewModal(false); }}
         />
@@ -470,6 +639,8 @@ function buildInitialChat(patient) {
 function CrmTab({ patients, onNewAppt }) {
   const router = useRouter();
   const [selected, setSelected]         = useState(null);
+  const [conversations, setConversations] = useState([]);
+  const [backendMessages, setBackendMessages] = useState([]);
   const [patientInfo, setPatientInfo]   = useState(null);
   const [patientVisits, setPatientVisits] = useState([]);
   const [loadingCard, setLoadingCard]   = useState(false);
@@ -479,12 +650,31 @@ function CrmTab({ patients, onNewAppt }) {
   const [search, setSearch]             = useState("");
   const messagesEnd                     = useRef(null);
 
-  // backend: GET /api/crm/contacts?q= — пациент + канал + последнее сообщение
-  const chatPatients = patients.slice(0, 8);
+  useEffect(() => {
+    getConversations({ limit: 100 }).then(setConversations).catch(() => setConversations([]));
+  }, []);
+
+  const conversationPatients = conversations.map((conversation) => ({
+    id: conversation.patientId || conversation.id,
+    conversationId: conversation.id,
+    name: conversation.patientName || conversation.title || "Диалог",
+    phone: conversation.patientPhone || conversation.externalId || "",
+    channel: conversation.channel || "WhatsApp",
+    lastMessage: conversation.status === "closed" ? "Диалог закрыт" : "Открытый диалог",
+    lastMessageTime: conversation.lastMessageAt ? conversation.lastMessageAt.slice(11, 16) : "",
+  }));
+  const chatPatients = conversationPatients.length ? conversationPatients : patients.slice(0, 8);
   const filtered = chatPatients.filter(p =>
     !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.phone.includes(search)
   );
-  const chatMsgs = selected ? (chatByPatient[selected.id] || buildInitialChat(selected)) : [];
+  const chatMsgs = selected?.conversationId
+    ? backendMessages.map((message) => ({
+      type: message.direction === "outbound" ? "out" : "in",
+      text: message.body,
+      time: message.createdAt ? message.createdAt.slice(11, 16) : "",
+      status: message.status,
+    }))
+    : selected ? (chatByPatient[selected.id] || buildInitialChat(selected)) : [];
 
   async function selectPatient(p) {
     setSelected(p);
@@ -492,17 +682,33 @@ function CrmTab({ patients, onNewAppt }) {
     setChatByPatient((current) => current[p.id] ? current : { ...current, [p.id]: buildInitialChat(p) });
     setPatientInfo(null); setPatientVisits([]); setLoadingCard(true);
     try {
-      const [info, visits] = await Promise.all([getPatientById(p.id), getVisitsByPatient(p.id)]);
+      const [info, visits, messages] = await Promise.all([
+        p.conversationId && p.id ? getPatientById(p.id).catch(() => null) : getPatientById(p.id),
+        p.id ? getVisitsByPatient(p.id).catch(() => []) : Promise.resolve([]),
+        p.conversationId ? getConversationMessages(p.conversationId) : Promise.resolve([]),
+      ]);
       setPatientInfo(info);
       setPatientVisits(visits);
+      setBackendMessages(messages);
     } catch {}
     finally { setLoadingCard(false); }
   }
 
-  function sendMsg() {
+  async function sendMsg() {
     const text = msg.trim();
     if (!text || !selected) return;
     const time = new Date().toTimeString().slice(0, 5);
+    if (selected.conversationId) {
+      try {
+        await sendConversationMessage(selected.conversationId, { body: text });
+        setBackendMessages(await getConversationMessages(selected.conversationId));
+        setMsg("");
+        setSendStatus("Сообщение сохранено в CRM");
+        return;
+      } catch {
+        setSendStatus("Backend CRM недоступен, открыт WhatsApp");
+      }
+    }
     setChatByPatient((current) => ({
       ...current,
       [selected.id]: [...(current[selected.id] || buildInitialChat(selected)), { type: "out", text, time, status: "sent" }],
@@ -511,6 +717,16 @@ function CrmTab({ patients, onNewAppt }) {
     setSendStatus("Открыт WhatsApp с готовым текстом");
     window.open(buildWhatsappUrl(selected.phone, text), "_blank", "noopener,noreferrer");
     setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: "smooth" }), 50);
+  }
+
+  async function makeAiDraft() {
+    if (!selected?.conversationId) return;
+    try {
+      const draft = await createConversationAiDraft(selected.conversationId);
+      setMsg(draft.body || draft.message || "");
+    } catch {
+      setMsg("Добрый день! Сейчас проверим расписание и подберем удобное время.");
+    }
   }
 
   function callPatient() {
@@ -598,7 +814,7 @@ function CrmTab({ patients, onNewAppt }) {
                 { key: "price",  label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><ClipboardList size={11} /> Прайс</span>, text: "Добрый день! Стоимость зависит от процедуры и осмотра врача. Можем записать вас на консультацию.", primary: false },
                 { key: "remind", label: <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Bell size={11} /> Напоминание</span>, text: "Напоминаем о вашем приеме. Если нужно перенести запись, ответьте на это сообщение.", primary: false },
               ].map(b => (
-                <button key={b.key} onClick={() => setMsg(b.text)} style={{ fontSize: 11, padding: "5px 11px", borderRadius: 7, cursor: "pointer", fontWeight: 600, border: b.primary?"1px solid var(--primary)":"1px solid var(--border)", background: b.primary?"rgba(59,130,246,0.09)":"var(--surface-2)", color: b.primary?"var(--primary)":"var(--muted)" }}>{b.label}</button>
+                <button key={b.key} onClick={() => b.key === "ai" ? makeAiDraft() : setMsg(b.text)} style={{ fontSize: 11, padding: "5px 11px", borderRadius: 7, cursor: "pointer", fontWeight: 600, border: b.primary?"1px solid var(--primary)":"1px solid var(--border)", background: b.primary?"rgba(59,130,246,0.09)":"var(--surface-2)", color: b.primary?"var(--primary)":"var(--muted)" }}>{b.label}</button>
               ))}
             </div>
             <div style={{ display: "flex", gap: 8 }}>

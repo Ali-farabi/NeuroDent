@@ -3,14 +3,17 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { login } from "@/lib/api";
+import { login, requestPasswordReset, resetPassword } from "@/lib/api";
 import { useAuth } from "@/lib/AuthContext";
 
 export default function LoginPage() {
   const router = useRouter();
   const { saveUser } = useAuth();
+  const [mode, setMode] = useState("login");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [nextPassword, setNextPassword] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -30,6 +33,52 @@ export default function LoginPage() {
       router.push("/report");
     } catch (err) {
       setMessage(err?.message || "Ошибка входа");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRequestReset(e) {
+    e.preventDefault();
+    setMessage("");
+
+    if (!phone) {
+      setMessage("Введите телефон");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await requestPasswordReset(phone);
+      setResetToken(result?.resetToken || "");
+      setMode("reset");
+      setMessage(result?.resetToken ? "Код получен. Проверьте поле кода." : "Код отправлен");
+    } catch (err) {
+      setMessage(err?.message || "Не удалось отправить код");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResetPassword(e) {
+    e.preventDefault();
+    setMessage("");
+
+    if (!resetToken || !nextPassword) {
+      setMessage("Введите код и новый пароль");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await resetPassword(resetToken, nextPassword);
+      setPassword("");
+      setNextPassword("");
+      setResetToken("");
+      setMode("login");
+      setMessage("Пароль обновлен. Войдите с новым паролем.");
+    } catch (err) {
+      setMessage(err?.message || "Не удалось обновить пароль");
     } finally {
       setLoading(false);
     }
@@ -268,42 +317,126 @@ export default function LoginPage() {
 
       <section className="auth-card" aria-label="Вход в Neurodent">
         <h1 className="auth-title">
-          Войдите в <span>Neurodent</span>
+          {mode === "login" ? "Войдите в " : "Восстановление "}
+          <span>Neurodent</span>
         </h1>
 
         <p className="auth-subtitle">
-          Доступ только для сотрудников и пациентов клиники
+          {mode === "login"
+            ? "Доступ только для сотрудников и пациентов клиники"
+            : "Введите телефон, код подтверждения и новый пароль"}
         </p>
 
-        <form className="auth-form" onSubmit={handleLogin} noValidate>
-          <input
-            className="auth-input"
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="Номер телефона *"
-            autoComplete="tel"
-          />
+        {mode === "login" && (
+          <form className="auth-form" onSubmit={handleLogin} noValidate>
+            <input
+              className="auth-input"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="Номер телефона *"
+              autoComplete="tel"
+            />
 
-          <input
-            className="auth-input"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Пароль (+8 символов)"
-            autoComplete="current-password"
-          />
+            <input
+              className="auth-input"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Пароль (+8 символов)"
+              autoComplete="current-password"
+            />
 
-          <button className="auth-link" type="button" style={{ justifySelf: "start", fontSize: 12 }}>
-            Забыли пароль?
-          </button>
+            <button
+              className="auth-link"
+              type="button"
+              style={{ justifySelf: "start", fontSize: 12 }}
+              onClick={() => {
+                setMode("forgot");
+                setMessage("");
+              }}
+            >
+              Забыли пароль?
+            </button>
 
-          <div className="auth-message" role="status" aria-live="polite">{message}</div>
+            <div className="auth-message" role="status" aria-live="polite">{message}</div>
 
-          <button className="auth-submit" type="submit" disabled={loading}>
-            {loading ? "Входим..." : "Войти"}
-          </button>
-        </form>
+            <button className="auth-submit" type="submit" disabled={loading}>
+              {loading ? "Входим..." : "Войти"}
+            </button>
+          </form>
+        )}
+
+        {mode === "forgot" && (
+          <form className="auth-form" onSubmit={handleRequestReset} noValidate>
+            <input
+              className="auth-input"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="Номер телефона *"
+              autoComplete="tel"
+            />
+
+            <button
+              className="auth-link"
+              type="button"
+              style={{ justifySelf: "start", fontSize: 12 }}
+              onClick={() => {
+                setMode("login");
+                setMessage("");
+              }}
+            >
+              Вернуться ко входу
+            </button>
+
+            <div className="auth-message" role="status" aria-live="polite">{message}</div>
+
+            <button className="auth-submit" type="submit" disabled={loading}>
+              {loading ? "Отправляем..." : "Отправить код"}
+            </button>
+          </form>
+        )}
+
+        {mode === "reset" && (
+          <form className="auth-form" onSubmit={handleResetPassword} noValidate>
+            <input
+              className="auth-input"
+              type="text"
+              value={resetToken}
+              onChange={(e) => setResetToken(e.target.value)}
+              placeholder="Код подтверждения"
+              autoComplete="one-time-code"
+            />
+
+            <input
+              className="auth-input"
+              type="password"
+              value={nextPassword}
+              onChange={(e) => setNextPassword(e.target.value)}
+              placeholder="Новый пароль"
+              autoComplete="new-password"
+            />
+
+            <button
+              className="auth-link"
+              type="button"
+              style={{ justifySelf: "start", fontSize: 12 }}
+              onClick={() => {
+                setMode("forgot");
+                setMessage("");
+              }}
+            >
+              Отправить код повторно
+            </button>
+
+            <div className="auth-message" role="status" aria-live="polite">{message}</div>
+
+            <button className="auth-submit" type="submit" disabled={loading}>
+              {loading ? "Сохраняем..." : "Сменить пароль"}
+            </button>
+          </form>
+        )}
 
         <p className="auth-demo">
           Demo password: <code>1234</code>, <code>admin</code>, <code>doctor</code>, <code>patient</code>

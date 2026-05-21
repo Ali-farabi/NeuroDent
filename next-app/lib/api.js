@@ -37,10 +37,19 @@ async function request(path, options = {}) {
   }
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!response.ok) {
-    throw new Error(data?.error || data?.message || "Ошибка backend-запроса");
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
   }
+  if (!response.ok) {
+    const fallback = text?.startsWith("<!DOCTYPE")
+      ? "Backend вернул HTML-ошибку. Проверьте терминал Next.js."
+      : text;
+    throw new Error(data?.error || data?.message || fallback || "Ошибка backend-запроса");
+  }
+  if (text && data === null) throw new Error("Backend вернул некорректный JSON");
   return data;
 }
 
@@ -99,6 +108,27 @@ export async function logout() {
   }
 }
 
+export async function changePassword(currentPassword, nextPassword) {
+  return request("/auth/change-password", {
+    method: "POST",
+    body: { currentPassword, nextPassword },
+  });
+}
+
+export async function requestPasswordReset(phone) {
+  return request("/auth/request-password-reset", {
+    method: "POST",
+    body: { phone },
+  });
+}
+
+export async function resetPassword(token, nextPassword) {
+  return request("/auth/reset-password", {
+    method: "POST",
+    body: { token, nextPassword },
+  });
+}
+
 export async function searchPatients(query = "") {
   return request(withQuery("/patients", { q: query }));
 }
@@ -121,6 +151,19 @@ export async function updatePatient(id, patch) {
   });
 }
 
+export async function sendPatientReminder(patientId, message, channel = "whatsapp") {
+  return request(`/patients/${encodeURIComponent(patientId)}/reminders`, {
+    method: "POST",
+    body: { message, channel },
+  });
+}
+
+export async function createPatientProtocolDocument(patientId) {
+  return request(`/patients/${encodeURIComponent(patientId)}/documents/protocol`, {
+    method: "POST",
+  });
+}
+
 export async function getPatientVisits(patientId) {
   return getVisitsByPatient(patientId);
 }
@@ -131,6 +174,10 @@ export async function getPatientPayments(patientId) {
 
 export async function getPaymentsByDate(date) {
   return request(withQuery("/payments", { date }));
+}
+
+export async function getDebtors(query = "") {
+  return request(withQuery("/debtors", { q: query }));
 }
 
 export async function exportPaymentsCsv(date) {
@@ -162,6 +209,17 @@ export async function updateInventoryQuantity(id, delta) {
   });
 }
 
+export async function getStockMovements(filters = {}) {
+  return request(withQuery("/stock-movements", filters));
+}
+
+export async function createStockMovement(data) {
+  return request("/stock-movements", {
+    method: "POST",
+    body: data,
+  });
+}
+
 export async function getDoctors() {
   return request("/doctors");
 }
@@ -179,6 +237,14 @@ export async function updateAppointmentStatus(apptId, newStatus) {
 
 export async function getVisitsByPatient(patientId) {
   return request(withQuery("/visits", { patientId }));
+}
+
+export async function getVisitMaterials(visitId) {
+  return request(`/visits/${encodeURIComponent(visitId)}/materials`);
+}
+
+export async function getVisitServices(visitId) {
+  return request(`/visits/${encodeURIComponent(visitId)}/services`);
 }
 
 export async function getActiveAppointmentByPatient(patientId) {
@@ -216,6 +282,29 @@ export async function getPeriodReport(dateFrom, dateTo) {
 
 export async function getBusinessAnalytics(dateFrom, dateTo) {
   return request(withQuery("/analytics/business", { dateFrom, dateTo }));
+}
+
+export async function getNotifications(filters = {}) {
+  return request(withQuery("/notifications", filters));
+}
+
+export async function generateNotifications() {
+  return request("/notifications/generate", { method: "POST" });
+}
+
+export async function markNotificationRead(id, isRead = true) {
+  return request(`/notifications/${encodeURIComponent(id)}/read`, {
+    method: "PATCH",
+    body: { isRead },
+  });
+}
+
+export async function getAuditLogs(filters = {}) {
+  return request(withQuery("/audit-logs", filters));
+}
+
+export async function exportAuditLogsCsv(filters = {}) {
+  return requestText(withQuery("/audit-logs/export", filters));
 }
 
 export async function getAllVisits(filters = {}) {
@@ -272,6 +361,34 @@ export async function savePatientToothChart(patientId, chart) {
   });
 }
 
+export async function getFiles(filters = {}) {
+  return request(withQuery("/files", filters));
+}
+
+export async function uploadFile(data) {
+  return request("/files", {
+    method: "POST",
+    body: data,
+  });
+}
+
+export async function deleteFile(id) {
+  return request(`/files/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export function getFileDownloadUrl(id) {
+  return `${API_BASE}/files/${encodeURIComponent(id)}/download`;
+}
+
+export async function signDocument(id, data = {}) {
+  return request(`/documents/${encodeURIComponent(id)}/sign`, {
+    method: "POST",
+    body: data,
+  });
+}
+
 export async function getIcd10Reference(query = "") {
   return request(withQuery("/reference/icd10", { q: query }));
 }
@@ -294,6 +411,24 @@ export async function getConversations(filters = {}) {
   return request(withQuery("/conversations", filters));
 }
 
+export async function createConversation(data = {}) {
+  return request("/conversations", {
+    method: "POST",
+    body: data,
+  });
+}
+
+export async function getConversation(id) {
+  return request(`/conversations/${encodeURIComponent(id)}`);
+}
+
+export async function updateConversationStatus(id, status) {
+  return request(`/conversations/${encodeURIComponent(id)}/status`, {
+    method: "PATCH",
+    body: { status },
+  });
+}
+
 export async function getConversationMessages(id) {
   return request(`/conversations/${encodeURIComponent(id)}/messages`);
 }
@@ -310,4 +445,106 @@ export async function createConversationAiDraft(id, body = {}) {
     method: "POST",
     body,
   });
+}
+
+export async function getPriceItems(query = "", activeOnly = false) {
+  return request(withQuery("/price-items", { q: query, activeOnly: activeOnly ? "true" : "" }));
+}
+
+export async function createPriceItem(data) {
+  return request("/price-items", {
+    method: "POST",
+    body: data,
+  });
+}
+
+export async function updatePriceItem(id, patch) {
+  return request(`/price-items/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: patch,
+  });
+}
+
+export async function setPriceItemActive(id, isActive) {
+  return request(`/price-items/${encodeURIComponent(id)}/active`, {
+    method: "PATCH",
+    body: { isActive },
+  });
+}
+
+export async function getInvoices(filters = {}) {
+  return request(withQuery("/invoices", filters));
+}
+
+export async function createInvoice(data) {
+  return request("/invoices", {
+    method: "POST",
+    body: data,
+  });
+}
+
+export async function getInvoice(id) {
+  return request(`/invoices/${encodeURIComponent(id)}`);
+}
+
+export async function sendInvoiceEmail(id, data = {}) {
+  return request(`/invoices/${encodeURIComponent(id)}/send`, {
+    method: "POST",
+    body: data,
+  });
+}
+
+export async function payInvoice(id, data = {}) {
+  return request(`/invoices/${encodeURIComponent(id)}/pay`, {
+    method: "POST",
+    body: data,
+  });
+}
+
+export async function getSystemStatus() {
+  return request("/admin/system");
+}
+
+export async function getAdminIntegrations() {
+  return request("/admin/integrations");
+}
+
+export async function sendAdminTestEmail(data) {
+  return request("/admin/email/test", {
+    method: "POST",
+    body: data,
+  });
+}
+
+export async function getAdminSessions(limit = 200) {
+  return request(withQuery("/admin/sessions", { limit }));
+}
+
+export async function exportSystemData() {
+  return request("/admin/export");
+}
+
+export async function cleanupSystemMaintenance(data = {}) {
+  return request("/admin/maintenance/cleanup", {
+    method: "POST",
+    body: data,
+  });
+}
+
+export async function getDatabaseBackups() {
+  return request("/admin/backups");
+}
+
+export async function createDatabaseBackup() {
+  return request("/admin/backups", { method: "POST" });
+}
+
+export async function deleteDatabaseBackup(fileName) {
+  return request(`/admin/backups/${encodeURIComponent(fileName)}`, {
+    method: "DELETE",
+  });
+}
+
+export function getDatabaseBackupDownloadUrl(fileName) {
+  return `${API_BASE}/admin/backups/${encodeURIComponent(fileName)}/download`;
 }

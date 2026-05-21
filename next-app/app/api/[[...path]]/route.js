@@ -127,6 +127,44 @@ function assertPatientAccess(user, patientId) {
   }
 }
 
+function doctorIdForUser(user) {
+  return api.getDoctorIdForUser(user);
+}
+
+function assertDoctorAccess(user, doctorId) {
+  if (user?.role !== "doctor") return;
+  const ownDoctorId = doctorIdForUser(user);
+  if (!ownDoctorId || String(doctorId || "") !== ownDoctorId) {
+    throw forbidden("Врач может работать только со своим расписанием");
+  }
+}
+
+function assertDoctorAppointmentAccess(user, appointmentId) {
+  if (user?.role !== "doctor") return;
+  const appointment = api.getAppointmentById(appointmentId);
+  if (!appointment) return;
+  assertDoctorAccess(user, appointment.doctorId);
+}
+
+function assertDoctorPatientAccess(user, patientId) {
+  if (user?.role !== "doctor") return;
+  const ownDoctorId = doctorIdForUser(user);
+  if (!ownDoctorId || !api.patientBelongsToDoctor(patientId, ownDoctorId)) {
+    throw forbidden("Врач может смотреть только своих пациентов");
+  }
+}
+
+async function assertDoctorConversationAccess(user, conversationId) {
+  if (user?.role !== "doctor") return;
+  const conversation = await api.getConversation(conversationId);
+  assertDoctorPatientAccess(user, conversation.patientId);
+}
+
+function assertUserPatientAccess(user, patientId) {
+  assertPatientAccess(user, patientId);
+  assertDoctorPatientAccess(user, patientId);
+}
+
 function assertRecordPatientAccess(user, record) {
   if (user?.role !== "patient") return;
   assertPatientAccess(user, record?.patientId);
@@ -330,18 +368,29 @@ async function handleApi(request) {
   }
 
   if (method === "GET" && pathname === "/api/doctors") {
-    await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
-    return json(await api.getDoctors());
+    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
+    const doctors = await api.getDoctors();
+    if (user.role === "doctor") {
+      const ownDoctorId = doctorIdForUser(user);
+      return json(doctors.filter((doctor) => doctor.id === ownDoctorId));
+    }
+    return json(doctors);
   }
 
   if (method === "GET" && pathname === "/api/schedule") {
-    await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
-    return json(await api.getSchedule(searchParams.get("doctorId"), searchParams.get("date")));
+    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    const requestedDoctorId = searchParams.get("doctorId");
+    const doctorId = user.role === "doctor" ? doctorIdForUser(user) : requestedDoctorId;
+    assertDoctorAccess(user, doctorId);
+    return json(await api.getSchedule(doctorId, searchParams.get("date")));
   }
 
   if (method === "POST" && pathname === "/api/appointments") {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
-    return json(await api.createAppointment(await readJsonBody(request), { actorUserId: user.id }), 201);
+    const body = await readJsonBody(request);
+    if (user.role === "doctor") body.doctorId = doctorIdForUser(user);
+    assertDoctorAccess(user, body.doctorId);
+    return json(await api.createAppointment(body, { actorUserId: user.id }), 201);
   }
 
   if (method === "GET" && pathname === "/api/appointments/active") {
@@ -359,8 +408,9 @@ async function handleApi(request) {
   }
 
   if (method === "GET" && pathname === "/api/patients") {
-    await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
-    return json(await api.searchPatients(searchParams.get("q") || ""));
+    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    const doctorId = user.role === "doctor" ? doctorIdForUser(user) : "";
+    return json(await api.searchPatients(searchParams.get("q") || "", { doctorId }));
   }
 
   if (method === "POST" && pathname === "/api/patients") {
@@ -371,47 +421,49 @@ async function handleApi(request) {
   const patientProtocolParams = routeParams(pathname, "/api/patients/:id/protocol");
   if (method === "GET" && patientProtocolParams) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
-    assertPatientAccess(user, patientProtocolParams.id);
+    assertUserPatientAccess(user, patientProtocolParams.id);
     return text(await api.getPatientProtocol(patientProtocolParams.id));
   }
 
   const patientMedicalCardParams = routeParams(pathname, "/api/patients/:id/medical-card");
   if (method === "GET" && patientMedicalCardParams) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
-    assertPatientAccess(user, patientMedicalCardParams.id);
+    assertUserPatientAccess(user, patientMedicalCardParams.id);
     return json(await api.getPatientMedicalCard(patientMedicalCardParams.id));
   }
 
   const patientPlanParams = routeParams(pathname, "/api/patients/:id/treatment-plan");
   if (method === "GET" && patientPlanParams) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
-    assertPatientAccess(user, patientPlanParams.id);
+    assertUserPatientAccess(user, patientPlanParams.id);
     return json(await api.getPatientTreatmentPlan(patientPlanParams.id));
   }
 
   const patientAiContextParams = routeParams(pathname, "/api/patients/:id/ai-context");
   if (method === "GET" && patientAiContextParams) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
-    assertPatientAccess(user, patientAiContextParams.id);
+    assertUserPatientAccess(user, patientAiContextParams.id);
     return json(await api.getPatientAiContext(patientAiContextParams.id));
   }
 
   const patientToothChartParams = routeParams(pathname, "/api/patients/:id/tooth-chart");
   if (method === "GET" && patientToothChartParams) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
-    assertPatientAccess(user, patientToothChartParams.id);
+    assertUserPatientAccess(user, patientToothChartParams.id);
     const context = await api.getPatientAiContext(patientToothChartParams.id);
     return json(context.toothChart);
   }
 
   if (method === "PUT" && patientToothChartParams) {
     const user = await requireRole(request, ["owner", "doctor", "assistant"]);
+    assertDoctorPatientAccess(user, patientToothChartParams.id);
     return json(await api.savePatientToothChart(patientToothChartParams.id, await readJsonBody(request), { actorUserId: user.id }));
   }
 
   const patientReminderParams = routeParams(pathname, "/api/patients/:id/reminders");
   if (method === "POST" && patientReminderParams) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    assertDoctorPatientAccess(user, patientReminderParams.id);
     const body = await readJsonBody(request);
     return json(await api.sendPatientReminder(patientReminderParams.id, body.message, { actorUserId: user.id, channel: body.channel }), 201);
   }
@@ -419,13 +471,14 @@ async function handleApi(request) {
   const patientDocumentParams = routeParams(pathname, "/api/patients/:id/documents/protocol");
   if (method === "POST" && patientDocumentParams) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    assertDoctorPatientAccess(user, patientDocumentParams.id);
     return json(await api.createPatientProtocolDocument(patientDocumentParams.id, { actorUserId: user.id }), 201);
   }
 
   const patientParams = routeParams(pathname, "/api/patients/:id");
   if (method === "GET" && patientParams) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
-    assertPatientAccess(user, patientParams.id);
+    assertUserPatientAccess(user, patientParams.id);
     return json(await api.getPatientById(patientParams.id));
   }
   if (method === "PUT" && patientParams) {
@@ -436,20 +489,25 @@ async function handleApi(request) {
   if (method === "POST" && pathname === "/api/visits/start") {
     const user = await requireRole(request, ["owner", "doctor", "assistant"]);
     const body = await readJsonBody(request);
+    assertDoctorAppointmentAccess(user, body.appointmentId);
     return json(await api.startVisit(body.appointmentId, { actorUserId: user.id }), 201);
   }
 
   if (method === "POST" && pathname === "/api/visits/finish") {
     const user = await requireRole(request, ["owner", "doctor", "assistant"]);
     const body = await readJsonBody(request);
+    assertDoctorAppointmentAccess(user, body.appointmentId);
     return json(await api.finishVisit(body.appointmentId, body.visitData, { actorUserId: user.id }));
   }
 
   if (method === "GET" && pathname === "/api/visits/all") {
-    await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    const requestedDoctorId = searchParams.get("doctorId") || "";
+    const doctorId = user.role === "doctor" ? doctorIdForUser(user) : requestedDoctorId;
+    assertDoctorAccess(user, doctorId);
     return json(await api.getAllVisits({
       query: searchParams.get("q") || "",
-      doctorId: searchParams.get("doctorId") || "",
+      doctorId,
       from: searchParams.get("from") || searchParams.get("dateFrom") || "",
       to: searchParams.get("to") || searchParams.get("dateTo") || "",
     }));
@@ -458,8 +516,9 @@ async function handleApi(request) {
   if (method === "GET" && pathname === "/api/visits") {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
     const patientId = scopedPatientId(user, searchParams.get("patientId"));
-    assertPatientAccess(user, patientId);
-    return json(await api.getVisitsByPatient(patientId));
+    assertUserPatientAccess(user, patientId);
+    const doctorId = user.role === "doctor" ? doctorIdForUser(user) : "";
+    return json(await api.getVisitsByPatient(patientId, { doctorId }));
   }
 
   const visitMaterialsParams = routeParams(pathname, "/api/visits/:id/materials");
@@ -578,24 +637,29 @@ async function handleApi(request) {
   }
 
   if (method === "GET" && pathname === "/api/conversations") {
-    await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    const doctorId = user.role === "doctor" ? doctorIdForUser(user) : "";
     return json(await api.getConversations({
       query: searchParams.get("q") || "",
       channel: searchParams.get("channel") || "",
       status: searchParams.get("status") || "",
       patientId: searchParams.get("patientId") || "",
+      doctorId,
       limit: Number(searchParams.get("limit") || 100),
     }));
   }
 
   if (method === "POST" && pathname === "/api/conversations") {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
-    return json(await api.createConversation(await readJsonBody(request), { actorUserId: user.id }), 201);
+    const body = await readJsonBody(request);
+    assertDoctorPatientAccess(user, body.patientId);
+    return json(await api.createConversation(body, { actorUserId: user.id }), 201);
   }
 
   const conversationMessagesParams = routeParams(pathname, "/api/conversations/:id/messages");
   if (method === "GET" && conversationMessagesParams) {
-    await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    await assertDoctorConversationAccess(user, conversationMessagesParams.id);
     return json(await api.getConversationMessages(conversationMessagesParams.id, {
       limit: Number(searchParams.get("limit") || 100),
     }));
@@ -603,25 +667,29 @@ async function handleApi(request) {
 
   if (method === "POST" && conversationMessagesParams) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    await assertDoctorConversationAccess(user, conversationMessagesParams.id);
     return json(await api.sendConversationMessage(conversationMessagesParams.id, await readJsonBody(request), { actorUserId: user.id }), 201);
   }
 
   const conversationDraftParams = routeParams(pathname, "/api/conversations/:id/ai-draft");
   if (method === "POST" && conversationDraftParams) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    await assertDoctorConversationAccess(user, conversationDraftParams.id);
     return json(await api.createConversationAiDraft(conversationDraftParams.id, await readJsonBody(request), { actorUserId: user.id }), 201);
   }
 
   const conversationStatusParams = routeParams(pathname, "/api/conversations/:id/status");
   if (method === "PATCH" && conversationStatusParams) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    await assertDoctorConversationAccess(user, conversationStatusParams.id);
     const body = await readJsonBody(request);
     return json(await api.updateConversationStatus(conversationStatusParams.id, body.status, { actorUserId: user.id }));
   }
 
   const conversationParams = routeParams(pathname, "/api/conversations/:id");
   if (method === "GET" && conversationParams) {
-    await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    await assertDoctorConversationAccess(user, conversationParams.id);
     return json(await api.getConversation(conversationParams.id));
   }
 
