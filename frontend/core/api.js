@@ -15,6 +15,7 @@ function getApiBase() {
 }
 
 const API_BASE = getApiBase();
+let authToken = "";
 
 function withQuery(path, params = {}) {
   const query = new URLSearchParams();
@@ -30,7 +31,8 @@ function withQuery(path, params = {}) {
 async function request(path, options = {}) {
   const { method = "GET", body } = options;
   const headers = {};
-  const fetchOptions = { method, headers };
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  const fetchOptions = { method, headers, credentials: "same-origin" };
 
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
@@ -57,7 +59,8 @@ async function request(path, options = {}) {
 async function requestText(path, options = {}) {
   const { method = "GET", body } = options;
   const headers = {};
-  const fetchOptions = { method, headers };
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  const fetchOptions = { method, headers, credentials: "same-origin" };
 
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
@@ -88,10 +91,25 @@ async function requestText(path, options = {}) {
 }
 
 export async function login(phone, password) {
-  return request("/auth/login", {
+  const result = await request("/auth/login", {
     method: "POST",
     body: { phone, password },
   });
+  authToken = result.token || "";
+  return result;
+}
+
+export async function getCurrentUser() {
+  const result = await request("/auth/me");
+  return result.user;
+}
+
+export async function logout() {
+  try {
+    await request("/auth/logout", { method: "POST" });
+  } finally {
+    authToken = "";
+  }
 }
 
 export async function getDoctors() {
@@ -185,6 +203,26 @@ export async function getVisitsByPatient(patientId) {
 
 export async function getPatientProtocol(patientId) {
   return requestText(`/patients/${encodeURIComponent(patientId)}/protocol`);
+}
+
+export async function getPatientMedicalCard(patientId) {
+  return request(`/patients/${encodeURIComponent(patientId)}/medical-card`);
+}
+
+export async function getPatientTreatmentPlan(patientId) {
+  return request(`/patients/${encodeURIComponent(patientId)}/treatment-plan`);
+}
+
+export async function getPatientFiles(patientId) {
+  return request(withQuery("/files", { patientId }));
+}
+
+export async function getInvoices(query = {}) {
+  return request(withQuery("/invoices", query));
+}
+
+export function getFileDownloadUrl(fileId) {
+  return `${API_BASE}/files/${encodeURIComponent(fileId)}/download`;
 }
 
 export async function getInventoryItems() {

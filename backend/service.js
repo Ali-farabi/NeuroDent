@@ -153,6 +153,12 @@ function patientAsUser(patient, phone = "") {
   };
 }
 
+function verifyPatientPassword(patient, password) {
+  const rawPassword = String(password || "");
+  const portalPassword = String(patient?.portalPassword || "patient");
+  return rawPassword === portalPassword;
+}
+
 function hashPassword(password, salt = randomBytes(16).toString("hex")) {
   const hash = scryptSync(String(password), salt, 64).toString("hex");
   return { passwordHash: hash, passwordSalt: salt };
@@ -778,6 +784,11 @@ export async function login(phone, password) {
     if (verifyPassword(user, rawPassword)) {
       return withSession("user", publicUser(user));
     }
+  }
+
+  const patient = (db.patients || []).find((item) => cleanPhone(item.phone) === phoneDigits);
+  if (patient && verifyPatientPassword(patient, rawPassword)) {
+    return withSession("patient", patientAsUser(patient));
   }
 
   throw new Error("Неверный телефон или пароль");
