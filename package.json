@@ -8,8 +8,11 @@
     "dev": "npm --prefix next-app run dev",
     "dev:next": "npm --prefix next-app run dev",
     "build:next": "npm --prefix next-app run build",
+    "db:postgres:check": "npm --prefix next-app run db:postgres:check",
+    "db:postgres:migrate": "npm --prefix next-app run db:postgres:migrate",
     "reset:dev-passwords": "node --no-warnings next-app/backend/reset-dev-passwords.js",
-    "test:backend": "npm --prefix next-app run test:backend"
+    "test:backend": "npm --prefix next-app run test:backend",
+    "test:postgres": "npm --prefix next-app run test:postgres"
   },
   "engines": {
     "node": ">=22"

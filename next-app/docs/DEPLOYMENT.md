@@ -56,6 +56,7 @@ Minimum required runtime:
 Node.js >= 22
 NODE_ENV=production
 PORT=3000
+NEURODENT_STORAGE_DRIVER=sqlite
 NEURODENT_DATA_DIR=<durable path>
 NEURODENT_ALLOW_EPHEMERAL_STORAGE=false
 NEURODENT_EXPOSE_RESET_TOKEN=false
@@ -105,7 +106,7 @@ NEURODENT_ALLOW_EPHEMERAL_STORAGE=true
 
 That setting is only for demos. It allows readiness to pass even when the database lives on ephemeral storage.
 
-## Next Stage
+## PostgreSQL Preflight
 
 The prepared PostgreSQL schema lives at:
 
@@ -113,4 +114,34 @@ The prepared PostgreSQL schema lives at:
 next-app/backend/postgres/schema.sql
 ```
 
-The next implementation stage is a PostgreSQL/Supabase runtime storage adapter that keeps the existing service-layer API and makes serverless production deployment possible.
+Configure a PostgreSQL or Supabase connection string:
+
+```text
+NEURODENT_DATABASE_URL=postgres://...
+NEURODENT_POSTGRES_SSL=require
+```
+
+For local Docker PostgreSQL, SSL can stay disabled:
+
+```text
+NEURODENT_POSTGRES_SSL=disable
+```
+
+Apply the prepared schema:
+
+```bash
+cd next-app
+npm run db:postgres:migrate
+```
+
+Check connectivity and schema readiness:
+
+```bash
+npm run db:postgres:check
+```
+
+The app also reports PostgreSQL preflight state in `/api/capabilities` and the admin system status.
+
+## Next Stage
+
+The next implementation stage is the PostgreSQL/Supabase runtime storage adapter that keeps the existing service-layer API and makes serverless production deployment possible. Until that adapter is enabled, keep `NEURODENT_STORAGE_DRIVER=sqlite`.

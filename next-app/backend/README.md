@@ -192,6 +192,16 @@ PostgreSQL schema:
 next-app/backend/postgres/schema.sql
 ```
 
+PostgreSQL preflight:
+
+```bash
+cd next-app
+npm run db:postgres:migrate
+npm run db:postgres:check
+```
+
+These commands apply the prepared schema and verify connection/schema readiness. The main runtime remains SQLite until the PostgreSQL storage adapter is implemented.
+
 ## CI
 
 GitHub Actions workflow:
@@ -200,4 +210,4 @@ GitHub Actions workflow:
 .github/workflows/backend.yml
 ```
 
-The workflow installs Next.js dependencies, checks backend syntax, runs `npm run test:backend`, and builds the Next.js application.
+The workflow installs Next.js dependencies, checks backend syntax, runs backend/Next/PostgreSQL preflight tests, and builds the Next.js application.

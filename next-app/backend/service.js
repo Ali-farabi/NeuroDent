@@ -23,6 +23,7 @@ import {
   sendWhatsApp,
   uploadExternalFile,
 } from "./integrations.js";
+import { checkPostgresConnection } from "./postgres/client.js";
 import {
   checkpointDatabase,
   createAuditLogRecord,
@@ -2688,7 +2689,7 @@ export async function getReadinessStatus() {
   await delay(50);
   const storage = getStorageInfo();
   const hasDatabase = existsSync(storage.file);
-  const ready = hasDatabase && storage.durable;
+  const ready = hasDatabase && storage.durable && !storage.unsupportedRequestedDriver;
   return {
     ok: ready,
     service: "neurodent-backend",
@@ -2703,13 +2704,20 @@ export async function getReadinessStatus() {
 
 export async function getBackendCapabilities() {
   await delay(60);
+  const storage = getStorageInfo();
+  const postgres = await checkPostgresConnection();
   return {
     service: "neurodent-backend",
     storage: {
-      activeDriver: "sqlite",
-      durable: getStorageInfo().durable,
+      activeDriver: storage.driver,
+      requestedDriver: storage.requestedDriver,
+      durable: storage.durable,
       postgresPrepared: true,
-      postgresRuntimeEnabled: false,
+      postgresConfigured: postgres.configured,
+      postgresReachable: postgres.reachable,
+      postgresSchemaReady: postgres.schemaReady,
+      postgresRuntimeEnabled: postgres.runtimeEnabled,
+      postgres,
     },
     ai: {
       mode: "demo-rule-based",
@@ -2770,6 +2778,7 @@ export async function exportSystemData() {
 export async function getSystemStatus() {
   await delay(80);
   const storageInfo = getStorageInfo();
+  const postgres = await checkPostgresConnection();
   const sqlitePath = getSqliteFilePath();
   const sqliteSize = existsSync(sqlitePath) ? statSync(sqlitePath).size : 0;
   return {
@@ -2778,6 +2787,7 @@ export async function getSystemStatus() {
     storage: {
       ...storageInfo,
       size: sqliteSize,
+      postgres,
     },
     counts: {
       doctors: db.doctors.length,

@@ -11,13 +11,17 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
+    "db:postgres:check": "node --no-warnings backend/postgres/check.js",
+    "db:postgres:migrate": "node --no-warnings backend/postgres/migrate.js",
     "reset:dev-passwords": "node --no-warnings backend/reset-dev-passwords.js",
     "test:backend": "node --no-warnings backend/smoke-test.js",
-    "test:e2e": "node --no-warnings backend/next-smoke-test.js"
+    "test:e2e": "node --no-warnings backend/next-smoke-test.js",
+    "test:postgres": "node --no-warnings backend/postgres/check.js --skip-if-missing"
   },
   "dependencies": {
     "lucide-react": "^1.8.0",
     "next": "16.2.6",
+    "pg": "^8.21.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },

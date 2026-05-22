@@ -35,6 +35,9 @@ jobs:
           node --check next-app/backend/service.js
           node --check next-app/backend/storage.js
           node --check next-app/backend/smoke-test.js
+          node --check next-app/backend/postgres/client.js
+          node --check next-app/backend/postgres/check.js
+          node --check next-app/backend/postgres/migrate.js
 
       - name: Run backend smoke test
         working-directory: next-app
@@ -43,6 +46,10 @@ jobs:
       - name: Run Next.js smoke test
         working-directory: next-app
         run: npm run test:e2e
+
+      - name: Check optional PostgreSQL preflight
+        working-directory: next-app
+        run: npm run test:postgres
 
       - name: Build Next.js app
         working-directory: next-app

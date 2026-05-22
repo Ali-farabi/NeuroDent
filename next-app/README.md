@@ -42,6 +42,7 @@ npm run lint
 npm run build
 npm run test:backend
 npm run test:e2e
+npm run test:postgres
 npm run reset:dev-passwords
 npm audit
 ```
@@ -89,6 +90,13 @@ SQLite is the active runtime storage. PostgreSQL/Supabase persistence is prepare
 Production decision: use Docker/VPS with a durable volume mounted to `next-app/backend/data`, or set `NEURODENT_DATA_DIR` to another durable path.
 
 Vercel/serverless is preview-only until PostgreSQL runtime persistence is implemented. For serverless demos, SQLite may live on an ephemeral filesystem. `/api/ready` reports this as not durable unless `NEURODENT_ALLOW_EPHEMERAL_STORAGE=true` is explicitly set.
+
+PostgreSQL preflight commands:
+
+```bash
+npm run db:postgres:migrate
+npm run db:postgres:check
+```
 
 Deployment guide:
 
