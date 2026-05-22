@@ -3,11 +3,16 @@ import {
   createPatient,
   updatePatient,
   getPatientById,
+  getPatientProtocol,
+  getPatientMedicalCard,
+  getInvoices,
+  getFileDownloadUrl,
 } from "../../core/api.js";
 import { getState, setState } from "../../core/state.js";
 import { openModal, closeModal } from "../../ui/modal.js";
 import {
   renderPatientsPage,
+  renderPatientPortalPage,
   renderLoading,
   renderError,
   renderEmpty,
@@ -18,38 +23,76 @@ import {
 
 let searchTimer = null;
 
+function bindPatientProtocolDownload(patientId) {
+  const downloadBtn = document.getElementById("downloadAiProtocolBtn");
+  if (!downloadBtn) return;
+
+  downloadBtn.addEventListener("click", async () => {
+    const oldText = downloadBtn.textContent;
+    downloadBtn.innerHTML = '<div class="spinner" style="width: 12px; height: 12px; border-width: 2px; border-color: var(--primary); border-right-color: transparent;"></div> Скачивание...';
+    downloadBtn.disabled = true;
+
+    try {
+      const protocolText = await getPatientProtocol(patientId);
+      const blob = new Blob([protocolText], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `AI_Protocol_${patientId}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+
+      downloadBtn.textContent = "Скачано";
+      downloadBtn.style.color = "var(--success)";
+      downloadBtn.style.borderColor = "var(--success)";
+    } catch (err) {
+      alert(err?.message || "Не удалось скачать AI-протокол");
+    } finally {
+      downloadBtn.disabled = false;
+      setTimeout(() => {
+        downloadBtn.textContent = oldText || "Скачать AI-протокол";
+        downloadBtn.style.color = "var(--primary)";
+        downloadBtn.style.borderColor = "var(--primary)";
+      }, 2500);
+    }
+  });
+}
+
 export function mountPatientsPage() {
   const page = document.getElementById("page-content");
-  page.innerHTML = renderPatientsPage();
 
   const { user } = getState();
   if (user?.role === "patient") {
-    // Add logic for patient personal cabinet
-    const downloadBtn = document.getElementById("downloadAiProtocolBtn");
-    if (downloadBtn) {
-      downloadBtn.addEventListener("click", () => {
-        downloadBtn.innerHTML = '<div class="spinner" style="width: 12px; height: 12px; border-width: 2px; border-color: var(--primary); border-right-color: transparent;"></div> Скачивание...';
-        setTimeout(() => {
-          downloadBtn.innerHTML = '✅ Сохранено';
-          downloadBtn.style.color = 'var(--success)';
-          downloadBtn.style.borderColor = 'var(--success)';
-          
-          // Имитация скачивания
-          const link = document.createElement('a');
-          link.href = 'data:text/plain;charset=utf-8,Тестовый AI протокол';
-          link.download = 'AI_Protocol_Damir.pdf';
-          link.click();
-          
-          setTimeout(() => {
-            downloadBtn.innerHTML = '📄 Скачать AI-Протокол (eGov)';
-            downloadBtn.style.color = 'var(--primary)';
-            downloadBtn.style.borderColor = 'var(--primary)';
-          }, 3000);
-        }, 1500);
-      });
+    const patientId = user?.patientId || user?.id;
+    if (!patientId) {
+      page.innerHTML = renderPatientPortalPage({ error: "Не удалось определить пациента для личного кабинета" });
+      return;
     }
+
+    page.innerHTML = renderPatientPortalPage({ loading: true });
+    Promise.all([
+      getPatientMedicalCard(patientId),
+      getInvoices({ patientId }),
+    ])
+      .then(([medicalCard, invoices]) => {
+        page.innerHTML = renderPatientPortalPage({
+          medicalCard,
+          invoices,
+          fileDownloadUrl: getFileDownloadUrl,
+        });
+        bindPatientProtocolDownload(patientId);
+      })
+      .catch((err) => {
+        page.innerHTML = renderPatientPortalPage({
+          error: err?.message || "Не удалось загрузить личную медкарту",
+        });
+      });
     return;
   }
+
+  page.innerHTML = renderPatientsPage();
 
   const searchInput = document.getElementById("patientSearch");
   const createBtn = document.getElementById("createPatientBtn");

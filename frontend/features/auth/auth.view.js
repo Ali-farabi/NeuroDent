@@ -22,12 +22,12 @@ export function renderAuthPage() {
             <div id="loginError" class="auth-error" aria-live="polite"></div>
             <button id="loginBtn" class="btn" type="submit" style="margin-top: 8px;">Войти</button>
             <div class="auth-hint" style="line-height: 1.6; margin-top: 16px;">
-              <b>Демо-пароли для проверки ролей:</b><br>
-              • <code>1234</code> — Владелец (доступ ко всему)<br>
-              • <code>admin</code> — Админ (Расписание, Пациенты, Касса)<br>
-              • <code>doctor</code> — Врач (AI, Расписание, Пациенты)<br>
-              • <code>assistant</code> — Ассистент (AI, Расписание, Пациенты)<br>
-              • <code>patient</code> — Пациент (только «Моя медкарта»)
+              <b>Демо-доступ:</b><br>
+              <code>87001234567 / 1234</code> — владелец<br>
+              <code>87007654321 / admin</code> — админ<br>
+              <code>87005551234 / doctor</code> — врач<br>
+              <code>87009871234 / assistant</code> — ассистент<br>
+              <code>87001112233 / patient</code> — пациент
             </div>
           </form>
         </div>
