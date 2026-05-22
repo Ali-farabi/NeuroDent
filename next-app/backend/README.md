@@ -174,6 +174,12 @@ docker compose up --build
 
 The container runs the Next.js application with the Node.js backend runtime. SQLite data is stored in the `neurodent-data` Docker volume and is not lost when the container restarts.
 
+This is the current production path. Vercel/serverless deployments are preview-only until the PostgreSQL runtime adapter is implemented. Full deployment notes are in:
+
+```text
+next-app/docs/DEPLOYMENT.md
+```
+
 Optional PostgreSQL service for production migration:
 
 ```bash

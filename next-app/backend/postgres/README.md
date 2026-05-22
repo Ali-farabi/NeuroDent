@@ -9,6 +9,8 @@ next-app/backend/postgres/schema.sql
 docker-compose.yml
 ```
 
+`docker-compose.yml` is at the repository root.
+
 Start the PostgreSQL service:
 
 ```bash
@@ -27,4 +29,4 @@ Production database URL:
 NEURODENT_DATABASE_URL=postgres://neurodent:neurodent@postgres:5432/neurodent
 ```
 
-The next implementation step is replacing the current SQLite storage adapter with a PostgreSQL adapter that keeps the same service-layer API.
+PostgreSQL runtime is not enabled yet. The next implementation step is replacing the current SQLite storage adapter with a PostgreSQL adapter that keeps the same service-layer API.

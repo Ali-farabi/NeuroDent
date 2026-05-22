@@ -84,11 +84,17 @@ Required runtime:
 Node.js >= 22
 ```
 
-SQLite is the default local storage. Production PostgreSQL/Supabase persistence is prepared as the next stage.
+SQLite is the active runtime storage. PostgreSQL/Supabase persistence is prepared as the next stage, but the runtime adapter is not enabled yet.
 
-For Docker production, mount a persistent volume to `next-app/backend/data` or set `NEURODENT_DATA_DIR` to a persistent path.
+Production decision: use Docker/VPS with a durable volume mounted to `next-app/backend/data`, or set `NEURODENT_DATA_DIR` to another durable path.
 
-For serverless demos, SQLite may live on an ephemeral filesystem. `/api/ready` reports this as not durable unless `NEURODENT_ALLOW_EPHEMERAL_STORAGE=true` is explicitly set.
+Vercel/serverless is preview-only until PostgreSQL runtime persistence is implemented. For serverless demos, SQLite may live on an ephemeral filesystem. `/api/ready` reports this as not durable unless `NEURODENT_ALLOW_EPHEMERAL_STORAGE=true` is explicitly set.
+
+Deployment guide:
+
+```text
+next-app/docs/DEPLOYMENT.md
+```
 
 ## Integrations
 
