@@ -33,9 +33,251 @@ if (typeof window !== "undefined") {
   window.switchPatientTab = switchPatientTab;
 }
 
+function formatMoney(value) {
+  const amount = Number(value || 0);
+  return `${amount.toLocaleString("ru-RU")} ₸`;
+}
+
+function formatDate(date) {
+  if (!date) return "—";
+  const parsed = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return String(date);
+  return parsed.toLocaleDateString("ru-RU", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function formatDateTime(value) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value).replace("T", " ").slice(0, 16);
+  return parsed.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function statusLabel(status) {
+  return {
+    scheduled: "Запланировано",
+    arrived: "Пациент в клинике",
+    completed: "Завершено",
+    cancelled: "Отменено",
+    open: "К оплате",
+    partial: "Частично оплачено",
+    paid: "Оплачено",
+    planned: "Запланировано",
+    done: "Выполнено",
+  }[status] || status || "—";
+}
+
+function latestUpcomingAppointment(appointments = []) {
+  const now = new Date();
+  return appointments
+    .filter((appt) => ["scheduled", "arrived"].includes(appt.status))
+    .map((appt) => ({ ...appt, ts: new Date(`${appt.date}T${appt.time || "00:00"}`).getTime() }))
+    .filter((appt) => Number.isFinite(appt.ts) && appt.ts >= now.getTime() - 24 * 60 * 60 * 1000)
+    .sort((a, b) => a.ts - b.ts)[0] || null;
+}
+
+function renderPortalStat(label, value, tone = "neutral") {
+  const color =
+    tone === "success" ? "var(--success)" :
+    tone === "danger" ? "var(--danger)" :
+    tone === "primary" ? "var(--primary)" :
+    "var(--text)";
+  return `
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; box-shadow: var(--shadow-sm); min-width: 0;">
+      <div style="font-size: 12px; color: var(--muted); font-weight: 700; text-transform: uppercase; margin-bottom: 8px;">${escapeHtml(label)}</div>
+      <div style="font-size: 22px; font-weight: 800; color: ${color}; overflow-wrap: anywhere;">${escapeHtml(value)}</div>
+    </div>
+  `;
+}
+
+function renderPortalEmpty(text) {
+  return `<div style="padding: 20px; color: var(--muted); background: var(--surface-2); border-radius: 8px; text-align: center;">${escapeHtml(text)}</div>`;
+}
+
+function renderPortalAppointments(appointments = []) {
+  const visible = appointments.slice(0, 4);
+  if (!visible.length) return renderPortalEmpty("Записей пока нет");
+  return visible.map((appt) => `
+    <div style="display: grid; grid-template-columns: minmax(86px, auto) 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border);">
+      <div>
+        <div style="font-weight: 800; color: var(--text);">${escapeHtml(appt.time || "—")}</div>
+        <div style="font-size: 12px; color: var(--muted);">${escapeHtml(formatDate(appt.date))}</div>
+      </div>
+      <div>
+        <div style="font-weight: 700;">${escapeHtml(appt.doctorName || "Врач")}</div>
+        <div style="font-size: 13px; color: var(--muted);">${escapeHtml(statusLabel(appt.status))}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
+function renderPortalTreatmentPlan(plan = []) {
+  if (!plan.length) return renderPortalEmpty("План лечения пока не сформирован");
+  return plan.slice(0, 5).map((item) => `
+    <div style="display: grid; grid-template-columns: 52px 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border);">
+      <div style="font-weight: 800; color: var(--primary);">${escapeHtml(item.toothNumber || "—")}</div>
+      <div>
+        <div style="font-weight: 650;">${escapeHtml(item.text || "План лечения")}</div>
+        <div style="font-size: 12px; color: var(--muted);">${escapeHtml(statusLabel(item.status))}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
+function renderPortalVisits(visits = []) {
+  const finalVisits = visits.filter((visit) => visit.isFinal !== false).slice(0, 5);
+  if (!finalVisits.length) return renderPortalEmpty("Завершенных визитов пока нет");
+  return finalVisits.map((visit) => `
+    <div style="padding: 14px 0; border-bottom: 1px solid var(--border);">
+      <div style="display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 6px;">
+        <div style="font-weight: 800;">${escapeHtml(visit.diagnosis || visit.protocol?.diagnosisText || "Визит")}</div>
+        <div style="font-size: 12px; color: var(--muted);">${escapeHtml(formatDateTime(visit.finishedAt || visit.startedAt))}</div>
+      </div>
+      <div style="font-size: 13px; color: var(--muted); line-height: 1.5;">
+        ${escapeHtml(visit.doctorName || "Врач")} ${visit.toothNumber ? `• зуб ${escapeHtml(visit.toothNumber)}` : ""} ${visit.diagnosisCode ? `• ${escapeHtml(visit.diagnosisCode)}` : ""}
+      </div>
+      ${visit.protocol?.treatment ? `<div style="font-size: 13px; margin-top: 8px; line-height: 1.5;">${escapeHtml(visit.protocol.treatment)}</div>` : ""}
+    </div>
+  `).join("");
+}
+
+function renderPortalInvoices(invoices = []) {
+  if (!invoices.length) return renderPortalEmpty("Счетов пока нет");
+  return invoices.slice(0, 5).map((invoice) => `
+    <div style="display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border);">
+      <div>
+        <div style="font-weight: 750;">Счет от ${escapeHtml(formatDate(invoice.date))}</div>
+        <div style="font-size: 12px; color: var(--muted);">${escapeHtml(statusLabel(invoice.status))} • оплачено ${escapeHtml(formatMoney(invoice.paid))}</div>
+      </div>
+      <div style="font-weight: 800; color: var(--text);">${escapeHtml(formatMoney(invoice.total))}</div>
+    </div>
+  `).join("");
+}
+
+function renderPortalFiles(files = [], fileDownloadUrl) {
+  if (!files.length) return renderPortalEmpty("Документы пока не прикреплены");
+  return files.slice(0, 6).map((file) => `
+    <div style="display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border);">
+      <div style="min-width: 0;">
+        <div style="font-weight: 700; overflow-wrap: anywhere;">${escapeHtml(file.fileName)}</div>
+        <div style="font-size: 12px; color: var(--muted);">${escapeHtml(formatDateTime(file.createdAt))}</div>
+      </div>
+      <a class="btn btn-secondary" style="padding: 6px 10px; font-size: 12px;" href="${escapeAttr(fileDownloadUrl?.(file.id) || "#")}" target="_blank" rel="noreferrer">Скачать</a>
+    </div>
+  `).join("");
+}
+
+export function renderPatientPortalPage({ medicalCard = null, invoices = [], loading = false, error = "", fileDownloadUrl } = {}) {
+  if (loading) {
+    return `
+      <div class="report-container" style="padding: 24px; max-width: 1100px; margin: 0 auto;">
+        <div class="patients-empty">
+          <div class="spinner"></div>
+          <p>Загрузка личной медкарты...</p>
+        </div>
+      </div>
+    `;
+  }
+
+  if (error) {
+    return `
+      <div class="report-container" style="padding: 24px; max-width: 1100px; margin: 0 auto;">
+        ${renderError(error)}
+      </div>
+    `;
+  }
+
+  const patient = medicalCard?.patient || {};
+  const appointments = medicalCard?.appointments || [];
+  const visits = medicalCard?.visits || [];
+  const files = medicalCard?.files || [];
+  const nextAppointment = latestUpcomingAppointment(appointments);
+  const lastVisit = visits[0] || null;
+  const nextAppointmentText = nextAppointment
+    ? `${formatDate(nextAppointment.date)}, ${nextAppointment.time || "—"}`
+    : "Нет активной записи";
+
+  return `
+    <div class="report-container" style="padding: 20px; max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px;">
+      <style>
+        @media (max-width: 860px) {
+          .patient-portal-main-grid { grid-template-columns: 1fr !important; }
+        }
+      </style>
+      <section style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; box-shadow: var(--shadow-sm);">
+        <div style="display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: flex-start;">
+          <div>
+            <div style="font-size: 12px; color: var(--primary); font-weight: 800; text-transform: uppercase; margin-bottom: 6px;">Моя медкарта</div>
+            <h1 style="font-size: 28px; line-height: 1.2; font-weight: 850; margin: 0 0 8px; color: var(--text);">${escapeHtml(patient.name || "Пациент")}</h1>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 14px;">
+              <span>${escapeHtml(patient.phone || "Телефон не указан")}</span>
+              <span>${escapeHtml(patient.birthDate ? `Дата рождения: ${formatDate(patient.birthDate)}` : "Дата рождения не указана")}</span>
+            </div>
+          </div>
+          <div style="min-width: 220px;">
+            <div style="font-size: 12px; color: var(--muted); font-weight: 700; text-transform: uppercase; margin-bottom: 6px;">Ближайший визит</div>
+            <div style="font-size: 18px; font-weight: 800; color: var(--text);">${escapeHtml(nextAppointmentText)}</div>
+            <div style="font-size: 13px; color: var(--muted); margin-top: 4px;">${escapeHtml(nextAppointment?.doctorName || "Запись появится после назначения")}</div>
+          </div>
+        </div>
+      </section>
+
+      <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+        ${renderPortalStat("Оплачено", formatMoney(medicalCard?.totalPaid), "success")}
+        ${renderPortalStat("К оплате", formatMoney(medicalCard?.debt), Number(medicalCard?.debt || 0) > 0 ? "danger" : "neutral")}
+        ${renderPortalStat("Бонусы", formatMoney(medicalCard?.bonuses), "primary")}
+        ${renderPortalStat("Визиты", String(visits.length), "neutral")}
+      </section>
+
+      <section class="patient-portal-main-grid" style="display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 16px;">
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px; box-shadow: var(--shadow-sm); min-width: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px;">
+            <h2 style="font-size: 18px; margin: 0;">История лечения</h2>
+            <button class="btn btn-secondary" id="downloadAiProtocolBtn" type="button" style="padding: 7px 10px; font-size: 12px;">Скачать AI-протокол</button>
+          </div>
+          ${lastVisit ? `<div style="font-size: 13px; color: var(--muted); margin-bottom: 8px;">Последний визит: ${escapeHtml(formatDateTime(lastVisit.finishedAt || lastVisit.startedAt))}</div>` : ""}
+          ${renderPortalVisits(visits)}
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0;">
+          <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px; box-shadow: var(--shadow-sm);">
+            <h2 style="font-size: 18px; margin: 0 0 8px;">План лечения</h2>
+            ${renderPortalTreatmentPlan(medicalCard?.treatmentPlan || [])}
+          </div>
+          <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px; box-shadow: var(--shadow-sm);">
+            <h2 style="font-size: 18px; margin: 0 0 8px;">Записи</h2>
+            ${renderPortalAppointments(appointments)}
+          </div>
+        </div>
+      </section>
+
+      <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px; box-shadow: var(--shadow-sm); min-width: 0;">
+          <h2 style="font-size: 18px; margin: 0 0 8px;">Счета</h2>
+          ${renderPortalInvoices(invoices)}
+        </div>
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px; box-shadow: var(--shadow-sm); min-width: 0;">
+          <h2 style="font-size: 18px; margin: 0 0 8px;">Документы и файлы</h2>
+          ${renderPortalFiles(files, fileDownloadUrl)}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
 export function renderPatientsPage() {
   const state = getState ? getState() : null;
   const userRole = state?.user?.role || "owner";
+  if (userRole === "patient") return renderPatientPortalPage({ loading: true });
   
   if (userRole === "patient") {
     // --------------------------------------------------

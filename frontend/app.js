@@ -7,6 +7,7 @@ import { mountVisitPage } from "./features/visits/visits.controller.js";
 import { mountPaymentsPage } from "./features/payments/payments.controller.js";
 import { mountReportPage } from "./features/report/report.controller.js";
 import { mountUsersPage } from "./features/users/users.controller.js";
+import { getCurrentUser, logout } from "./core/api.js";
 
 import { mountAiPage } from "./features/ai/ai.controller.js";
 
@@ -286,8 +287,12 @@ function requireAuthAndRole(route) {
 function renderLogin() {
   app.innerHTML = renderAuthPage();
   mountAuthPage({
-    onSuccess: () => {
-      window.location.hash = "#report";
+    onSuccess: (user) => {
+      const role = user?.role || "owner";
+      if (role === "patient") window.location.hash = "#patients";
+      else if (role === "admin") window.location.hash = "#schedule";
+      else if (role === "doctor" || role === "assistant") window.location.hash = "#ai";
+      else window.location.hash = "#report";
     },
   });
 }
@@ -348,7 +353,8 @@ function renderProtected(route) {
   mountGlobalSearch();
   mountNotifications();
 
-  document.getElementById("logoutBtn")?.addEventListener("click", () => {
+  document.getElementById("logoutBtn")?.addEventListener("click", async () => {
+    await logout().catch(() => {});
     setState({ user: null });
     window.location.hash = "#login";
   });
@@ -385,5 +391,15 @@ function renderRoute() {
 }
 
 window.addEventListener("hashchange", renderRoute);
-if (!window.location.hash) window.location.hash = "#login";
-renderRoute();
+
+async function boot() {
+  try {
+    const user = await getCurrentUser();
+    if (user) setState({ user });
+  } catch {}
+
+  if (!window.location.hash) window.location.hash = "#login";
+  renderRoute();
+}
+
+boot();
