@@ -176,6 +176,16 @@ export default function AdminSystemPage() {
                 </span>
               </div>
               <div className="mt-2 text-xs text-slate-500">{item.url || item.mode || item.reason || "No provider configured"}</div>
+              {item.missingRequiredEnv?.length > 0 && (
+                <div className="mt-3 rounded-md bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-700">
+                  Missing: {item.missingRequiredEnv.join(", ")}
+                </div>
+              )}
+              {item.requiredEnv?.length > 0 && (
+                <div className="mt-2 text-[11px] text-slate-400">
+                  Required: {item.requiredEnv.map((env) => env.name).join(", ")}
+                </div>
+              )}
             </div>
           ))}
         </div>

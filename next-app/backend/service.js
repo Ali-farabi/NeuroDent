@@ -38,9 +38,11 @@ import {
   getFileRecord,
   getConversationRecord,
   getInvoiceRecord,
+  getNotificationRecord,
   getPriceItemRecord,
   getSessionRecord,
   getSqliteFilePath,
+  getStorageInfo,
   initializeStore,
   listAuditLogRecords,
   listConversationMessageRecords,
@@ -95,11 +97,9 @@ const SESSION_TTL_MS = Number(process.env.NEURODENT_SESSION_TTL_MS || 7 * 24 * 6
 const PASSWORD_RESET_TTL_MS = Number(process.env.NEURODENT_PASSWORD_RESET_TTL_MS || 30 * 60 * 1000);
 const EXPOSE_RESET_TOKEN = process.env.NEURODENT_EXPOSE_RESET_TOKEN !== "false" && process.env.NODE_ENV !== "production";
 
-function delay(_ms = 0) {
+function delay() {
   return Promise.resolve();
 }
-
-function maybeFail() {}
 
 // Remove redundant clone function since we defined it at top
 // function clone(data) {
@@ -201,7 +201,9 @@ function resetSessionToken(token) {
 
 function publicUser(user) {
   if (!user) return null;
-  const { passwordHash, passwordSalt, ...safeUser } = user;
+  const safeUser = { ...user };
+  delete safeUser.passwordHash;
+  delete safeUser.passwordSalt;
   return safeUser;
 }
 
@@ -314,16 +316,6 @@ function safeFileName(name, fallback = "file") {
   return raw.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").slice(0, 140);
 }
 
-function extensionFromMime(mimeType) {
-  const type = String(mimeType || "").toLowerCase();
-  if (type.includes("png")) return ".png";
-  if (type.includes("jpeg") || type.includes("jpg")) return ".jpg";
-  if (type.includes("pdf")) return ".pdf";
-  if (type.includes("csv")) return ".csv";
-  if (type.includes("json")) return ".json";
-  return ".txt";
-}
-
 function writeStoredFile(directory, fileName, bytes) {
   mkdirSync(directory, { recursive: true });
   const id = genId("file");
@@ -343,6 +335,13 @@ function latestFinalVisit(patientId) {
 
 function getVisit(visitId) {
   return db.visits.find((visit) => visit.id === visitId) || null;
+}
+
+export async function getVisitById(visitId) {
+  await delay();
+  const visit = getVisit(visitId);
+  if (!visit) throw new Error("Визит не найден");
+  return clone(visit);
 }
 
 function serviceItemsForVisit(visit) {
@@ -1895,7 +1894,7 @@ export async function getPatientMedicalCard(patientId) {
     debt: Math.max(0, totalDue - totalPaid),
     bonuses: Math.floor(totalPaid * 0.03),
     treatmentPlan: treatmentPlanForPatient(patientId),
-    files: listFileRecords({ patientId }).map(({ storagePath, ...file }) => file),
+    files: listFileRecords({ patientId }).map(redactFileRecord),
   });
 }
 
@@ -1954,14 +1953,20 @@ export async function uploadFile(data, options = {}) {
     extra: { kind: data?.kind || "upload", cloudStorage: externalStorage, externalStorage },
   });
   audit("create", "file", record.id, { patientId, visitId, fileName: record.fileName }, actorIdFromOptions(options));
-  const { storagePath, ...safeRecord } = record;
-  return clone(safeRecord);
+  return clone(redactFileRecord(record));
 }
 
 export async function getFiles({ patientId = "", visitId = "" } = {}) {
   await delay(100);
-  const files = listFileRecords({ patientId, visitId }).map(({ storagePath, ...file }) => file);
+  const files = listFileRecords({ patientId, visitId }).map(redactFileRecord);
   return clone(files);
+}
+
+export async function getFileMetadata(fileId) {
+  await delay(50);
+  const file = getFileRecord(fileId);
+  if (!file) throw new Error("Файл не найден");
+  return clone(redactFileRecord(file));
 }
 
 export async function getFileDownload(fileId) {
@@ -2025,8 +2030,7 @@ export async function createPatientProtocolDocument(patientId, options = {}) {
     extra: { kind: "ai-protocol", patientName: patient?.name || "", cloudStorage, externalStorage: cloudStorage },
   });
   audit("create", "document", record.id, { patientId, type: "ai-protocol" }, actorIdFromOptions(options));
-  const { storagePath, ...safeRecord } = record;
-  return clone(safeRecord);
+  return clone(redactFileRecord(record));
 }
 
 export async function signDocument(fileId, data = {}, options = {}) {
@@ -2076,6 +2080,13 @@ export async function signDocument(fileId, data = {}, options = {}) {
 export async function getNotifications({ role = "", unreadOnly = false } = {}) {
   await delay(100);
   return clone(listNotificationRecords({ role, unreadOnly }));
+}
+
+export async function getNotificationById(id) {
+  await delay(50);
+  const notification = getNotificationRecord(id);
+  if (!notification) throw new Error("Уведомление не найдено");
+  return clone(notification);
 }
 
 export async function markNotificationRead(id, isRead = true) {
@@ -2381,7 +2392,11 @@ export async function getIcd10Reference(query = "") {
     .map((item) => ({ ...item, score: scoreIcd(item, q) }))
     .filter((item) => !q || item.score > 0)
     .sort((a, b) => b.score - a.score || a.code.localeCompare(b.code))
-    .map(({ score, ...item }) => item));
+    .map((item) => {
+      const result = { ...item };
+      delete result.score;
+      return result;
+    }));
 }
 
 function detectClinicalSignals(text = "", data = {}) {
@@ -2664,22 +2679,24 @@ function publicSession(session) {
 }
 
 function redactFileRecord(file) {
-  const { storagePath, ...safeFile } = file;
+  const safeFile = { ...file };
+  delete safeFile.storagePath;
   return safeFile;
 }
 
 export async function getReadinessStatus() {
   await delay(50);
-  const sqlitePath = getSqliteFilePath();
-  const hasDatabase = existsSync(sqlitePath);
+  const storage = getStorageInfo();
+  const hasDatabase = existsSync(storage.file);
+  const ready = hasDatabase && storage.durable;
   return {
-    ok: hasDatabase,
+    ok: ready,
     service: "neurodent-backend",
     database: {
-      driver: "sqlite",
-      ready: hasDatabase,
-      file: sqlitePath,
+      ...storage,
+      ready,
     },
+    warnings: storage.warning ? [storage.warning] : [],
     timestamp: new Date().toISOString(),
   };
 }
@@ -2690,6 +2707,7 @@ export async function getBackendCapabilities() {
     service: "neurodent-backend",
     storage: {
       activeDriver: "sqlite",
+      durable: getStorageInfo().durable,
       postgresPrepared: true,
       postgresRuntimeEnabled: false,
     },
@@ -2751,14 +2769,14 @@ export async function exportSystemData() {
 
 export async function getSystemStatus() {
   await delay(80);
+  const storageInfo = getStorageInfo();
   const sqlitePath = getSqliteFilePath();
   const sqliteSize = existsSync(sqlitePath) ? statSync(sqlitePath).size : 0;
   return {
     ok: true,
     service: "neurodent-backend",
     storage: {
-      driver: "sqlite",
-      file: sqlitePath,
+      ...storageInfo,
       size: sqliteSize,
     },
     counts: {

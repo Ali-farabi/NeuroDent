@@ -1,6 +1,6 @@
 # NeuroDent Backend
 
-NeuroDent backend is a Node.js 22+ server-side API with SQLite storage. It replaces frontend mock data with real backend logic, role-based access control, sessions, database persistence, audit logs and operational endpoints.
+NeuroDent backend is a Node.js 22+ server-side API with SQLite storage. It lives inside `next-app/backend` so the Next.js app and backend logic are shipped from one project root.
 
 ## Architecture
 
@@ -9,11 +9,12 @@ The backend is split into three layers:
 - `backend/server.js` runs the standalone HTTP server and exposes REST routes.
 - `backend/service.js` contains business logic for auth, patients, doctors, appointments, visits, payments, invoices, inventory, CRM conversations, AI clinical assistant logic, reports and audit logs.
 - `backend/storage.js` owns SQLite schema creation, migrations and database read/write helpers.
-- `next-app/app/api/[[...path]]/route.js` connects the Next.js app to the same backend service layer through `/api`.
+- `app/api/[[...path]]/route.js` connects the Next.js app to the same backend service layer through `/api`.
 
 ## Run
 
 ```bash
+cd next-app
 npm start
 ```
 
@@ -73,14 +74,16 @@ Security features:
 SQLite database file:
 
 ```text
-backend/data/neurodent.sqlite
+next-app/backend/data/neurodent.sqlite
 ```
 
 Runtime data is ignored by Git. Database backups are created under:
 
 ```text
-backend/data/backups/
+next-app/backend/data/backups/
 ```
+
+`GET /api/ready` reports whether the active SQLite path is durable. On serverless platforms that place SQLite under `/tmp`, readiness is marked not durable unless `NEURODENT_ALLOW_EPHEMERAL_STORAGE=true` is set for demo-only deployments.
 
 Main tables include:
 
@@ -180,7 +183,7 @@ docker compose --profile postgres up -d postgres
 PostgreSQL schema:
 
 ```text
-backend/postgres/schema.sql
+next-app/backend/postgres/schema.sql
 ```
 
 ## CI

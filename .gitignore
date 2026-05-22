@@ -1,5 +1,6 @@
 .vercel
 backend/data/
+next-app/backend/data/
 node_modules/
 next-app/.next/
 next-app/node_modules/

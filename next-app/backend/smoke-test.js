@@ -1,4 +1,4 @@
-import { DELETE, GET, PATCH, POST, PUT } from "../next-app/app/api/[[...path]]/route.js";
+import { DELETE, GET, PATCH, POST, PUT } from "../app/api/[[...path]]/route.js";
 
 const BASE_URL = "http://localhost:3000";
 
@@ -74,6 +74,17 @@ const patient = await request("POST", "/api/patients", {
   },
 });
 assert(patient.status === 201 && patient.data.id, "patient creation failed");
+
+const doctorLogin = await request("POST", "/api/auth/login", {
+  body: { phone: "87005551234", password: "doctor" },
+});
+assert(doctorLogin.status === 200 && doctorLogin.data.token, "doctor login failed");
+
+const doctorForbiddenPayments = await request("GET", `/api/payments/patient/${patient.data.id}`, { token: doctorLogin.data.token });
+assert(doctorForbiddenPayments.status === 403, "doctor should not access payments for unrelated patient");
+
+const doctorForbiddenFiles = await request("GET", `/api/files?patientId=${patient.data.id}`, { token: doctorLogin.data.token });
+assert(doctorForbiddenFiles.status === 403, "doctor should not access files for unrelated patient");
 
 const doctorId = doctors.data[0].id;
 const appointment = await request("POST", "/api/appointments", {

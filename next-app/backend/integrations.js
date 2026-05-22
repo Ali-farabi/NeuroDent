@@ -48,6 +48,17 @@ function providerConfig(providerName) {
   };
 }
 
+function envPresence(names = []) {
+  return names.map((name) => ({
+    name,
+    configured: !!process.env[name],
+  }));
+}
+
+function missingEnv(names = []) {
+  return names.filter((name) => !process.env[name]);
+}
+
 async function sendResendEmail({ to, subject, text, html, metadata = {} }) {
   const apiKey = process.env.RESEND_API_KEY || "";
   if (!apiKey) return null;
@@ -322,26 +333,44 @@ async function deleteSupabaseFile(cloudStorage = {}) {
 export function getIntegrationStatus() {
   const statuses = Object.keys(PROVIDERS).map((providerName) => {
     const config = providerConfig(providerName);
+    const requiredEnv = [PROVIDERS[providerName].urlEnv];
+    const optionalEnv = [PROVIDERS[providerName].tokenEnv];
     return {
       provider: providerName,
       configured: config.configured,
+      status: config.configured ? "configured" : "skipped",
       urlEnv: PROVIDERS[providerName].urlEnv,
       tokenEnv: PROVIDERS[providerName].tokenEnv,
+      requiredEnv: envPresence(requiredEnv),
+      optionalEnv: envPresence(optionalEnv),
+      missingRequiredEnv: missingEnv(requiredEnv),
     };
   });
+  const resendRequired = ["RESEND_API_KEY"];
+  const resendOptional = ["EMAIL_FROM"];
   statuses.push({
     provider: "resend",
     configured: !!process.env.RESEND_API_KEY,
+    status: process.env.RESEND_API_KEY ? "configured" : "skipped",
     urlEnv: "RESEND_API_KEY",
     tokenEnv: "RESEND_API_KEY",
+    requiredEnv: envPresence(resendRequired),
+    optionalEnv: envPresence(resendOptional),
+    missingRequiredEnv: missingEnv(resendRequired),
   });
   const storageConfig = supabaseStorageConfig();
+  const storageRequired = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_STORAGE_BUCKET"];
+  const storageOptional = ["SUPABASE_STORAGE_PREFIX", "SUPABASE_STORAGE_PUBLIC"];
   statuses.push({
     provider: "supabaseStorage",
     configured: storageConfig.configured,
+    status: storageConfig.configured ? "configured" : "skipped",
     urlEnv: "SUPABASE_URL",
     tokenEnv: "SUPABASE_SERVICE_ROLE_KEY",
     bucketEnv: "SUPABASE_STORAGE_BUCKET",
+    requiredEnv: envPresence(storageRequired),
+    optionalEnv: envPresence(storageOptional),
+    missingRequiredEnv: missingEnv(storageRequired),
   });
   return statuses;
 }

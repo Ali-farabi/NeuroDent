@@ -3,15 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "dev": "NODE_OPTIONS=--no-warnings next dev --webpack -p 3000",
-    "build": "NODE_OPTIONS=--no-warnings next build --webpack",
+    "dev": "next dev --webpack -p 3000",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "reset:dev-passwords": "node --no-warnings backend/reset-dev-passwords.js",
+    "test:backend": "node --no-warnings backend/smoke-test.js",
+    "test:e2e": "node --no-warnings backend/next-smoke-test.js"
   },
   "dependencies": {
     "lucide-react": "^1.8.0",
-    "next": "16.2.4",
+    "next": "16.2.6",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
@@ -20,8 +26,11 @@
     "@types/node": "^25.6.0",
     "@types/react": "19.2.14",
     "eslint": "^9",
-    "eslint-config-next": "16.2.4",
+    "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
     "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "postcss": "8.5.10"
   }
 }

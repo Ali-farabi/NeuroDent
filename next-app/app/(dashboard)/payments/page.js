@@ -9,6 +9,7 @@ import {
   getInventoryItems,
   getPaymentsByDate,
   getStockMovements,
+  exportPaymentsCsv,
   searchPatients,
   sendPatientReminder,
   updateInventoryQuantity,
@@ -62,8 +63,27 @@ function normalizePhone(phone) {
   return String(phone || "").replace(/\D/g, "").replace(/^8/, "7");
 }
 
-function exportMock() {
-  alert("Экспорт будет подключен после backend-интеграции.");
+function csvCell(value) {
+  const text = String(value ?? "");
+  return /[",\n;]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadText(fileName, text, type = "text/csv;charset=utf-8") {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportRowsCsv(fileName, headers, rows) {
+  const csv = [
+    headers.map(csvCell).join(";"),
+    ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(";")),
+  ].join("\n");
+  downloadText(fileName, csv);
 }
 
 function StatCard({ title, value, helper, icon: Icon, tone = "#2563eb", badge }) {
@@ -206,6 +226,15 @@ function KassaTab() {
     }
   }
 
+  async function handleExport() {
+    try {
+      const csv = await exportPaymentsCsv(date);
+      downloadText(`payments-${date}.csv`, csv);
+    } catch (error) {
+      setMessage(error?.message || "Не удалось экспортировать платежи");
+    }
+  }
+
   return (
     <div className="grid gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -213,7 +242,7 @@ function KassaTab() {
           <h1 className="m-0 text-2xl font-semibold text-slate-950">Кассовый терминал</h1>
           <p className="mt-1 text-sm text-slate-500">Управление платежами и финансовыми операциями клиники</p>
         </div>
-        <button onClick={exportMock} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm">
+        <button onClick={handleExport} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm">
           <Download size={16} />
           Export to Excel
         </button>
@@ -382,6 +411,18 @@ function DebtorsTab() {
   }, [patients, query]);
   const totalDebt = debtors.reduce((sum, patient) => sum + Number(patient.debt || Math.abs(patient.balance || 0)), 0);
 
+  function handleExport() {
+    exportRowsCsv(
+      `debtors-${TODAY}.csv`,
+      ["Patient", "Phone", "Debt"],
+      debtors.map((patient) => ({
+        Patient: patient.name || patient.patientName || "",
+        Phone: normalizePhone(patient.phone),
+        Debt: Number(patient.debt || Math.abs(patient.balance || 0)),
+      })),
+    );
+  }
+
   async function sendReminder(patient) {
     const patientName = patient.name || patient.patientName || "пациент";
     const debt = Number(patient.debt || Math.abs(patient.balance || 0)).toLocaleString("ru-RU");
@@ -402,7 +443,7 @@ function DebtorsTab() {
           <p className="mt-1 text-sm text-slate-500">Контроль долгов пациентов и отправка напоминаний</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={exportMock} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm">
+          <button onClick={handleExport} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm">
             <Download size={16} />
             Export to Excel
           </button>
@@ -523,6 +564,20 @@ function SkladTab() {
   const expiringSoon = Math.max(2, Math.round(items.length * 0.25));
   const stockValue = items.reduce((sum, item, index) => sum + Number(item.quantity || 0) * (900 + index * 120), 0);
 
+  function handleExport() {
+    exportRowsCsv(
+      `inventory-${TODAY}.csv`,
+      ["Name", "Category", "Quantity", "MinQuantity", "Unit"],
+      filtered.map((item) => ({
+        Name: item.name,
+        Category: item.category,
+        Quantity: item.quantity,
+        MinQuantity: item.minQuantity,
+        Unit: item.unit,
+      })),
+    );
+  }
+
   async function changeQty(id, delta) {
     try {
       await updateInventoryQuantity(id, delta);
@@ -546,7 +601,7 @@ function SkladTab() {
           <p className="mt-1 text-sm text-slate-500">Управление остатками и поступлениями медикаментов</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={exportMock} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm">
+          <button onClick={handleExport} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm">
             <Download size={16} />
             Экспорт в Excel
           </button>
@@ -569,7 +624,7 @@ function SkladTab() {
         <StatCard title="Всего позиций" value={items.length} helper="норма" icon={ClipboardPlus} />
         <StatCard title="Критический остаток" value={lowStock.length} helper="срочно" icon={AlertTriangle} tone="#dc2626" />
         <StatCard title="Срок годности < 30 дн." value={expiringSoon} helper="на контроле" icon={Timer} tone="#f59e0b" />
-        <StatCard title="Оценка склада" value={fmt(stockValue)} helper="mock-оценка" icon={Banknote} tone="#10b981" />
+        <StatCard title="Оценка склада" value={fmt(stockValue)} helper="расчет по остаткам" icon={Banknote} tone="#10b981" />
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm">

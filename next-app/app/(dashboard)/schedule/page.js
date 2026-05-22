@@ -612,8 +612,6 @@ function CalendarTab({ doctors, patients, role }) {
 }
 
 // ── CRM Tab ────────────────────────────────────────────────────────────────────
-// В реальном backend: канал и последнее сообщение хранятся в таблице crm_contacts
-// Здесь используем поле patient.channel из mock-данных
 const CH_COLOR = {
   WhatsApp:  { bg: "#f0fdf4", color: "#15803d", border: "#bbf7d0" },
   Телефон:   { bg: "#eff6ff", color: "#1d4ed8", border: "#bfdbfe" },
@@ -748,7 +746,6 @@ function CrmTab({ patients, onNewAppt }) {
         </div>
         <div style={{ flex: 1, overflowY: "auto" }}>
           {filtered.map((p) => {
-            // channel — в mock берётся из patient.channel; в backend — из таблицы crm_contacts
             const ch = p.channel || "WhatsApp";
             const cc = CH_COLOR[ch] || CH_COLOR.WhatsApp;
             const isActive = selected?.id === p.id;

@@ -1,4 +1,4 @@
-import * as api from "../../../../backend/service.js";
+import * as api from "../../../backend/service.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -168,6 +168,28 @@ function assertUserPatientAccess(user, patientId) {
 function assertRecordPatientAccess(user, record) {
   if (user?.role !== "patient") return;
   assertPatientAccess(user, record?.patientId);
+}
+
+function assertStaffRecordAccess(user, record) {
+  if (!record?.patientId) return;
+  assertUserPatientAccess(user, record.patientId);
+}
+
+function assertVisitAccess(user, visit) {
+  if (!visit) return;
+  assertStaffRecordAccess(user, visit);
+  if (user?.role === "doctor") assertDoctorAccess(user, visit.doctorId);
+}
+
+function notificationRoleForUser(user, requestedRole = "") {
+  if (["owner", "admin"].includes(user?.role)) return requestedRole || user.role;
+  return user?.role || "";
+}
+
+function assertNotificationAccess(user, notification) {
+  if (!notification?.role) return;
+  if (["owner", "admin"].includes(user?.role)) return;
+  if (notification.role !== user?.role) throw forbidden();
 }
 
 function routeParams(pathname, pattern) {
@@ -396,7 +418,7 @@ async function handleApi(request) {
   if (method === "GET" && pathname === "/api/appointments/active") {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
     const patientId = scopedPatientId(user, searchParams.get("patientId"));
-    assertPatientAccess(user, patientId);
+    assertUserPatientAccess(user, patientId);
     return json(await api.getActiveAppointmentByPatient(patientId));
   }
 
@@ -523,26 +545,32 @@ async function handleApi(request) {
 
   const visitMaterialsParams = routeParams(pathname, "/api/visits/:id/materials");
   if (method === "GET" && visitMaterialsParams) {
-    await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    assertVisitAccess(user, await api.getVisitById(visitMaterialsParams.id));
     return json(await api.getVisitMaterials(visitMaterialsParams.id));
   }
 
   const visitServicesParams = routeParams(pathname, "/api/visits/:id/services");
   if (method === "GET" && visitServicesParams) {
-    await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    assertVisitAccess(user, await api.getVisitById(visitServicesParams.id));
     return json(await api.getVisitServices(visitServicesParams.id));
   }
 
   if (method === "GET" && pathname === "/api/files") {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
     const patientId = scopedPatientId(user, searchParams.get("patientId"));
-    assertPatientAccess(user, patientId);
+    if (user.role === "doctor" && !patientId) throw forbidden("Укажите patientId для просмотра файлов пациента");
+    assertUserPatientAccess(user, patientId);
     return json(await api.getFiles({ patientId, visitId: searchParams.get("visitId") || "" }));
   }
 
   if (method === "POST" && pathname === "/api/files") {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
-    return json(await api.uploadFile(await readJsonBody(request), { actorUserId: user.id }), 201);
+    const body = await readJsonBody(request);
+    if (body.patientId) assertStaffRecordAccess(user, { patientId: body.patientId });
+    if (body.visitId) assertVisitAccess(user, await api.getVisitById(body.visitId));
+    return json(await api.uploadFile(body, { actorUserId: user.id }), 201);
   }
 
   const fileDownloadParams = routeParams(pathname, "/api/files/:id/download");
@@ -559,19 +587,21 @@ async function handleApi(request) {
   const fileParams = routeParams(pathname, "/api/files/:id");
   if (method === "DELETE" && fileParams) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    assertStaffRecordAccess(user, await api.getFileMetadata(fileParams.id));
     return json(await api.deleteFile(fileParams.id, { actorUserId: user.id }));
   }
 
   const documentSignParams = routeParams(pathname, "/api/documents/:id/sign");
   if (method === "POST" && documentSignParams) {
     const user = await requireRole(request, ["owner", "doctor"]);
+    assertStaffRecordAccess(user, await api.getFileMetadata(documentSignParams.id));
     return json(await api.signDocument(documentSignParams.id, await readJsonBody(request), { actorUserId: user.id }));
   }
 
   const patientPaymentsParams = routeParams(pathname, "/api/payments/patient/:id");
   if (method === "GET" && patientPaymentsParams) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
-    assertPatientAccess(user, patientPaymentsParams.id);
+    assertUserPatientAccess(user, patientPaymentsParams.id);
     return json(await api.getPaymentsByPatient(patientPaymentsParams.id));
   }
 
@@ -619,7 +649,7 @@ async function handleApi(request) {
   if (method === "GET" && pathname === "/api/notifications") {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
     return json(await api.getNotifications({
-      role: searchParams.get("role") || user.role,
+      role: notificationRoleForUser(user, searchParams.get("role") || ""),
       unreadOnly: searchParams.get("unreadOnly") === "true",
     }));
   }
@@ -631,7 +661,8 @@ async function handleApi(request) {
 
   const notificationReadParams = routeParams(pathname, "/api/notifications/:id/read");
   if (method === "PATCH" && notificationReadParams) {
-    await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
+    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
+    assertNotificationAccess(user, await api.getNotificationById(notificationReadParams.id));
     const body = await readJsonBody(request);
     return json(await api.markNotificationRead(notificationReadParams.id, body.isRead !== false));
   }
@@ -757,8 +788,11 @@ async function handleApi(request) {
 
   if (method === "GET" && pathname === "/api/invoices") {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
+    const patientId = scopedPatientId(user, searchParams.get("patientId"));
+    if (user.role === "doctor" && !patientId) throw forbidden("Укажите patientId для просмотра счетов пациента");
+    if (patientId) assertUserPatientAccess(user, patientId);
     return json(await api.getInvoices({
-      patientId: scopedPatientId(user, searchParams.get("patientId")),
+      patientId,
       status: searchParams.get("status") || "",
       dateFrom: searchParams.get("dateFrom") || "",
       dateTo: searchParams.get("dateTo") || "",
@@ -767,7 +801,9 @@ async function handleApi(request) {
 
   if (method === "POST" && pathname === "/api/invoices") {
     const user = await requireRole(request, ["owner", "admin", "doctor"]);
-    return json(await api.createInvoice(await readJsonBody(request), { actorUserId: user.id }), 201);
+    const body = await readJsonBody(request);
+    assertStaffRecordAccess(user, { patientId: body.patientId });
+    return json(await api.createInvoice(body, { actorUserId: user.id }), 201);
   }
 
   const invoiceSendParams = routeParams(pathname, "/api/invoices/:id/send");
@@ -786,7 +822,7 @@ async function handleApi(request) {
   if (method === "GET" && invoiceParams) {
     const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
     const invoice = await api.getInvoice(invoiceParams.id);
-    assertRecordPatientAccess(user, invoice);
+    assertStaffRecordAccess(user, invoice);
     return json(invoice);
   }
 

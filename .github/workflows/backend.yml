@@ -31,13 +31,18 @@ jobs:
 
       - name: Check backend syntax
         run: |
-          node --check backend/server.js
-          node --check backend/service.js
-          node --check backend/storage.js
-          node --check backend/smoke-test.js
+          node --check next-app/backend/server.js
+          node --check next-app/backend/service.js
+          node --check next-app/backend/storage.js
+          node --check next-app/backend/smoke-test.js
 
       - name: Run backend smoke test
+        working-directory: next-app
         run: npm run test:backend
+
+      - name: Run Next.js smoke test
+        working-directory: next-app
+        run: npm run test:e2e
 
       - name: Build Next.js app
         working-directory: next-app

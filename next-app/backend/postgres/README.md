@@ -5,7 +5,7 @@ The current NeuroDent runtime uses SQLite because it works without external serv
 Prepared files:
 
 ```text
-backend/postgres/schema.sql
+next-app/backend/postgres/schema.sql
 docker-compose.yml
 ```
 
@@ -18,7 +18,7 @@ docker compose --profile postgres up -d postgres
 Apply schema manually:
 
 ```bash
-docker compose exec -T postgres psql -U neurodent -d neurodent < backend/postgres/schema.sql
+docker compose exec -T postgres psql -U neurodent -d neurodent < next-app/backend/postgres/schema.sql
 ```
 
 Production database URL:

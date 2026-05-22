@@ -4,12 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node --no-warnings backend/server.js",
-    "dev": "node --no-warnings backend/server.js",
+    "start": "npm --prefix next-app run start",
+    "dev": "npm --prefix next-app run dev",
     "dev:next": "npm --prefix next-app run dev",
     "build:next": "npm --prefix next-app run build",
-    "reset:dev-passwords": "node --no-warnings backend/reset-dev-passwords.js",
-    "test:backend": "node --no-warnings backend/smoke-test.js"
+    "reset:dev-passwords": "node --no-warnings next-app/backend/reset-dev-passwords.js",
+    "test:backend": "npm --prefix next-app run test:backend"
   },
   "engines": {
     "node": ">=22"

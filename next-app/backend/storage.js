@@ -10,12 +10,31 @@ const DATA_DIR = process.env.NEURODENT_DATA_DIR || DEFAULT_DATA_DIR;
 const SQLITE_FILE = path.join(DATA_DIR, "neurodent.sqlite");
 const LEGACY_JSON_FILE = path.join(DATA_DIR, "db.json");
 const INIT_LOCK_DIR = path.join(DATA_DIR, ".sqlite-init.lock");
+const ALLOW_EPHEMERAL_STORAGE = process.env.NEURODENT_ALLOW_EPHEMERAL_STORAGE === "true";
 
 let db = null;
 let initialized = false;
 
 export function getSqliteFilePath() {
   return SQLITE_FILE;
+}
+
+export function getStorageInfo() {
+  const isEphemeral = DATA_DIR.startsWith("/tmp") || DATA_DIR.startsWith("/var/tmp");
+  const isServerless = !!process.env.VERCEL;
+  const durable = !isEphemeral || ALLOW_EPHEMERAL_STORAGE;
+  return {
+    driver: "sqlite",
+    dataDir: DATA_DIR,
+    file: SQLITE_FILE,
+    isServerless,
+    isEphemeral,
+    durable,
+    allowEphemeralStorage: ALLOW_EPHEMERAL_STORAGE,
+    warning: isEphemeral && !ALLOW_EPHEMERAL_STORAGE
+      ? "SQLite is stored on an ephemeral filesystem. Configure durable storage or set NEURODENT_ALLOW_EPHEMERAL_STORAGE=true only for demos."
+      : "",
+  };
 }
 
 export function checkpointDatabase() {

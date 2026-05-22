@@ -10,6 +10,7 @@ import {
   startVisit,
   finishVisit,
   getVisitsByPatient,
+  getVisitServices,
   getPatientAiContext,
   analyzeClinicalTranscript,
   draftClinicalProtocol,
@@ -67,6 +68,13 @@ interface Visit {
   startedAt?: string;
   diagnosisCode?: string;
   cariesType?: string;
+  toothNumber?: string;
+}
+
+interface VisitService {
+  code: string;
+  name: string;
+  price: number;
   toothNumber?: string;
 }
 
@@ -641,6 +649,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
   const [patientData, setPatientData] = useState<Patient | null>(null);
   const [activeAppointment, setActiveAppointment] = useState<Appointment | null>(null);
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [visitServices, setVisitServices] = useState<VisitService[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState("protocol");
@@ -736,6 +745,23 @@ function AiCorePage({ patientId }: { patientId: string }) {
       .finally(() => setLoading(false));
   }, [patientId]);
 
+  useEffect(() => {
+    if (!activeAppointment?.visitId) {
+      return;
+    }
+    let active = true;
+    getVisitServices(activeAppointment.visitId)
+      .then((items) => {
+        if (active) setVisitServices(items as VisitService[]);
+      })
+      .catch(() => {
+        if (active) setVisitServices([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeAppointment?.visitId]);
+
   // Default image
   useEffect(() => {
     if (!loading && patientData) {
@@ -788,6 +814,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
     if (now.getMonth() < birth.getMonth() || (now.getMonth() === birth.getMonth() && now.getDate() < birth.getDate())) age--;
     return age;
   }, [patientData]);
+  const visibleVisitServices = activeAppointment?.visitId ? visitServices : [];
 
   const riskLevel = useMemo(() => {
     if (visits.some((v) => v.diagnosisCode?.startsWith("K04"))) return "Высокий";
@@ -972,6 +999,9 @@ function AiCorePage({ patientId }: { patientId: string }) {
       const draft = await draftClinicalProtocol({ patientId, transcript: transcriptRef.current, visitData: readVisitData() }).catch(() => null);
       if (draft?.protocol?.treatment && !treatment.trim()) setTreatment(draft.protocol.treatment);
       await finishVisit(activeAppointment.id, readVisitData());
+      if (activeAppointment.visitId) {
+        setVisitServices((await getVisitServices(activeAppointment.visitId)) as VisitService[]);
+      }
       setVisitFinished(true);
       const matList = materials.map((m) => `${m.name} (${m.qty})`).join(", ");
       showToast(`Автосписание со склада: ${matList}`);
@@ -1611,16 +1641,17 @@ function AiCorePage({ patientId }: { patientId: string }) {
       {activeTab === "services" && (
         <div className="p-5 bg-white border border-gray-200 rounded-xl shadow-sm">
           <h3 className="text-base font-bold text-gray-900 mt-0 mb-1.5">Оказанные услуги</h3>
-          <p className="text-[13px] text-gray-500 mb-2.5">Услуги по визиту (пока mock-структура).</p>
+          <p className="text-[13px] text-gray-500 mb-2.5">Услуги рассчитываются backend по данным текущего визита.</p>
           <div className="flex flex-col gap-2 mt-1">
-            {[
-              { code: "ST-01", name: "Лечение кариеса дентина зуба 1.6", price: "25 000 ₸" },
-              { code: "ST-02", name: "Анестезия инфильтрационная", price: "3 000 ₸" },
-            ].map((s, i) => (
-              <div key={i} className="flex items-center gap-2 justify-between text-xs px-2.5 py-2 rounded-md bg-gray-50">
+            {visibleVisitServices.length === 0 ? (
+              <div className="text-xs px-2.5 py-2 rounded-md bg-gray-50 text-gray-500">
+                Начните или завершите визит, чтобы увидеть рассчитанные услуги.
+              </div>
+            ) : visibleVisitServices.map((s) => (
+              <div key={`${s.code}-${s.name}`} className="flex items-center gap-2 justify-between text-xs px-2.5 py-2 rounded-md bg-gray-50">
                 <span className="font-semibold text-[11px] text-blue-700">{s.code}</span>
                 <span className="flex-1">{s.name}</span>
-                <span className="text-[11px] text-gray-500">{s.price}</span>
+                <span className="text-[11px] text-gray-500">{Number(s.price || 0).toLocaleString("ru-RU")} ₸</span>
               </div>
             ))}
           </div>

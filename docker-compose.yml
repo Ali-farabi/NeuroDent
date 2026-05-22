@@ -12,7 +12,7 @@ services:
       - "5432:5432"
     volumes:
       - neurodent-postgres:/var/lib/postgresql/data
-      - ./backend/postgres/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+      - ./next-app/backend/postgres/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
     restart: unless-stopped
 
   neurodent:
@@ -25,6 +25,8 @@ services:
       PORT: 3000
       NEURODENT_CORS_ORIGIN: http://localhost:3000
       NEURODENT_DATABASE_URL: ""
+      NEURODENT_DATA_DIR: /app/next-app/backend/data
+      NEURODENT_ALLOW_EPHEMERAL_STORAGE: "false"
       NEURODENT_EXPOSE_RESET_TOKEN: "false"
       NEURODENT_RATE_LIMIT_MAX: 300
       NEURODENT_RATE_LIMIT_WINDOW_MS: 60000
@@ -40,7 +42,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - neurodent-data:/app/backend/data
+      - neurodent-data:/app/next-app/backend/data
     restart: unless-stopped
 
 volumes:
