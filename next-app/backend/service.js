@@ -227,7 +227,7 @@ function patientAsUser(patient, phone = "") {
   };
 }
 
-function verifyPatientPassword(patient, password) {
+async function verifyPatientPassword(patient, password) {
   const rawPassword = String(password || "");
   if (patient?.portalPasswordHash && patient?.portalPasswordSalt) {
     return verifyPassword({
@@ -242,7 +242,7 @@ function verifyPatientPassword(patient, password) {
     patient.portalPasswordHash = hashed.passwordHash;
     patient.portalPasswordSalt = hashed.passwordSalt;
     delete patient.portalPassword;
-    saveDb();
+    await saveDb();
   }
   return ok;
 }
@@ -280,15 +280,15 @@ function actorIdFromOptions(options = {}) {
   return String(options?.actorUserId || options?.actor?.id || "");
 }
 
-function ensurePasswordHash(user, password) {
+async function ensurePasswordHash(user, password) {
   if (!user || user.passwordHash) return;
   const defaults = new Set([defaultPasswordForRole(user.role), user.role].filter(Boolean));
   if (!defaults.has(String(password))) return;
   Object.assign(user, hashPassword(password));
-  saveDb();
+  await saveDb();
 }
 
-function ensureSeedUserPasswords() {
+async function ensureSeedUserPasswords() {
   let changed = false;
   for (const user of db.users || []) {
     if (user.passwordHash) continue;
@@ -297,7 +297,7 @@ function ensureSeedUserPasswords() {
     Object.assign(user, hashPassword(password));
     changed = true;
   }
-  if (changed) saveDb();
+  if (changed) await saveDb();
 }
 
 export async function resetDemoUserPasswords() {
@@ -309,21 +309,21 @@ export async function resetDemoUserPasswords() {
     Object.assign(user, hashPassword(password));
     updated.push({ id: user.id, phone: user.phone, role: user.role, password });
   }
-  if (updated.length) saveDb();
+  if (updated.length) await saveDb();
   return clone(updated);
 }
 
-function createSession(subjectType, subjectId) {
-  deleteExpiredSessions();
+async function createSession(subjectType, subjectId) {
+  await deleteExpiredSessions();
   const token = randomBytes(32).toString("hex");
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-  createSessionRecord({ token, subjectType, subjectId, createdAt, expiresAt });
+  await createSessionRecord({ token, subjectType, subjectId, createdAt, expiresAt });
   return { token, expiresAt };
 }
 
-function withSession(subjectType, subject) {
-  const session = createSession(subjectType, subject.id);
+async function withSession(subjectType, subject) {
+  const session = await createSession(subjectType, subject.id);
   return {
     ...subject,
     token: session.token,
@@ -332,8 +332,8 @@ function withSession(subjectType, subject) {
   };
 }
 
-function audit(action, entityType, entityId, details = {}, actorUserId = "") {
-  createAuditLogRecord({
+async function audit(action, entityType, entityId, details = {}, actorUserId = "") {
+  await createAuditLogRecord({
     actorUserId,
     action,
     entityType,
@@ -961,19 +961,19 @@ const initialDb = {
   ],
 };
 
-function getDb() {
-  initializeStore(initialDb);
-  const data = loadDbSnapshot();
+async function getDb() {
+  await initializeStore(initialDb);
+  const data = await loadDbSnapshot();
   if (!Array.isArray(data.users)) data.users = clone(initialDb.users);
   return data;
 }
 
-function saveDb() {
-  persistDbSnapshot(db);
+async function saveDb() {
+  await persistDbSnapshot(db);
 }
 
-const db = getDb();
-ensureSeedUserPasswords();
+const db = await getDb();
+await ensureSeedUserPasswords();
 
 // Вход в систему. Принимает телефон + пароль, возвращает роль и имя пользователя.
 // Backend: POST /auth/login → { token, user: { role, name, phone } }
@@ -986,14 +986,14 @@ export async function login(phone, password) {
   const users = db.users || [];
   let user = users.find((item) => cleanPhone(item.phone) === phoneDigits && item.isActive !== false);
   if (user) {
-    ensurePasswordHash(user, rawPassword);
+    await ensurePasswordHash(user, rawPassword);
     if (verifyPassword(user, rawPassword)) {
       return withSession("user", publicUser(user));
     }
   }
 
   const patient = (db.patients || []).find((item) => cleanPhone(item.phone) === phoneDigits);
-  if (patient && verifyPatientPassword(patient, rawPassword)) {
+  if (patient && await verifyPatientPassword(patient, rawPassword)) {
     return withSession("patient", patientAsUser(patient));
   }
 
@@ -1002,7 +1002,7 @@ export async function login(phone, password) {
 
 export async function getCurrentUser(token) {
   await delay(100);
-  const session = getSessionRecord(token);
+  const session = await getSessionRecord(token);
   if (!session) return null;
 
   if (session.subjectType === "user") {
@@ -1019,7 +1019,7 @@ export async function getCurrentUser(token) {
 
 export async function logout(token) {
   await delay(100);
-  deleteSessionRecord(token);
+  await deleteSessionRecord(token);
   return { ok: true };
 }
 
@@ -1031,8 +1031,8 @@ export async function changePassword(userId, currentPassword, nextPassword) {
   const password = String(nextPassword || "");
   if (password.length < 4) throw new Error("Новый пароль слишком короткий");
   Object.assign(user, hashPassword(password));
-  saveDb();
-  audit("change_password", "user", user.id, {}, user.id);
+  await saveDb();
+  await audit("change_password", "user", user.id, {}, user.id);
   return { ok: true };
 }
 
@@ -1040,10 +1040,10 @@ export async function changePatientPortalPassword(patientId, currentPassword, ne
   await delay(150);
   const patient = getPatient(patientId);
   if (!patient) throw new Error("Patient not found");
-  if (!verifyPatientPassword(patient, currentPassword)) throw new Error("Current password is incorrect");
+  if (!await verifyPatientPassword(patient, currentPassword)) throw new Error("Current password is incorrect");
   setPatientPortalPassword(patient, nextPassword);
-  saveDb();
-  audit("change_patient_portal_password", "patient", patient.id, {}, actorIdFromOptions(options) || patient.id);
+  await saveDb();
+  await audit("change_patient_portal_password", "patient", patient.id, {}, actorIdFromOptions(options) || patient.id);
   return { ok: true };
 }
 
@@ -1061,14 +1061,14 @@ export async function requestPasswordReset(phone) {
 
   if (!user && !patient) return response;
 
-  deleteExpiredSessions();
+  await deleteExpiredSessions();
   const token = randomBytes(32).toString("hex");
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS).toISOString();
   const subjectType = user ? "password_reset" : "patient_password_reset";
   const subjectId = user?.id || patient.id;
 
-  createSessionRecord({
+  await createSessionRecord({
     token: user ? resetSessionToken(token) : patientResetSessionToken(token),
     subjectType,
     subjectId,
@@ -1076,7 +1076,7 @@ export async function requestPasswordReset(phone) {
     expiresAt,
   });
 
-  audit("request_password_reset", user ? "user" : "patient", subjectId, { phone: maskPhone(user?.phone || patient.phone), expiresAt }, "");
+  await audit("request_password_reset", user ? "user" : "patient", subjectId, { phone: maskPhone(user?.phone || patient.phone), expiresAt }, "");
 
   const resetMessage = `NeuroDent password reset token: ${token}. It expires at ${expiresAt}.`;
   const deliveries = [];
@@ -1111,11 +1111,11 @@ export async function resetPassword(token, nextPassword) {
   if (password.length < 4) throw new Error("New password is too short");
 
   const sessionKey = resetSessionToken(resetToken);
-  let session = getSessionRecord(sessionKey);
+  let session = await getSessionRecord(sessionKey);
   let patientSessionKey = "";
   if (!session) {
     patientSessionKey = patientResetSessionToken(resetToken);
-    session = getSessionRecord(patientSessionKey);
+    session = await getSessionRecord(patientSessionKey);
   }
   if (!session || !["password_reset", "patient_password_reset"].includes(session.subjectType)) {
     const err = new Error("Password reset token is invalid or expired");
@@ -1127,18 +1127,18 @@ export async function resetPassword(token, nextPassword) {
     const patient = getPatient(session.subjectId);
     if (!patient) throw new Error("Patient not found");
     setPatientPortalPassword(patient, password);
-    saveDb();
-    deleteSessionRecord(patientSessionKey || sessionKey);
-    audit("reset_patient_portal_password", "patient", patient.id, {}, patient.id);
+    await saveDb();
+    await deleteSessionRecord(patientSessionKey || sessionKey);
+    await audit("reset_patient_portal_password", "patient", patient.id, {}, patient.id);
     return { ok: true };
   }
 
   const user = db.users.find((entry) => entry.id === session.subjectId && entry.isActive !== false);
   if (!user) throw new Error("User not found");
   Object.assign(user, hashPassword(password));
-  saveDb();
-  deleteSessionRecord(sessionKey);
-  audit("reset_password", "user", user.id, {}, user.id);
+  await saveDb();
+  await deleteSessionRecord(sessionKey);
+  await audit("reset_password", "user", user.id, {}, user.id);
 
   return { ok: true };
 }
@@ -1192,8 +1192,8 @@ export async function createAppointment(data, options = {}) {
     visitId: null,
   };
   db.appointments.push(appt);
-  saveDb();
-  audit("create", "appointment", appt.id, { doctorId, patientId, date, time }, actorIdFromOptions(options));
+  await saveDb();
+  await audit("create", "appointment", appt.id, { doctorId, patientId, date, time }, actorIdFromOptions(options));
   return clone({ ...appt, patientName: getPatientName(patientId) });
 }
 
@@ -1293,8 +1293,8 @@ export async function createPatient(data, options = {}) {
   };
   if (data?.portalPassword) setPatientPortalPassword(newPatient, data.portalPassword);
   db.patients.push(newPatient);
-  saveDb();
-  audit("create", "patient", newPatient.id, { name, phone }, actorIdFromOptions(options));
+  await saveDb();
+  await audit("create", "patient", newPatient.id, { name, phone }, actorIdFromOptions(options));
   return clone(newPatient);
 }
 
@@ -1336,8 +1336,8 @@ export async function updatePatient(id, patch, options = {}) {
   p.email = email;
   p.address = address;
   if (patch?.portalPassword) setPatientPortalPassword(p, patch.portalPassword);
-  saveDb();
-  audit("update", "patient", id, { patch }, actorIdFromOptions(options));
+  await saveDb();
+  await audit("update", "patient", id, { patch }, actorIdFromOptions(options));
   return clone(p);
 }
 
@@ -1368,8 +1368,8 @@ export async function updateAppointmentStatus(appointmentId, status, options = {
   if (!appt) throw new Error("Запись не найдена");
   assertAppointmentTransition(appt, status);
   appt.status = status;
-  saveDb();
-  audit("update_status", "appointment", appointmentId, { status }, actorIdFromOptions(options));
+  await saveDb();
+  await audit("update_status", "appointment", appointmentId, { status }, actorIdFromOptions(options));
   return clone(appt);
 }
 
@@ -1403,8 +1403,8 @@ export async function startVisit(appointmentId, options = {}) {
   db.visits.push(visit);
   appt.visitId = visit.id;
   if (appt.status === "scheduled") appt.status = "arrived";
-  saveDb();
-  audit("start", "visit", visit.id, { appointmentId }, actorIdFromOptions(options));
+  await saveDb();
+  await audit("start", "visit", visit.id, { appointmentId }, actorIdFromOptions(options));
   return clone(visit);
 }
 
@@ -1535,8 +1535,8 @@ export async function finishVisit(appointmentId, visitData, options = {}) {
     }
   }
 
-  saveDb();
-  audit("finish", "visit", visit.id, { appointmentId, diagnosis: visit.diagnosis }, actorIdFromOptions(options));
+  await saveDb();
+  await audit("finish", "visit", visit.id, { appointmentId, diagnosis: visit.diagnosis }, actorIdFromOptions(options));
   return clone(visit);
 }
 
@@ -1569,15 +1569,15 @@ export async function createPayment(data, options = {}) {
   };
   validateIsoDate(payment.date);
   db.payments.push(payment);
-  saveDb();
+  await saveDb();
   const fiscalization = await sendFiscalReceipt({
     payment,
     patient: getPatient(patientId),
     metadata: { type: "payment_created", actorUserId: actorIdFromOptions(options) },
   });
   payment.fiscalization = fiscalization;
-  saveDb();
-  audit("create", "payment", payment.id, { patientId, amount, method, fiscalization }, actorIdFromOptions(options));
+  await saveDb();
+  await audit("create", "payment", payment.id, { patientId, amount, method, fiscalization }, actorIdFromOptions(options));
   return clone(payment);
 }
 
@@ -1926,8 +1926,8 @@ export async function addInventoryItem(data, options = {}) {
 
   if (!db.inventory) db.inventory = [];
   db.inventory.push(newItem);
-  saveDb();
-  audit("create", "inventory", newItem.id, { name, category, quantity }, actorIdFromOptions(options));
+  await saveDb();
+  await audit("create", "inventory", newItem.id, { name, category, quantity }, actorIdFromOptions(options));
   return clone(newItem);
 }
 
@@ -1943,8 +1943,8 @@ export async function updateInventoryQuantity(id, delta, options = {}) {
   if (newQty < 0) throw new Error("Недостаточно на складе");
   
   item.quantity = newQty;
-  saveDb();
-  audit("update_quantity", "inventory", id, { delta, quantity: item.quantity }, actorIdFromOptions(options));
+  await saveDb();
+  await audit("update_quantity", "inventory", id, { delta, quantity: item.quantity }, actorIdFromOptions(options));
   return clone(item);
 }
 
@@ -1987,8 +1987,8 @@ export async function createUser(data, options = {}) {
     ...passwordFields,
   };
   db.users.push(newUser);
-  saveDb();
-  audit("create", "user", newUser.id, { name, phone, role }, actorIdFromOptions(options));
+  await saveDb();
+  await audit("create", "user", newUser.id, { name, phone, role }, actorIdFromOptions(options));
   return clone(publicUser(newUser));
 }
 
@@ -2020,10 +2020,10 @@ export async function updateUser(id, patch, options = {}) {
   }
   Object.assign(u, next);
   if (patch.password !== undefined) Object.assign(u, hashPassword(String(patch.password)));
-  saveDb();
+  await saveDb();
   const auditPatch = { ...patch };
   if (auditPatch.password !== undefined) auditPatch.password = "[redacted]";
-  audit("update", "user", id, { patch: auditPatch }, actorIdFromOptions(options));
+  await audit("update", "user", id, { patch: auditPatch }, actorIdFromOptions(options));
   return clone(publicUser(u));
 }
 
@@ -2059,14 +2059,14 @@ export async function getPatientMedicalCard(patientId) {
     debt: Math.max(0, totalDue - totalPaid),
     bonuses: Math.floor(totalPaid * 0.03),
     treatmentPlan: treatmentPlanForPatient(patientId),
-    files: listFileRecords({ patientId }).map(redactFileRecord),
+    files: (await listFileRecords({ patientId })).map(redactFileRecord),
   });
 }
 
 export async function getPatientBillingSummary(patientId) {
   await delay(120);
   if (!getPatient(patientId)) throw new Error("РџР°С†РёРµРЅС‚ РЅРµ РЅР°Р№РґРµРЅ");
-  const invoices = listInvoiceRecords({ patientId });
+  const invoices = await listInvoiceRecords({ patientId });
   const total = invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
   const paid = invoices.reduce((sum, invoice) => sum + Number(invoice.paid || 0), 0);
   const debt = Math.max(0, total - paid);
@@ -2110,8 +2110,8 @@ export async function createPatientAppointmentRequest(patientId, data = {}, opti
     requestedBy: actorIdFromOptions(options) || patient.id,
   };
   db.appointments.push(request);
-  saveDb();
-  createNotificationRecord({
+  await saveDb();
+  await createNotificationRecord({
     id: genId("notif"),
     type: "appointment_requested",
     title: "New appointment request",
@@ -2121,7 +2121,7 @@ export async function createPatientAppointmentRequest(patientId, data = {}, opti
     createdAt: now,
     extra: { appointmentId: request.id, patientId, doctorId, comment },
   });
-  audit("request", "appointment", request.id, { patientId, doctorId, preferredDate, preferredTime, comment }, actorIdFromOptions(options));
+  await audit("request", "appointment", request.id, { patientId, doctorId, preferredDate, preferredTime, comment }, actorIdFromOptions(options));
   return clone(request);
 }
 
@@ -2171,7 +2171,7 @@ export async function uploadFile(data, options = {}) {
     base64: cleanBase64,
     metadata: { fileId: stored.id, patientId, visitId, kind, category },
   });
-  const record = createFileRecord({
+  const record = await createFileRecord({
     id: stored.id,
     patientId,
     visitId,
@@ -2181,14 +2181,14 @@ export async function uploadFile(data, options = {}) {
     createdAt: new Date().toISOString(),
     extra: { kind, category, mimeGroup: mimeGroup(mimeType), cloudStorage: externalStorage, externalStorage },
   });
-  audit("create", "file", record.id, { patientId, visitId, fileName: record.fileName }, actorIdFromOptions(options));
+  await audit("create", "file", record.id, { patientId, visitId, fileName: record.fileName }, actorIdFromOptions(options));
   return clone(redactFileRecord(record));
 }
 
 export async function getFiles({ patientId = "", visitId = "", kind = "", category = "" } = {}) {
   await delay(100);
   const requestedKind = kind || category ? normalizeFileKind(kind || category) : "";
-  const files = listFileRecords({ patientId, visitId })
+  const files = (await listFileRecords({ patientId, visitId }))
     .map(redactFileRecord)
     .filter((file) => !requestedKind || normalizeFileKind(file.kind || file.category) === requestedKind);
   return clone(files);
@@ -2196,14 +2196,14 @@ export async function getFiles({ patientId = "", visitId = "", kind = "", catego
 
 export async function getFileMetadata(fileId) {
   await delay(50);
-  const file = getFileRecord(fileId);
+  const file = await getFileRecord(fileId);
   if (!file) throw new Error("Файл не найден");
   return clone(redactFileRecord(file));
 }
 
 export async function getFileDownload(fileId) {
   await delay(100);
-  const file = getFileRecord(fileId);
+  const file = await getFileRecord(fileId);
   if (!file) throw new Error("Файл не найден");
   let bytes = existsSync(file.storagePath) ? readFileSync(file.storagePath) : null;
   let mimeType = file.mimeType;
@@ -2228,12 +2228,12 @@ export async function getFileDownload(fileId) {
 
 export async function deleteFile(fileId, options = {}) {
   await delay(100);
-  const file = getFileRecord(fileId);
+  const file = await getFileRecord(fileId);
   if (!file) throw new Error("Файл не найден");
   if (existsSync(file.storagePath)) unlinkSync(file.storagePath);
   const cloudDelete = await deleteExternalFile(file.cloudStorage || file.externalStorage);
-  deleteFileRecord(fileId);
-  audit("delete", "file", fileId, { fileName: file.fileName, cloudDelete }, actorIdFromOptions(options));
+  await deleteFileRecord(fileId);
+  await audit("delete", "file", fileId, { fileName: file.fileName, cloudDelete }, actorIdFromOptions(options));
   return { ok: true, cloudDelete };
 }
 
@@ -2273,7 +2273,7 @@ export async function createPatientProtocolDocument(patientId, options = {}) {
     base64: bytes.toString("base64"),
     metadata: { fileId: stored.id, patientId, visitId, kind: "protocol", category: "protocol" },
   });
-  const record = createFileRecord({
+  const record = await createFileRecord({
     id: stored.id,
     patientId,
     visitId,
@@ -2291,14 +2291,14 @@ export async function createPatientProtocolDocument(patientId, options = {}) {
       externalStorage: cloudStorage,
     },
   });
-  audit("create", "document", record.id, { patientId, type: "ai-protocol" }, actorIdFromOptions(options));
+  await audit("create", "document", record.id, { patientId, type: "ai-protocol" }, actorIdFromOptions(options));
   return clone(redactFileRecord(record));
 }
 
 export async function getLatestPatientProtocolDocument(patientId) {
   await delay(80);
   if (!getPatient(patientId)) throw new Error("РџР°С†РёРµРЅС‚ РЅРµ РЅР°Р№РґРµРЅ");
-  const latest = listFileRecords({ patientId })
+  const latest = (await listFileRecords({ patientId }))
     .map(redactFileRecord)
     .filter((file) => normalizeFileKind(file.kind || file.category) === "protocol")
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0] || null;
@@ -2307,7 +2307,7 @@ export async function getLatestPatientProtocolDocument(patientId) {
 
 export async function signDocument(fileId, data = {}, options = {}) {
   await delay(250);
-  const file = getFileRecord(fileId);
+  const file = await getFileRecord(fileId);
   if (!file) throw new Error("Документ не найден");
   const signatureId = genId("sign");
   const provider = data.provider || "egov";
@@ -2323,7 +2323,7 @@ export async function signDocument(fileId, data = {}, options = {}) {
     },
     metadata: { signatureId, actorUserId: actorIdFromOptions(options) },
   });
-  const notification = createNotificationRecord({
+  const notification = await createNotificationRecord({
     id: genId("notif"),
     type: "document_signed",
     title: "Документ подписан",
@@ -2334,7 +2334,7 @@ export async function signDocument(fileId, data = {}, options = {}) {
     extra: { fileId, signatureId, eSignature },
   });
   const signedAt = new Date().toISOString();
-  const signedFile = updateFileRecordExtra(fileId, {
+  const signedFile = await updateFileRecordExtra(fileId, {
     signatureStatus: eSignature?.ok === false ? "pending" : "signed",
     signedAt,
     signedBy: actorIdFromOptions(options),
@@ -2343,7 +2343,7 @@ export async function signDocument(fileId, data = {}, options = {}) {
     signatureId,
     eSignature,
   });
-  audit("sign", "document", fileId, {
+  await audit("sign", "document", fileId, {
     signatureId,
     provider,
     eSignature,
@@ -2363,19 +2363,19 @@ export async function signDocument(fileId, data = {}, options = {}) {
 
 export async function getNotifications({ role = "", unreadOnly = false } = {}) {
   await delay(100);
-  return clone(listNotificationRecords({ role, unreadOnly }));
+  return clone(await listNotificationRecords({ role, unreadOnly }));
 }
 
 export async function getNotificationById(id) {
   await delay(50);
-  const notification = getNotificationRecord(id);
+  const notification = await getNotificationRecord(id);
   if (!notification) throw new Error("Уведомление не найдено");
   return clone(notification);
 }
 
 export async function markNotificationRead(id, isRead = true) {
   await delay(100);
-  const notification = markNotificationReadRecord(id, isRead);
+  const notification = await markNotificationReadRecord(id, isRead);
   if (!notification) throw new Error("Уведомление не найдено");
   return clone(notification);
 }
@@ -2385,7 +2385,7 @@ export async function generateNotifications() {
   const created = [];
   const lowInventory = (db.inventory || []).filter((item) => Number(item.quantity) <= Number(item.minQuantity));
   for (const item of lowInventory) {
-    created.push(createNotificationRecord({
+    created.push(await createNotificationRecord({
       id: `low_inventory_${item.id}`,
       type: "low_inventory",
       title: "Запасы на исходе",
@@ -2400,7 +2400,7 @@ export async function generateNotifications() {
   const tomorrow = shiftDate(TODAY, 1);
   const scheduledTomorrow = (db.appointments || []).filter((appt) => appt.date === tomorrow && appt.status === "scheduled");
   if (scheduledTomorrow.length) {
-    created.push(createNotificationRecord({
+    created.push(await createNotificationRecord({
       id: `unconfirmed_${tomorrow}`,
       type: "unconfirmed_appointments",
       title: "Есть неподтвержденные визиты",
@@ -2417,7 +2417,7 @@ export async function generateNotifications() {
 
 export async function getAuditLogs(query = {}) {
   await delay(100);
-  return clone(listAuditLogRecords(query));
+  return clone(await listAuditLogRecords(query));
 }
 
 function csvEscape(value) {
@@ -2427,7 +2427,7 @@ function csvEscape(value) {
 
 export async function exportAuditLogsCsv(query = {}) {
   await delay(100);
-  const rows = listAuditLogRecords({
+  const rows = await listAuditLogRecords({
     ...query,
     limit: query?.limit || 500,
   });
@@ -2471,11 +2471,11 @@ function enrichConversation(conversation) {
   };
 }
 
-function ensureDefaultConversations() {
-  if (listConversationRecords({ limit: 1 }).length) return;
+async function ensureDefaultConversations() {
+  if ((await listConversationRecords({ limit: 1 })).length) return;
   const now = new Date().toISOString();
   for (const patient of (db.patients || []).slice(0, 3)) {
-    const conversation = upsertConversationRecord({
+    const conversation = await upsertConversationRecord({
       id: genId("conv"),
       patientId: patient.id,
       channel: "whatsapp",
@@ -2486,7 +2486,7 @@ function ensureDefaultConversations() {
       createdAt: now,
       extra: { source: "seed" },
     });
-    createConversationMessageRecord({
+    await createConversationMessageRecord({
       id: genId("msg"),
       conversationId: conversation.id,
       direction: "inbound",
@@ -2501,15 +2501,15 @@ function ensureDefaultConversations() {
 
 export async function getConversations(query = {}) {
   await delay(120);
-  ensureDefaultConversations();
+  await ensureDefaultConversations();
   const doctorId = String(query?.doctorId || "");
-  return clone(listConversationRecords({
+  return clone((await listConversationRecords({
     query: query?.query || query?.q || "",
     channel: query?.channel || "",
     status: query?.status || "",
     patientId: query?.patientId || "",
     limit: query?.limit || 100,
-  })
+  }))
     .filter((conversation) => !doctorId || patientBelongsToDoctor(conversation.patientId, doctorId))
     .map(enrichConversation));
 }
@@ -2522,7 +2522,7 @@ export async function createConversation(data = {}, options = {}) {
   const channel = normalizeConversationChannel(data?.channel || "whatsapp");
   const status = normalizeConversationStatus(data?.status || "open");
   const now = new Date().toISOString();
-  const conversation = upsertConversationRecord({
+  const conversation = await upsertConversationRecord({
     id: genId("conv"),
     patientId,
     channel,
@@ -2535,7 +2535,7 @@ export async function createConversation(data = {}, options = {}) {
     extra: { source: data?.source || "manual" },
   });
   if (data?.initialMessage) {
-    createConversationMessageRecord({
+    await createConversationMessageRecord({
       id: genId("msg"),
       conversationId: conversation.id,
       direction: "inbound",
@@ -2546,42 +2546,42 @@ export async function createConversation(data = {}, options = {}) {
       extra: { source: "initial" },
     });
   }
-  audit("create", "conversation", conversation.id, { patientId, channel }, actorIdFromOptions(options));
-  return clone(enrichConversation(getConversationRecord(conversation.id)));
+  await audit("create", "conversation", conversation.id, { patientId, channel }, actorIdFromOptions(options));
+  return clone(enrichConversation(await getConversationRecord(conversation.id)));
 }
 
 export async function getConversation(id) {
   await delay(80);
-  ensureDefaultConversations();
-  const conversation = getConversationRecord(id);
+  await ensureDefaultConversations();
+  const conversation = await getConversationRecord(id);
   if (!conversation) throw new Error("Conversation not found");
   return clone(enrichConversation(conversation));
 }
 
 export async function updateConversationStatus(id, status, options = {}) {
   await delay(100);
-  const conversation = getConversationRecord(id);
+  const conversation = await getConversationRecord(id);
   if (!conversation) throw new Error("Conversation not found");
   const nextStatus = normalizeConversationStatus(status);
-  const updated = upsertConversationRecord({
+  const updated = await upsertConversationRecord({
     ...conversation,
     status: nextStatus,
     extra: { statusChangedAt: new Date().toISOString() },
   });
-  audit("update_status", "conversation", id, { status: nextStatus }, actorIdFromOptions(options));
+  await audit("update_status", "conversation", id, { status: nextStatus }, actorIdFromOptions(options));
   return clone(enrichConversation(updated));
 }
 
 export async function getConversationMessages(conversationId, { limit = 100 } = {}) {
   await delay(100);
-  const conversation = getConversationRecord(conversationId);
+  const conversation = await getConversationRecord(conversationId);
   if (!conversation) throw new Error("Conversation not found");
-  return clone(listConversationMessageRecords({ conversationId, limit }));
+  return clone(await listConversationMessageRecords({ conversationId, limit }));
 }
 
 export async function sendConversationMessage(conversationId, data = {}, options = {}) {
   await delay(140);
-  const conversation = getConversationRecord(conversationId);
+  const conversation = await getConversationRecord(conversationId);
   if (!conversation) throw new Error("Conversation not found");
   const body = String(data?.body || data?.message || "").trim();
   if (body.length < 1) throw new Error("Message body is required");
@@ -2591,7 +2591,7 @@ export async function sendConversationMessage(conversationId, data = {}, options
   const status = data?.status ? String(data.status).toLowerCase() : direction === "outbound" ? "sent" : "delivered";
   if (!MESSAGE_STATUSES.has(status)) throw new Error("Unsupported message status");
   const actor = db.users.find((user) => user.id === actorIdFromOptions(options));
-  const message = createConversationMessageRecord({
+  const message = await createConversationMessageRecord({
     id: genId("msg"),
     conversationId,
     direction,
@@ -2604,16 +2604,16 @@ export async function sendConversationMessage(conversationId, data = {}, options
       providerStatus: data?.providerStatus || "",
     },
   });
-  audit("send_message", "conversation", conversationId, { messageId: message.id, direction, status }, actorIdFromOptions(options));
+  await audit("send_message", "conversation", conversationId, { messageId: message.id, direction, status }, actorIdFromOptions(options));
   return clone(message);
 }
 
 export async function createConversationAiDraft(conversationId, data = {}, options = {}) {
   await delay(180);
-  const conversation = getConversationRecord(conversationId);
+  const conversation = await getConversationRecord(conversationId);
   if (!conversation) throw new Error("Conversation not found");
   const patient = getPatient(conversation.patientId);
-  const messages = listConversationMessageRecords({ conversationId, limit: 20 });
+  const messages = await listConversationMessageRecords({ conversationId, limit: 20 });
   const lastInbound = [...messages].reverse().find((message) => message.direction === "inbound");
   const appointment = patient ? appointmentsForPatient(patient.id)
     .filter((appt) => appt.status !== "cancelled")
@@ -2624,7 +2624,7 @@ export async function createConversationAiDraft(conversationId, data = {}, optio
     : appointment
       ? `Здравствуйте, ${patient?.name || ""}. Подтверждаем вашу запись на ${appointment.date} в ${appointment.time}. Если нужно перенести время, напишите нам.`
       : `Здравствуйте, ${patient?.name || ""}. Мы получили ваше сообщение${lastInbound ? `: "${lastInbound.body}"` : ""}. Администратор NeuroDent скоро ответит.`;
-  const draft = createConversationMessageRecord({
+  const draft = await createConversationMessageRecord({
     id: genId("msg"),
     conversationId,
     direction: "outbound",
@@ -2634,7 +2634,7 @@ export async function createConversationAiDraft(conversationId, data = {}, optio
     createdAt: new Date().toISOString(),
     extra: { generatedBy: "backend-rule-draft" },
   });
-  audit("create_ai_draft", "conversation", conversationId, { messageId: draft.id }, actorIdFromOptions(options));
+  await audit("create_ai_draft", "conversation", conversationId, { messageId: draft.id }, actorIdFromOptions(options));
   return clone(draft);
 }
 
@@ -2818,7 +2818,7 @@ export async function draftClinicalProtocol(data = {}, options = {}) {
     metadata: { patientId: patient?.id || "", actorUserId: actorIdFromOptions(options) },
   });
   protocol.externalAi = externalAi;
-  audit("draft", "clinical_protocol", patient?.id || "anonymous", { diagnosisCode: signals.diagnosisCode, externalAi }, actorIdFromOptions(options));
+  await audit("draft", "clinical_protocol", patient?.id || "anonymous", { diagnosisCode: signals.diagnosisCode, externalAi }, actorIdFromOptions(options));
   return clone(protocol);
 }
 
@@ -2861,8 +2861,8 @@ export async function savePatientToothChart(patientId, data = {}, options = {}) 
     updatedAt: new Date().toISOString(),
     updatedBy: actorIdFromOptions(options),
   };
-  saveDb();
-  audit("update_tooth_chart", "patient", patientId, { bite, teethCount: Object.keys(teeth || {}).length }, actorIdFromOptions(options));
+  await saveDb();
+  await audit("update_tooth_chart", "patient", patientId, { bite, teethCount: Object.keys(teeth || {}).length }, actorIdFromOptions(options));
   return clone(patient.toothChart);
 }
 
@@ -2879,7 +2879,7 @@ export async function getBusinessAnalytics({ dateFrom, dateTo } = {}) {
     const date = String(visit.startedAt || "").slice(0, 10);
     return date >= from && date <= to;
   });
-  const invoices = listInvoiceRecords({ dateFrom: from, dateTo: to });
+  const invoices = await listInvoiceRecords({ dateFrom: from, dateTo: to });
   const debtors = await getDebtors("");
   const revenue = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const avgCheck = payments.length ? Math.round(revenue / payments.length) : 0;
@@ -2931,14 +2931,15 @@ export async function getBusinessAnalytics({ dateFrom, dateTo } = {}) {
   });
 }
 
-function backupFileNameFromDate(date = new Date()) {
+function backupFileNameFromDate(date = new Date(), extension = "sqlite") {
   const stamp = date.toISOString().replace(/\.\d{3}Z$/, "").replace(/[-:]/g, "");
-  return `neurodent-backup-${stamp}-${randomBytes(3).toString("hex")}.sqlite`;
+  const safeExtension = extension === "json" ? "json" : "sqlite";
+  return `neurodent-backup-${stamp}-${randomBytes(3).toString("hex")}.${safeExtension}`;
 }
 
 function resolveBackupPath(fileName) {
   const safeName = safeFileName(path.basename(String(fileName || "")), "");
-  if (!/^neurodent-backup-\d{8}T\d{6}-[a-f0-9]{6}\.sqlite$/.test(safeName)) {
+  if (!/^neurodent-backup-\d{8}T\d{6}-[a-f0-9]{6}\.(sqlite|json)$/.test(safeName)) {
     const err = new Error("Invalid backup file name");
     err.statusCode = 400;
     throw err;
@@ -2977,7 +2978,11 @@ function redactFileRecord(file) {
 export async function getReadinessStatus() {
   await delay(50);
   const storage = getStorageInfo();
-  const hasDatabase = existsSync(storage.file);
+  const postgres = storage.driver === "postgres" ? await checkPostgresConnection() : null;
+  const hasDatabase =
+    storage.driver === "postgres"
+      ? Boolean(postgres?.configured && postgres?.reachable && postgres?.schemaReady)
+      : existsSync(storage.file);
   const ready = hasDatabase && storage.durable && !storage.unsupportedRequestedDriver;
   return {
     ok: ready,
@@ -2985,6 +2990,7 @@ export async function getReadinessStatus() {
     database: {
       ...storage,
       ready,
+      postgres,
     },
     warnings: storage.warning ? [storage.warning] : [],
     timestamp: new Date().toISOString(),
@@ -3038,10 +3044,16 @@ export async function getBackendCapabilities() {
 
 export async function exportSystemData() {
   await delay(100);
-  const conversations = listConversationRecords({ limit: 10000 }).map((conversation) => ({
+  const conversations = await Promise.all((await listConversationRecords({ limit: 10000 })).map(async (conversation) => ({
     ...conversation,
-    messages: listConversationMessageRecords({ conversationId: conversation.id, limit: 10000 }),
-  }));
+    messages: await listConversationMessageRecords({ conversationId: conversation.id, limit: 10000 }),
+  })));
+  const files = await listFileRecords();
+  const notifications = await listNotificationRecords();
+  const auditLogs = await listAuditLogRecords({ limit: 10000 });
+  const priceItems = await listPriceItemRecords();
+  const invoices = await listInvoiceRecords();
+  const stockMovements = await listStockMovementRecords({ limit: 10000 });
   return {
     exportedAt: new Date().toISOString(),
     format: "neurodent-json-v1",
@@ -3053,13 +3065,13 @@ export async function exportSystemData() {
       visits: clone(db.visits),
       payments: clone(db.payments),
       inventory: clone(db.inventory),
-      files: clone(listFileRecords().map(redactFileRecord)),
-      notifications: clone(listNotificationRecords()),
-      auditLogs: clone(listAuditLogRecords({ limit: 10000 })),
+      files: clone(files.map(redactFileRecord)),
+      notifications: clone(notifications),
+      auditLogs: clone(auditLogs),
       conversations: clone(conversations),
-      priceItems: clone(listPriceItemRecords()),
-      invoices: clone(listInvoiceRecords()),
-      stockMovements: clone(listStockMovementRecords({ limit: 10000 })),
+      priceItems: clone(priceItems),
+      invoices: clone(invoices),
+      stockMovements: clone(stockMovements),
     },
   };
 }
@@ -3070,6 +3082,25 @@ export async function getSystemStatus() {
   const postgres = await checkPostgresConnection();
   const sqlitePath = getSqliteFilePath();
   const sqliteSize = existsSync(sqlitePath) ? statSync(sqlitePath).size : 0;
+  const [
+    files,
+    notifications,
+    auditLogs,
+    conversations,
+    priceItems,
+    invoices,
+    stockMovements,
+    sessions,
+  ] = await Promise.all([
+    listFileRecords(),
+    listNotificationRecords(),
+    listAuditLogRecords({ limit: 10000 }),
+    listConversationRecords({ limit: 10000 }),
+    listPriceItemRecords(),
+    listInvoiceRecords(),
+    listStockMovementRecords({ limit: 10000 }),
+    listSessionRecords({ limit: 10000 }),
+  ]);
   return {
     ok: true,
     service: "neurodent-backend",
@@ -3086,14 +3117,14 @@ export async function getSystemStatus() {
       visits: db.visits.length,
       payments: db.payments.length,
       inventory: db.inventory.length,
-      files: listFileRecords().length,
-      notifications: listNotificationRecords().length,
-      auditLogs: listAuditLogRecords({ limit: 10000 }).length,
-      conversations: listConversationRecords({ limit: 10000 }).length,
-      priceItems: listPriceItemRecords().length,
-      invoices: listInvoiceRecords().length,
-      stockMovements: listStockMovementRecords({ limit: 10000 }).length,
-      sessions: listSessionRecords({ limit: 10000 }).length,
+      files: files.length,
+      notifications: notifications.length,
+      auditLogs: auditLogs.length,
+      conversations: conversations.length,
+      priceItems: priceItems.length,
+      invoices: invoices.length,
+      stockMovements: stockMovements.length,
+      sessions: sessions.length,
     },
   };
 }
@@ -3121,7 +3152,7 @@ export async function sendAdminTestEmail({ to, subject = "", message = "" } = {}
       actorUserId: actorIdFromOptions(options),
     },
   });
-  audit("send_test_email", "system", recipient, { delivery }, actorIdFromOptions(options));
+  await audit("send_test_email", "system", recipient, { delivery }, actorIdFromOptions(options));
   return {
     ok: !!delivery?.ok,
     to: recipient,
@@ -3132,7 +3163,7 @@ export async function sendAdminTestEmail({ to, subject = "", message = "" } = {}
 
 export async function getAdminSessions({ limit = 200 } = {}) {
   await delay(60);
-  return listSessionRecords({ limit }).map(publicSession);
+  return (await listSessionRecords({ limit })).map(publicSession);
 }
 
 export async function createDatabaseBackup(options = {}) {
@@ -3140,15 +3171,20 @@ export async function createDatabaseBackup(options = {}) {
   checkpointDatabase();
   mkdirSync(BACKUPS_DIR, { recursive: true });
 
-  const sourcePath = getSqliteFilePath();
-  if (!existsSync(sourcePath)) throw new Error("SQLite database file was not found");
-
-  const fileName = backupFileNameFromDate();
+  const storage = getStorageInfo();
+  const isPostgres = storage.driver === "postgres";
+  const fileName = backupFileNameFromDate(new Date(), isPostgres ? "json" : "sqlite");
   const backupPath = path.join(BACKUPS_DIR, fileName);
-  copyFileSync(sourcePath, backupPath);
+  if (isPostgres) {
+    writeFileSync(backupPath, JSON.stringify(await exportSystemData(), null, 2));
+  } else {
+    const sourcePath = getSqliteFilePath();
+    if (!existsSync(sourcePath)) throw new Error("SQLite database file was not found");
+    copyFileSync(sourcePath, backupPath);
+  }
   const stats = statSync(backupPath);
 
-  audit("create_backup", "system", fileName, { size: stats.size }, actorIdFromOptions(options));
+  await audit("create_backup", "system", fileName, { driver: storage.driver, size: stats.size }, actorIdFromOptions(options));
 
   return {
     ok: true,
@@ -3162,12 +3198,13 @@ export async function listDatabaseBackups() {
   await delay(80);
   mkdirSync(BACKUPS_DIR, { recursive: true });
   return readdirSync(BACKUPS_DIR)
-    .filter((fileName) => /^neurodent-backup-\d{8}T\d{6}-[a-f0-9]{6}\.sqlite$/.test(fileName))
+    .filter((fileName) => /^neurodent-backup-\d{8}T\d{6}-[a-f0-9]{6}\.(sqlite|json)$/.test(fileName))
     .map((fileName) => {
       const stats = statSync(path.join(BACKUPS_DIR, fileName));
       return {
         fileName,
         size: stats.size,
+        type: fileName.endsWith(".json") ? "json" : "sqlite",
         createdAt: stats.mtime.toISOString(),
       };
     })
@@ -3184,7 +3221,7 @@ export async function deleteDatabaseBackup(fileName, options = {}) {
   }
   const stats = statSync(backupPath);
   unlinkSync(backupPath);
-  audit("delete_backup", "system", path.basename(backupPath), { size: stats.size }, actorIdFromOptions(options));
+  await audit("delete_backup", "system", path.basename(backupPath), { size: stats.size }, actorIdFromOptions(options));
   return {
     ok: true,
     fileName: path.basename(backupPath),
@@ -3202,14 +3239,14 @@ export async function getDatabaseBackupDownload(fileName) {
   }
   return {
     fileName: path.basename(backupPath),
-    mimeType: "application/vnd.sqlite3",
+    mimeType: backupPath.endsWith(".json") ? "application/json" : "application/vnd.sqlite3",
     bytes: readFileSync(backupPath),
   };
 }
 
 export async function cleanupSystemMaintenance({ backupRetentionDays = 30 } = {}, options = {}) {
   await delay(100);
-  const expiredSessionsDeleted = deleteExpiredSessions();
+  const expiredSessionsDeleted = await deleteExpiredSessions();
   let backupsDeleted = 0;
   const retentionDays = Number(backupRetentionDays);
   if (Number.isFinite(retentionDays) && retentionDays >= 0) {
@@ -3230,7 +3267,7 @@ export async function cleanupSystemMaintenance({ backupRetentionDays = 30 } = {}
     retentionDays,
     cleanedAt: new Date().toISOString(),
   };
-  audit("cleanup", "system", "maintenance", result, actorIdFromOptions(options));
+  await audit("cleanup", "system", "maintenance", result, actorIdFromOptions(options));
   return result;
 }
 
@@ -3936,7 +3973,7 @@ export async function sendPatientReminder(patientId, message = "", options = {})
   } else {
     delivery = await sendSms({ to: patient.phone, message: text, metadata });
   }
-  const notification = createNotificationRecord({
+  const notification = await createNotificationRecord({
     id: genId("notif"),
     type: "reminder_sent",
     title: "Напоминание отправлено",
@@ -3946,7 +3983,7 @@ export async function sendPatientReminder(patientId, message = "", options = {})
     createdAt: new Date().toISOString(),
     extra: { patientId, channel, delivery },
   });
-  audit("send_reminder", "patient", patientId, { message: text, notificationId: notification.id, channel, delivery }, actorIdFromOptions(options));
+  await audit("send_reminder", "patient", patientId, { message: text, notificationId: notification.id, channel, delivery }, actorIdFromOptions(options));
   return {
     ok: true,
     patientId,
@@ -3972,12 +4009,12 @@ function defaultPriceItems() {
   ];
 }
 
-function ensureDefaultPriceList() {
-  const existing = listPriceItemRecords({});
+async function ensureDefaultPriceList() {
+  const existing = await listPriceItemRecords({});
   if (existing.length) return;
   const now = new Date().toISOString();
   for (const item of defaultPriceItems()) {
-    upsertPriceItemRecord({
+    await upsertPriceItemRecord({
       id: genId("price"),
       ...item,
       isActive: true,
@@ -3988,8 +4025,8 @@ function ensureDefaultPriceList() {
 
 export async function getPriceItems(query = "", activeOnly = false) {
   await delay(120);
-  ensureDefaultPriceList();
-  return clone(listPriceItemRecords({ query, activeOnly }));
+  await ensureDefaultPriceList();
+  return clone(await listPriceItemRecords({ query, activeOnly }));
 }
 
 export async function createPriceItem(data, options = {}) {
@@ -4001,8 +4038,8 @@ export async function createPriceItem(data, options = {}) {
   if (!code) throw new Error("Укажите код услуги");
   if (name.length < 2) throw new Error("Название услуги слишком короткое");
   if (!Number.isFinite(price) || price < 0) throw new Error("Цена должна быть положительным числом");
-  if (getPriceItemRecord(code)) throw new Error("Услуга с таким кодом уже есть");
-  const item = upsertPriceItemRecord({
+  if (await getPriceItemRecord(code)) throw new Error("Услуга с таким кодом уже есть");
+  const item = await upsertPriceItemRecord({
     id: genId("price"),
     code,
     name,
@@ -4011,23 +4048,23 @@ export async function createPriceItem(data, options = {}) {
     isActive: data?.isActive !== false,
     createdAt: new Date().toISOString(),
   });
-  audit("create", "price_item", item.id, { code, name, price }, actorIdFromOptions(options));
+  await audit("create", "price_item", item.id, { code, name, price }, actorIdFromOptions(options));
   return clone(item);
 }
 
 export async function updatePriceItem(id, patch, options = {}) {
   await delay(150);
-  const existing = getPriceItemRecord(id);
+  const existing = await getPriceItemRecord(id);
   if (!existing) throw new Error("Услуга не найдена");
   const nextCode = patch?.code !== undefined ? String(patch.code).trim().toUpperCase() : existing.code;
   const nextName = patch?.name !== undefined ? String(patch.name).trim() : existing.name;
   const nextPrice = patch?.price !== undefined ? Number(patch.price) : existing.price;
-  const duplicate = getPriceItemRecord(nextCode);
+  const duplicate = await getPriceItemRecord(nextCode);
   if (!nextCode) throw new Error("Укажите код услуги");
   if (nextName.length < 2) throw new Error("Название услуги слишком короткое");
   if (!Number.isFinite(nextPrice) || nextPrice < 0) throw new Error("Цена должна быть положительным числом");
   if (duplicate && duplicate.id !== existing.id) throw new Error("Услуга с таким кодом уже есть");
-  const item = upsertPriceItemRecord({
+  const item = await upsertPriceItemRecord({
     ...existing,
     code: nextCode,
     name: nextName,
@@ -4036,15 +4073,15 @@ export async function updatePriceItem(id, patch, options = {}) {
     isActive: patch?.isActive !== undefined ? !!patch.isActive : existing.isActive,
     createdAt: existing.createdAt,
   });
-  audit("update", "price_item", item.id, { patch }, actorIdFromOptions(options));
+  await audit("update", "price_item", item.id, { patch }, actorIdFromOptions(options));
   return clone(item);
 }
 
 export async function setPriceItemActive(id, isActive, options = {}) {
   await delay(120);
-  const item = setPriceItemActiveRecord(id, isActive);
+  const item = await setPriceItemActiveRecord(id, isActive);
   if (!item) throw new Error("Услуга не найдена");
-  audit(isActive ? "activate" : "deactivate", "price_item", id, {}, actorIdFromOptions(options));
+  await audit(isActive ? "activate" : "deactivate", "price_item", id, {}, actorIdFromOptions(options));
   return clone(item);
 }
 
@@ -4054,11 +4091,11 @@ function invoiceStatus(total, paid) {
   return "partial";
 }
 
-function normalizeInvoiceItems(items = []) {
-  ensureDefaultPriceList();
-  return items.map((raw) => {
+async function normalizeInvoiceItems(items = []) {
+  await ensureDefaultPriceList();
+  return Promise.all(items.map(async (raw) => {
     const priceItem = raw.priceItemId || raw.code
-      ? getPriceItemRecord(raw.priceItemId || raw.code)
+      ? await getPriceItemRecord(raw.priceItemId || raw.code)
       : null;
     const quantity = Number(raw.quantity || 1);
     const unitPrice = raw.unitPrice !== undefined ? Number(raw.unitPrice) : Number(priceItem?.price || 0);
@@ -4074,7 +4111,7 @@ function normalizeInvoiceItems(items = []) {
       unitPrice,
       total: quantity * unitPrice,
     };
-  });
+  }));
 }
 
 export async function createInvoice(data, options = {}) {
@@ -4087,7 +4124,7 @@ export async function createInvoice(data, options = {}) {
     if (!visit) throw new Error("Визит не найден");
     if (visit.patientId !== patientId) throw new Error("Визит не принадлежит пациенту");
   }
-  const items = normalizeInvoiceItems(data?.items || []);
+  const items = await normalizeInvoiceItems(data?.items || []);
   if (!items.length) throw new Error("Добавьте хотя бы одну позицию счета");
   const subtotal = items.reduce((sum, item) => sum + item.total, 0);
   const discount = Number(data?.discount || 0);
@@ -4097,7 +4134,7 @@ export async function createInvoice(data, options = {}) {
   if (!Number.isFinite(requestedPaid) || requestedPaid < 0) throw new Error("Оплаченная сумма некорректна");
   const paid = Math.min(total, requestedPaid);
   const now = new Date().toISOString();
-  const invoice = createInvoiceRecord(
+  const invoice = await createInvoiceRecord(
     {
       id: genId("invoice"),
       patientId,
@@ -4121,18 +4158,18 @@ export async function createInvoice(data, options = {}) {
       visitId: visitId || null,
     }, options);
   }
-  audit("create", "invoice", invoice.id, { patientId, visitId, total }, actorIdFromOptions(options));
+  await audit("create", "invoice", invoice.id, { patientId, visitId, total }, actorIdFromOptions(options));
   return clone(invoice);
 }
 
 export async function getInvoices(query = {}) {
   await delay(140);
-  return clone(listInvoiceRecords(query));
+  return clone(await listInvoiceRecords(query));
 }
 
 export async function getInvoice(id) {
   await delay(100);
-  const invoice = getInvoiceRecord(id);
+  const invoice = await getInvoiceRecord(id);
   if (!invoice) throw new Error("Счет не найден");
   return clone(invoice);
 }
@@ -4179,7 +4216,7 @@ function invoiceEmailHtml(invoice, patient, message = "") {
 
 export async function sendInvoiceEmail(id, data = {}, options = {}) {
   await delay(150);
-  const invoice = getInvoiceRecord(id);
+  const invoice = await getInvoiceRecord(id);
   if (!invoice) throw new Error("Invoice not found");
   const patient = getPatient(invoice.patientId);
   if (!patient) throw new Error("Patient not found");
@@ -4201,7 +4238,7 @@ export async function sendInvoiceEmail(id, data = {}, options = {}) {
       actorUserId: actorIdFromOptions(options),
     },
   });
-  const notification = createNotificationRecord({
+  const notification = await createNotificationRecord({
     id: genId("notif"),
     type: "invoice_email_sent",
     title: "Invoice email sent",
@@ -4211,7 +4248,7 @@ export async function sendInvoiceEmail(id, data = {}, options = {}) {
     createdAt: new Date().toISOString(),
     extra: { invoiceId: invoice.id, patientId: patient.id, to: recipient, delivery },
   });
-  audit("send_invoice_email", "invoice", invoice.id, { patientId: patient.id, to: recipient, delivery, notificationId: notification.id }, actorIdFromOptions(options));
+  await audit("send_invoice_email", "invoice", invoice.id, { patientId: patient.id, to: recipient, delivery, notificationId: notification.id }, actorIdFromOptions(options));
   return {
     ok: !!delivery?.ok,
     invoiceId: invoice.id,
@@ -4225,7 +4262,7 @@ export async function sendInvoiceEmail(id, data = {}, options = {}) {
 
 export async function payInvoice(id, data = {}, options = {}) {
   await delay(180);
-  const invoice = getInvoiceRecord(id);
+  const invoice = await getInvoiceRecord(id);
   if (!invoice) throw new Error("Счет не найден");
   const amount = Number(data.amount);
   const method = String(data.method || "cash");
@@ -4235,7 +4272,7 @@ export async function payInvoice(id, data = {}, options = {}) {
   if (remaining <= 0) throw new Error("Счет уже оплачен");
   const appliedAmount = Math.min(amount, remaining);
   const paid = Math.min(invoice.total, Number(invoice.paid || 0) + appliedAmount);
-  const updated = updateInvoicePaymentRecord(id, paid, invoiceStatus(invoice.total, paid));
+  const updated = await updateInvoicePaymentRecord(id, paid, invoiceStatus(invoice.total, paid));
   await createPayment({
     date: data.date || new Date().toISOString().slice(0, 10),
     amount: appliedAmount,
@@ -4243,7 +4280,7 @@ export async function payInvoice(id, data = {}, options = {}) {
     patientId: invoice.patientId,
     visitId: invoice.visitId || null,
   }, options);
-  audit("pay", "invoice", id, { amount: appliedAmount, requestedAmount: amount, method, paid }, actorIdFromOptions(options));
+  await audit("pay", "invoice", id, { amount: appliedAmount, requestedAmount: amount, method, paid }, actorIdFromOptions(options));
   return clone(updated);
 }
 
@@ -4266,8 +4303,8 @@ export async function createStockMovement(data, options = {}) {
   const nextQuantity = Number(item.quantity || 0) + signedDelta;
   if (nextQuantity < 0) throw new Error("Недостаточно на складе");
   item.quantity = nextQuantity;
-  saveDb();
-  const movement = createStockMovementRecord({
+  await saveDb();
+  const movement = await createStockMovementRecord({
     id: genId("stock"),
     inventoryId,
     type,
@@ -4278,13 +4315,13 @@ export async function createStockMovement(data, options = {}) {
     actorUserId: actorIdFromOptions(options),
     createdAt: new Date().toISOString(),
   });
-  audit("create", "stock_movement", movement.id, { inventoryId, type, quantity, balanceAfter: item.quantity }, actorIdFromOptions(options));
+  await audit("create", "stock_movement", movement.id, { inventoryId, type, quantity, balanceAfter: item.quantity }, actorIdFromOptions(options));
   return clone(movement);
 }
 
 export async function getStockMovements(query = {}) {
   await delay(120);
-  return clone(listStockMovementRecords(query));
+  return clone(await listStockMovementRecords(query));
 }
 
 export async function getPeriodReport({ dateFrom, dateTo } = {}) {
@@ -4300,7 +4337,7 @@ export async function getPeriodReport({ dateFrom, dateTo } = {}) {
     const date = String(visit.startedAt || "").slice(0, 10);
     return date >= from && date <= to;
   });
-  const invoices = listInvoiceRecords({ dateFrom: from, dateTo: to });
+  const invoices = await listInvoiceRecords({ dateFrom: from, dateTo: to });
   const totalRevenue = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const invoiceTotal = invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
   const invoicePaid = invoices.reduce((sum, invoice) => sum + Number(invoice.paid || 0), 0);

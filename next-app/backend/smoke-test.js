@@ -229,7 +229,10 @@ const fileDelete = await request("DELETE", `/api/files/${fileUpload.data.id}`, {
 assert(fileDelete.status === 200 && fileDelete.data.ok, "file delete failed");
 
 const system = await request("GET", "/api/admin/system", { token });
-assert(system.status === 200 && system.data.storage?.driver === "sqlite", "system status failed");
+const expectedStorageDriver = String(process.env.NEURODENT_STORAGE_DRIVER || "sqlite").toLowerCase() === "postgres"
+  ? "postgres"
+  : "sqlite";
+assert(system.status === 200 && system.data.storage?.driver === expectedStorageDriver, "system status failed");
 
 const integrations = await request("GET", "/api/admin/integrations", { token });
 assert(integrations.status === 200 && integrations.data.some((item) => item.provider === "sms"), "integration status failed");

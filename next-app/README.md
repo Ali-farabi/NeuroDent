@@ -96,11 +96,17 @@ Required runtime:
 Node.js >= 22
 ```
 
-SQLite is the active runtime storage. PostgreSQL/Supabase persistence is prepared as the next stage, but the runtime adapter is not enabled yet.
+SQLite is the default runtime storage for local development. PostgreSQL/Supabase runtime storage is available by setting:
 
-Production decision: use Docker/VPS with a durable volume mounted to `next-app/backend/data`, or set `NEURODENT_DATA_DIR` to another durable path.
+```text
+NEURODENT_STORAGE_DRIVER=postgres
+NEURODENT_DATABASE_URL=postgres://...
+NEURODENT_POSTGRES_SSL=require
+```
 
-Vercel/serverless is preview-only until PostgreSQL runtime persistence is implemented. For serverless demos, SQLite may live on an ephemeral filesystem. `/api/ready` reports this as not durable unless `NEURODENT_ALLOW_EPHEMERAL_STORAGE=true` is explicitly set.
+Production decision: use Docker/VPS with a durable volume mounted to `next-app/backend/data`, set `NEURODENT_DATA_DIR` to another durable path, or run the PostgreSQL/Supabase storage adapter for serverless deployments.
+
+For Vercel/serverless production, use `NEURODENT_STORAGE_DRIVER=postgres`. For serverless demos with SQLite, the database may live on an ephemeral filesystem; `/api/ready` reports this as not durable unless `NEURODENT_ALLOW_EPHEMERAL_STORAGE=true` is explicitly set.
 
 PostgreSQL preflight commands:
 
@@ -118,6 +124,13 @@ npm run db:postgres:local:check
 ```
 
 The Postgres CLI scripts load `.env.local` automatically. Without `NEURODENT_DATABASE_URL`, `db:postgres:migrate` has no database to connect to and will stop with a configuration hint.
+
+To smoke-test the app against PostgreSQL in PowerShell without changing `.env.local`:
+
+```powershell
+$env:NEURODENT_STORAGE_DRIVER="postgres"
+npm run test:backend
+```
 
 Deployment guide:
 

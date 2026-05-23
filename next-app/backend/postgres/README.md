@@ -1,6 +1,6 @@
 # PostgreSQL Migration Path
 
-The current NeuroDent runtime uses SQLite because it works without external services and is suitable for local development and demonstration. For production scaling, PostgreSQL is prepared as the target database.
+The default NeuroDent runtime uses SQLite because it works without external services and is suitable for local development and demonstration. For production scaling and serverless deployment, PostgreSQL/Supabase can be enabled as the runtime storage adapter.
 
 Prepared files:
 
@@ -65,4 +65,10 @@ For Supabase, use the Supabase Postgres connection string and set:
 NEURODENT_POSTGRES_SSL=require
 ```
 
-PostgreSQL runtime is not enabled yet. The next implementation step is replacing the current SQLite storage adapter with a PostgreSQL adapter that keeps the same service-layer API. Until then, keep `NEURODENT_STORAGE_DRIVER=sqlite`.
+Enable PostgreSQL runtime storage:
+
+```text
+NEURODENT_STORAGE_DRIVER=postgres
+```
+
+The adapter keeps the same service-layer API as SQLite. `/api/ready`, `/api/capabilities`, and the admin system status report the active driver and PostgreSQL schema readiness.

@@ -4,9 +4,9 @@ This document records the current production decision for the `next-app` project
 
 ## Decision
 
-Production should run as a Docker/VPS deployment with a durable filesystem volume mounted for SQLite data.
+Production can run either as a Docker/VPS deployment with a durable filesystem volume mounted for SQLite data, or with the PostgreSQL/Supabase runtime storage adapter.
 
-Vercel or other serverless platforms are preview/demo only until the PostgreSQL runtime adapter is implemented. The current backend uses Node.js SQLite on the local filesystem, so serverless storage under `/tmp` is not durable enough for clinic production data.
+For Vercel or other serverless platforms, use `NEURODENT_STORAGE_DRIVER=postgres`. SQLite on serverless storage under `/tmp` is only suitable for demos because it is not durable enough for clinic production data.
 
 ## Production Target
 
@@ -56,10 +56,23 @@ Minimum required runtime:
 Node.js >= 22
 NODE_ENV=production
 PORT=3000
-NEURODENT_STORAGE_DRIVER=sqlite
-NEURODENT_DATA_DIR=<durable path>
 NEURODENT_ALLOW_EPHEMERAL_STORAGE=false
 NEURODENT_EXPOSE_RESET_TOKEN=false
+```
+
+SQLite production storage:
+
+```text
+NEURODENT_STORAGE_DRIVER=sqlite
+NEURODENT_DATA_DIR=<durable path>
+```
+
+PostgreSQL/Supabase production storage:
+
+```text
+NEURODENT_STORAGE_DRIVER=postgres
+NEURODENT_DATABASE_URL=postgres://...
+NEURODENT_POSTGRES_SSL=require
 ```
 
 Recommended clinic integrations:
@@ -86,17 +99,17 @@ The admin integrations page shows missing integration env vars at runtime.
 
 ## Backups
 
-The backend creates SQLite backup files under:
+The backend creates backup files under:
 
 ```text
 next-app/backend/data/backups
 ```
 
-For Docker production, back up the `neurodent-data` volume regularly. Owner users can also create and download backups from the admin maintenance endpoints.
+SQLite backups are `.sqlite` file copies. PostgreSQL/Supabase runtime backups are JSON exports from the admin export payload. For Docker production, back up the `neurodent-data` volume regularly. Owner users can also create and download backups from the admin maintenance endpoints.
 
 ## Vercel Preview
 
-The repository keeps Vercel config for preview builds and UI checks. Do not use Vercel for clinic production data while `postgresRuntimeEnabled` is `false` in `/api/capabilities`.
+The repository keeps Vercel config for preview builds and UI checks. Use PostgreSQL/Supabase for clinic production data on Vercel and confirm `postgresRuntimeEnabled` is `true` in `/api/capabilities`.
 
 If a demo deployment is intentionally allowed to use ephemeral SQLite, set:
 
@@ -155,6 +168,12 @@ npm run db:postgres:local:check
 
 The local Docker PostgreSQL service is exposed on host port `55432` to avoid conflicts with an existing Windows PostgreSQL service on `5432`.
 
-## Next Stage
+## PostgreSQL Runtime
 
-The next implementation stage is the PostgreSQL/Supabase runtime storage adapter that keeps the existing service-layer API and makes serverless production deployment possible. Until that adapter is enabled, keep `NEURODENT_STORAGE_DRIVER=sqlite`.
+To run the backend on PostgreSQL/Supabase, apply the schema and start the app with:
+
+```text
+NEURODENT_STORAGE_DRIVER=postgres
+```
+
+The adapter keeps the existing service-layer API and `/api/ready` validates both connectivity and schema readiness before reporting production readiness.

@@ -43,6 +43,10 @@ export function isPostgresConfigured() {
   return Boolean(process.env.NEURODENT_DATABASE_URL || process.env.DATABASE_URL);
 }
 
+export function isPostgresRuntimeEnabled() {
+  return String(process.env.NEURODENT_STORAGE_DRIVER || "").toLowerCase() === "postgres";
+}
+
 function getDatabaseUrl() {
   return process.env.NEURODENT_DATABASE_URL || process.env.DATABASE_URL || "";
 }
@@ -181,7 +185,7 @@ export async function checkPostgresConnection() {
       ...config,
       reachable: false,
       schemaReady: false,
-      runtimeEnabled: false,
+      runtimeEnabled: isPostgresRuntimeEnabled(),
       error: config.invalid ? { message: "Invalid PostgreSQL connection URL", code: "" } : null,
     };
   }
@@ -202,7 +206,7 @@ export async function checkPostgresConnection() {
         ...config,
         reachable: true,
         schemaReady: schema.ready,
-        runtimeEnabled: false,
+        runtimeEnabled: isPostgresRuntimeEnabled(),
         latencyMs: Date.now() - startedAt,
         database: info.rows[0]?.database || config.database,
         user: info.rows[0]?.user || config.user,
@@ -217,7 +221,7 @@ export async function checkPostgresConnection() {
       ...config,
       reachable: false,
       schemaReady: false,
-      runtimeEnabled: false,
+      runtimeEnabled: isPostgresRuntimeEnabled(),
       error: safeError(error),
     };
   }
@@ -262,6 +266,28 @@ export async function applyPostgresSchema() {
   }
 
   return checkPostgresConnection();
+}
+
+export async function postgresQuery(sql, params = []) {
+  return getPool().query(sql, params);
+}
+
+export async function withPostgresTransaction(fn) {
+  const client = await connectWithRetry();
+  let inTransaction = false;
+  try {
+    await client.query("BEGIN");
+    inTransaction = true;
+    const result = await fn(client);
+    await client.query("COMMIT");
+    inTransaction = false;
+    return result;
+  } catch (error) {
+    if (inTransaction) await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function closePostgresPool() {
