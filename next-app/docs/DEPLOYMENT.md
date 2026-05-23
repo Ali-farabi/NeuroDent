@@ -153,6 +153,8 @@ npm run db:postgres:local:migrate
 npm run db:postgres:local:check
 ```
 
+The local Docker PostgreSQL service is exposed on host port `55432` to avoid conflicts with an existing Windows PostgreSQL service on `5432`.
+
 ## Next Stage
 
 The next implementation stage is the PostgreSQL/Supabase runtime storage adapter that keeps the existing service-layer API and makes serverless production deployment possible. Until that adapter is enabled, keep `NEURODENT_STORAGE_DRIVER=sqlite`.

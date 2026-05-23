@@ -29,6 +29,12 @@ Production database URL:
 NEURODENT_DATABASE_URL=postgres://neurodent:neurodent@postgres:5432/neurodent
 ```
 
+For local Docker from the host machine, use port `55432` because many Windows machines already have another PostgreSQL service on `5432`:
+
+```text
+NEURODENT_DATABASE_URL=postgres://neurodent:neurodent@localhost:55432/neurodent
+```
+
 Apply the schema:
 
 ```bash
