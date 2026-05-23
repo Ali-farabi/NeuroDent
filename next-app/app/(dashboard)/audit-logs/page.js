@@ -44,9 +44,9 @@ export default function AuditLogsPage() {
       </div>
 
       <form onSubmit={(event) => { event.preventDefault(); load(); }} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-4">
-        <input value={filters.entityType} onChange={(event) => setFilters((f) => ({ ...f, entityType: event.target.value }))} className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="entityType" />
-        <input value={filters.entityId} onChange={(event) => setFilters((f) => ({ ...f, entityId: event.target.value }))} className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="entityId" />
-        <input type="number" value={filters.limit} onChange={(event) => setFilters((f) => ({ ...f, limit: event.target.value }))} className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="limit" />
+        <input value={filters.entityType} onChange={(event) => setFilters((f) => ({ ...f, entityType: event.target.value }))} className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="Тип объекта" />
+        <input value={filters.entityId} onChange={(event) => setFilters((f) => ({ ...f, entityId: event.target.value }))} className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="ID объекта" />
+        <input type="number" value={filters.limit} onChange={(event) => setFilters((f) => ({ ...f, limit: event.target.value }))} className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="Лимит" />
         <button className="h-10 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white">Фильтр</button>
       </form>
 
@@ -55,7 +55,7 @@ export default function AuditLogsPage() {
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <table className="w-full border-collapse text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-            <tr><th className="p-3">Время</th><th className="p-3">Actor</th><th className="p-3">Action</th><th className="p-3">Entity</th><th className="p-3">Details</th></tr>
+            <tr><th className="p-3">Время</th><th className="p-3">Пользователь</th><th className="p-3">Действие</th><th className="p-3">Объект</th><th className="p-3">Детали</th></tr>
           </thead>
           <tbody>
             {logs.map((log) => (

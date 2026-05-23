@@ -48,10 +48,10 @@ function makeTimeOptions(startHour = 8, endHour = 20, step = 15) {
 }
 
 const STATUS_STYLE = {
-  scheduled: { bg: "#f0f6ff", color: "#1d4ed8", border: "#bfdbfe", stripe: "#3b82f6", label: "SCHEDULED", ru: "Ожидает" },
-  arrived:   { bg: "#fffbeb", color: "#b45309", border: "#fde68a", stripe: "#f59e0b", label: "ARRIVED",   ru: "Принят"  },
-  completed: { bg: "#f0fdf4", color: "#15803d", border: "#bbf7d0", stripe: "#22c55e", label: "COMPLETED", ru: "Завершён"},
-  cancelled: { bg: "#fff1f2", color: "#dc2626", border: "#fecaca", stripe: "#ef4444", label: "CANCELLED", ru: "Отменён" },
+  scheduled: { bg: "#f0f6ff", color: "#1d4ed8", border: "#bfdbfe", stripe: "#3b82f6", label: "Запланировано" },
+  arrived:   { bg: "#fffbeb", color: "#b45309", border: "#fde68a", stripe: "#f59e0b", label: "Пациент пришел" },
+  completed: { bg: "#f0fdf4", color: "#15803d", border: "#bbf7d0", stripe: "#22c55e", label: "Завершено"},
+  cancelled: { bg: "#fff1f2", color: "#dc2626", border: "#fecaca", stripe: "#ef4444", label: "Отменено" },
 };
 
 const STATUS_TRANSITIONS = {
@@ -204,7 +204,7 @@ function ApptDetailModal({ appt, doctors, role, onClose, onStatusChanged, onOpen
             {/* AI button — doctor/assistant/owner */}
             {["doctor","assistant","owner"].includes(role) && (
               <button onClick={() => { onOpenAi(appt.patientId); onClose(); }} style={{ ...btnPrimary, width: "100%", padding: "11px 0", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                <Bot size={16} /> Открыть Core AI Layer
+                <Bot size={16} /> Открыть AI-протокол
               </button>
             )}
 
