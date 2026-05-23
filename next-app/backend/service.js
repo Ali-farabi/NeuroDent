@@ -59,6 +59,7 @@ import {
   persistDbSnapshot,
   setPriceItemActiveRecord,
   updateInvoicePaymentRecord,
+  updateFileRecordExtra,
   upsertConversationRecord,
   upsertPriceItemRecord,
 } from "./storage.js";
@@ -200,11 +201,18 @@ function resetSessionToken(token) {
   return `password_reset:${hashToken(token)}`;
 }
 
+function patientResetSessionToken(token) {
+  return `patient_password_reset:${hashToken(token)}`;
+}
+
 function publicUser(user) {
   if (!user) return null;
   const safeUser = { ...user };
   delete safeUser.passwordHash;
   delete safeUser.passwordSalt;
+  delete safeUser.portalPasswordHash;
+  delete safeUser.portalPasswordSalt;
+  delete safeUser.portalPassword;
   return safeUser;
 }
 
@@ -221,8 +229,31 @@ function patientAsUser(patient, phone = "") {
 
 function verifyPatientPassword(patient, password) {
   const rawPassword = String(password || "");
+  if (patient?.portalPasswordHash && patient?.portalPasswordSalt) {
+    return verifyPassword({
+      passwordHash: patient.portalPasswordHash,
+      passwordSalt: patient.portalPasswordSalt,
+    }, rawPassword);
+  }
   const portalPassword = String(patient?.portalPassword || "patient");
-  return rawPassword === portalPassword;
+  const ok = rawPassword === portalPassword;
+  if (ok) {
+    const hashed = hashPassword(rawPassword);
+    patient.portalPasswordHash = hashed.passwordHash;
+    patient.portalPasswordSalt = hashed.passwordSalt;
+    delete patient.portalPassword;
+    saveDb();
+  }
+  return ok;
+}
+
+function setPatientPortalPassword(patient, password) {
+  const rawPassword = String(password || "");
+  if (rawPassword.length < 4) throw new Error("Patient portal password is too short");
+  const hashed = hashPassword(rawPassword);
+  patient.portalPasswordHash = hashed.passwordHash;
+  patient.portalPasswordSalt = hashed.passwordSalt;
+  delete patient.portalPassword;
 }
 
 function hashPassword(password, salt = randomBytes(16).toString("hex")) {
@@ -317,6 +348,51 @@ function safeFileName(name, fallback = "file") {
   return raw.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").slice(0, 140);
 }
 
+function pdfEscape(value) {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[^\x20-\x7E]/g, "?")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function createSimplePdf({ title = "NeuroDent document", lines = [] } = {}) {
+  const safeLines = [title, "", ...lines]
+    .flatMap((line) => String(line || "").split(/\r?\n/))
+    .slice(0, 42);
+  const content = [
+    "BT",
+    "/F1 18 Tf",
+    "50 790 Td",
+    `(${pdfEscape(safeLines.shift() || title)}) Tj`,
+    "/F1 10 Tf",
+    "0 -28 Td",
+    ...safeLines.flatMap((line) => [`(${pdfEscape(line)}) Tj`, "0 -15 Td"]),
+    "ET",
+  ].join("\n");
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${Buffer.byteLength(content, "latin1")} >>\nstream\n${content}\nendstream`,
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf, "latin1"));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = Buffer.byteLength(pdf, "latin1");
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let index = 1; index < offsets.length; index += 1) {
+    pdf += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, "latin1");
+}
+
 function writeStoredFile(directory, fileName, bytes) {
   mkdirSync(directory, { recursive: true });
   const id = genId("file");
@@ -326,6 +402,46 @@ function writeStoredFile(directory, fileName, bytes) {
   const storagePath = path.join(directory, finalName);
   writeFileSync(storagePath, bytes);
   return { id, storagePath, fileName: safeName };
+}
+
+const FILE_KINDS = new Set(["xray", "ct", "before", "after", "protocol", "consent", "invoice", "upload", "other"]);
+
+function normalizeFileKind(value = "") {
+  const raw = String(value || "").trim().toLowerCase().replace(/[_\s]+/g, "-");
+  const aliases = {
+    "ai-protocol": "protocol",
+    pdf: "protocol",
+    photo_before: "before",
+    photo_after: "after",
+    xray: "xray",
+    "x-ray": "xray",
+    rentgen: "xray",
+    cbct: "ct",
+    kt: "ct",
+  };
+  const kind = aliases[raw] || raw;
+  return FILE_KINDS.has(kind) ? kind : "other";
+}
+
+function mimeGroup(mimeType = "") {
+  const value = String(mimeType || "").toLowerCase();
+  if (value.startsWith("image/")) return "image";
+  if (value === "application/pdf") return "pdf";
+  if (value.includes("dicom") || value.includes("model") || value.includes("stl") || value.includes("obj")) return "3d";
+  if (value.startsWith("video/")) return "video";
+  if (value.startsWith("text/")) return "text";
+  return "binary";
+}
+
+function filePublicMetadata(file) {
+  const group = mimeGroup(file?.mimeType);
+  const downloadUrl = `/api/files/${encodeURIComponent(file?.id || "")}/download`;
+  return {
+    downloadUrl,
+    previewUrl: ["image", "pdf", "text"].includes(group) ? downloadUrl : "",
+    thumbnailUrl: group === "image" ? downloadUrl : "",
+    mimeGroup: group,
+  };
 }
 
 function latestFinalVisit(patientId) {
@@ -906,47 +1022,62 @@ export async function changePassword(userId, currentPassword, nextPassword) {
   return { ok: true };
 }
 
+export async function changePatientPortalPassword(patientId, currentPassword, nextPassword, options = {}) {
+  await delay(150);
+  const patient = getPatient(patientId);
+  if (!patient) throw new Error("Patient not found");
+  if (!verifyPatientPassword(patient, currentPassword)) throw new Error("Current password is incorrect");
+  setPatientPortalPassword(patient, nextPassword);
+  saveDb();
+  audit("change_patient_portal_password", "patient", patient.id, {}, actorIdFromOptions(options) || patient.id);
+  return { ok: true };
+}
+
 // Creates a time-limited password reset token.
 // Backend: POST /auth/request-password-reset -> { ok, expiresAt }
 export async function requestPasswordReset(phone) {
   await delay(100);
   const phoneDigits = cleanPhone(phone);
   const user = (db.users || []).find((entry) => cleanPhone(entry.phone) === phoneDigits && entry.isActive !== false);
+  const patient = user ? null : (db.patients || []).find((entry) => cleanPhone(entry.phone) === phoneDigits);
   const response = {
     ok: true,
     message: "If the user exists, password reset instructions will be prepared.",
   };
 
-  if (!user) return response;
+  if (!user && !patient) return response;
 
   deleteExpiredSessions();
   const token = randomBytes(32).toString("hex");
   const createdAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS).toISOString();
+  const subjectType = user ? "password_reset" : "patient_password_reset";
+  const subjectId = user?.id || patient.id;
 
   createSessionRecord({
-    token: resetSessionToken(token),
-    subjectType: "password_reset",
-    subjectId: user.id,
+    token: user ? resetSessionToken(token) : patientResetSessionToken(token),
+    subjectType,
+    subjectId,
     createdAt,
     expiresAt,
   });
 
-  audit("request_password_reset", "user", user.id, { phone: maskPhone(user.phone), expiresAt }, "");
+  audit("request_password_reset", user ? "user" : "patient", subjectId, { phone: maskPhone(user?.phone || patient.phone), expiresAt }, "");
 
   const resetMessage = `NeuroDent password reset token: ${token}. It expires at ${expiresAt}.`;
   const deliveries = [];
   deliveries.push(await sendSms({
-    to: user.phone,
+    to: user?.phone || patient.phone,
     message: resetMessage,
-    metadata: { type: "password_reset", userId: user.id },
+    metadata: { type: subjectType, subjectId },
   }));
-  if (user.email) {
+  const email = user?.email || patient.email || "";
+  if (email) {
     deliveries.push(await sendEmail({
-      to: user.email,
+      to: email,
       subject: "NeuroDent password reset",
       text: resetMessage,
-      metadata: { type: "password_reset", userId: user.id },
+      metadata: { type: subjectType, subjectId },
     }));
   }
 
@@ -966,16 +1097,30 @@ export async function resetPassword(token, nextPassword) {
   if (password.length < 4) throw new Error("New password is too short");
 
   const sessionKey = resetSessionToken(resetToken);
-  const session = getSessionRecord(sessionKey);
-  if (!session || session.subjectType !== "password_reset") {
+  let session = getSessionRecord(sessionKey);
+  let patientSessionKey = "";
+  if (!session) {
+    patientSessionKey = patientResetSessionToken(resetToken);
+    session = getSessionRecord(patientSessionKey);
+  }
+  if (!session || !["password_reset", "patient_password_reset"].includes(session.subjectType)) {
     const err = new Error("Password reset token is invalid or expired");
     err.statusCode = 401;
     throw err;
   }
 
+  if (session.subjectType === "patient_password_reset") {
+    const patient = getPatient(session.subjectId);
+    if (!patient) throw new Error("Patient not found");
+    setPatientPortalPassword(patient, password);
+    saveDb();
+    deleteSessionRecord(patientSessionKey || sessionKey);
+    audit("reset_patient_portal_password", "patient", patient.id, {}, patient.id);
+    return { ok: true };
+  }
+
   const user = db.users.find((entry) => entry.id === session.subjectId && entry.isActive !== false);
   if (!user) throw new Error("User not found");
-
   Object.assign(user, hashPassword(password));
   saveDb();
   deleteSessionRecord(sessionKey);
@@ -1132,6 +1277,7 @@ export async function createPatient(data, options = {}) {
     address,
     createdAt: TODAY // сохраняем дату регистрации
   };
+  if (data?.portalPassword) setPatientPortalPassword(newPatient, data.portalPassword);
   db.patients.push(newPatient);
   saveDb();
   audit("create", "patient", newPatient.id, { name, phone }, actorIdFromOptions(options));
@@ -1175,6 +1321,7 @@ export async function updatePatient(id, patch, options = {}) {
   p.birthDate = birthDate;
   p.email = email;
   p.address = address;
+  if (patch?.portalPassword) setPatientPortalPassword(p, patch.portalPassword);
   saveDb();
   audit("update", "patient", id, { patch }, actorIdFromOptions(options));
   return clone(p);
@@ -1899,6 +2046,68 @@ export async function getPatientMedicalCard(patientId) {
   });
 }
 
+export async function getPatientBillingSummary(patientId) {
+  await delay(120);
+  if (!getPatient(patientId)) throw new Error("РџР°С†РёРµРЅС‚ РЅРµ РЅР°Р№РґРµРЅ");
+  const invoices = listInvoiceRecords({ patientId });
+  const total = invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
+  const paid = invoices.reduce((sum, invoice) => sum + Number(invoice.paid || 0), 0);
+  const debt = Math.max(0, total - paid);
+  return clone({
+    patientId,
+    total,
+    paid,
+    debt,
+    invoicesCount: invoices.length,
+    openInvoicesCount: invoices.filter((invoice) => invoice.status !== "paid").length,
+    invoices,
+  });
+}
+
+export async function createPatientAppointmentRequest(patientId, data = {}, options = {}) {
+  await delay(120);
+  const patient = getPatient(patientId);
+  if (!patient) throw new Error("РџР°С†РёРµРЅС‚ РЅРµ РЅР°Р№РґРµРЅ");
+  const doctorId = String(data?.doctorId || "");
+  const preferredDate = String(data?.preferredDate || data?.date || "");
+  const preferredTime = String(data?.preferredTime || data?.time || "");
+  const comment = String(data?.comment || "").trim();
+  if (!doctorId) throw new Error("Р’С‹Р±РµСЂРёС‚Рµ РІСЂР°С‡Р°");
+  if (!preferredDate) throw new Error("Р’С‹Р±РµСЂРёС‚Рµ РїСЂРµРґРїРѕС‡С‚РёС‚РµР»СЊРЅСѓСЋ РґР°С‚Сѓ");
+  if (!getDoctor(doctorId)) throw new Error("Р’СЂР°С‡ РЅРµ РЅР°Р№РґРµРЅ");
+  const now = new Date().toISOString();
+  const request = {
+    id: genId("appt_req"),
+    doctorId,
+    patientId,
+    date: preferredDate,
+    time: preferredTime,
+    duration: Number(data?.duration || 30),
+    status: "requested",
+    visitId: null,
+    kind: "appointment-request",
+    preferredDate,
+    preferredTime,
+    comment,
+    requestedAt: now,
+    requestedBy: actorIdFromOptions(options) || patient.id,
+  };
+  db.appointments.push(request);
+  saveDb();
+  createNotificationRecord({
+    id: genId("notif"),
+    type: "appointment_requested",
+    title: "New appointment request",
+    body: `${patient.name}: ${preferredDate}${preferredTime ? ` ${preferredTime}` : ""}`,
+    role: "admin",
+    isRead: false,
+    createdAt: now,
+    extra: { appointmentId: request.id, patientId, doctorId, comment },
+  });
+  audit("request", "appointment", request.id, { patientId, doctorId, preferredDate, preferredTime, comment }, actorIdFromOptions(options));
+  return clone(request);
+}
+
 export async function getVisitMaterials(visitId) {
   await delay(150);
   const visit = getVisit(visitId);
@@ -1926,6 +2135,8 @@ export async function uploadFile(data, options = {}) {
   const fileName = safeFileName(data?.fileName || data?.name || "upload");
   const mimeType = String(data?.mimeType || "application/octet-stream");
   const base64 = String(data?.base64 || data?.data || "");
+  const kind = normalizeFileKind(data?.kind || data?.category || "upload");
+  const category = String(data?.category || kind);
 
   if (!patientId && !visitId) throw new Error("Нужно указать patientId или visitId");
   if (patientId && !getPatient(patientId)) throw new Error("Пациент не найден");
@@ -1941,7 +2152,7 @@ export async function uploadFile(data, options = {}) {
     fileName,
     mimeType,
     base64: cleanBase64,
-    metadata: { fileId: stored.id, patientId, visitId, kind: data?.kind || "upload" },
+    metadata: { fileId: stored.id, patientId, visitId, kind, category },
   });
   const record = createFileRecord({
     id: stored.id,
@@ -1951,15 +2162,18 @@ export async function uploadFile(data, options = {}) {
     mimeType,
     storagePath: stored.storagePath,
     createdAt: new Date().toISOString(),
-    extra: { kind: data?.kind || "upload", cloudStorage: externalStorage, externalStorage },
+    extra: { kind, category, mimeGroup: mimeGroup(mimeType), cloudStorage: externalStorage, externalStorage },
   });
   audit("create", "file", record.id, { patientId, visitId, fileName: record.fileName }, actorIdFromOptions(options));
   return clone(redactFileRecord(record));
 }
 
-export async function getFiles({ patientId = "", visitId = "" } = {}) {
+export async function getFiles({ patientId = "", visitId = "", kind = "", category = "" } = {}) {
   await delay(100);
-  const files = listFileRecords({ patientId, visitId }).map(redactFileRecord);
+  const requestedKind = kind || category ? normalizeFileKind(kind || category) : "";
+  const files = listFileRecords({ patientId, visitId })
+    .map(redactFileRecord)
+    .filter((file) => !requestedKind || normalizeFileKind(file.kind || file.category) === requestedKind);
   return clone(files);
 }
 
@@ -2008,30 +2222,70 @@ export async function deleteFile(fileId, options = {}) {
 
 export async function createPatientProtocolDocument(patientId, options = {}) {
   await delay(250);
-  const text = await getPatientProtocol(patientId);
   const patient = getPatient(patientId);
+  if (!patient) throw new Error("РџР°С†РёРµРЅС‚ РЅРµ РЅР°Р№РґРµРЅ");
+  let text = "";
+  try {
+    text = await getPatientProtocol(patientId);
+  } catch {
+    text = [
+      "NeuroDent Patient Protocol",
+      `Patient: ${patient.name}`,
+      `Phone: ${patient.phone}`,
+      "",
+      "No finalized AI visit protocol is available yet.",
+      "This PDF was generated from the patient portal as a placeholder protocol document.",
+    ].join("\n");
+  }
   const createdAt = new Date().toISOString();
-  const bytes = Buffer.from(text, "utf8");
-  const stored = writeStoredFile(DOCUMENTS_DIR, `AI_Protocol_${patientId}.txt`, bytes);
+  const bytes = createSimplePdf({
+    title: "NeuroDent Patient Protocol",
+    lines: [
+      `Patient: ${patient?.name || patientId}`,
+      `Patient ID: ${patientId}`,
+      `Created at: ${createdAt}`,
+      "",
+      ...String(text || "").split(/\r?\n/),
+    ],
+  });
+  const stored = writeStoredFile(DOCUMENTS_DIR, `AI_Protocol_${patientId}.pdf`, bytes);
   const visitId = latestFinalVisit(patientId)?.id || "";
   const cloudStorage = await uploadExternalFile({
     fileName: stored.fileName,
-    mimeType: "text/plain; charset=utf-8",
+    mimeType: "application/pdf",
     base64: bytes.toString("base64"),
-    metadata: { fileId: stored.id, patientId, visitId, kind: "ai-protocol" },
+    metadata: { fileId: stored.id, patientId, visitId, kind: "protocol", category: "protocol" },
   });
   const record = createFileRecord({
     id: stored.id,
     patientId,
     visitId,
     fileName: stored.fileName,
-    mimeType: "text/plain; charset=utf-8",
+    mimeType: "application/pdf",
     storagePath: stored.storagePath,
     createdAt,
-    extra: { kind: "ai-protocol", patientName: patient?.name || "", cloudStorage, externalStorage: cloudStorage },
+    extra: {
+      kind: "protocol",
+      category: "protocol",
+      mimeGroup: "pdf",
+      patientName: patient?.name || "",
+      generatedBy: "ai-protocol",
+      cloudStorage,
+      externalStorage: cloudStorage,
+    },
   });
   audit("create", "document", record.id, { patientId, type: "ai-protocol" }, actorIdFromOptions(options));
   return clone(redactFileRecord(record));
+}
+
+export async function getLatestPatientProtocolDocument(patientId) {
+  await delay(80);
+  if (!getPatient(patientId)) throw new Error("РџР°С†РёРµРЅС‚ РЅРµ РЅР°Р№РґРµРЅ");
+  const latest = listFileRecords({ patientId })
+    .map(redactFileRecord)
+    .filter((file) => normalizeFileKind(file.kind || file.category) === "protocol")
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0] || null;
+  return clone(latest);
 }
 
 export async function signDocument(fileId, data = {}, options = {}) {
@@ -2062,6 +2316,16 @@ export async function signDocument(fileId, data = {}, options = {}) {
     createdAt: new Date().toISOString(),
     extra: { fileId, signatureId, eSignature },
   });
+  const signedAt = new Date().toISOString();
+  const signedFile = updateFileRecordExtra(fileId, {
+    signatureStatus: eSignature?.ok === false ? "pending" : "signed",
+    signedAt,
+    signedBy: actorIdFromOptions(options),
+    signerName: data.signerName || data.signer || "",
+    signatureProvider: provider,
+    signatureId,
+    eSignature,
+  });
   audit("sign", "document", fileId, {
     signatureId,
     provider,
@@ -2074,7 +2338,9 @@ export async function signDocument(fileId, data = {}, options = {}) {
     signatureId,
     provider,
     eSignature,
-    signedAt: new Date().toISOString(),
+    status: signedFile?.signatureStatus || "signed",
+    signedAt,
+    file: signedFile ? redactFileRecord(signedFile) : null,
   };
 }
 
@@ -2682,7 +2948,13 @@ function publicSession(session) {
 function redactFileRecord(file) {
   const safeFile = { ...file };
   delete safeFile.storagePath;
-  return safeFile;
+  const kind = normalizeFileKind(safeFile.kind || safeFile.category || "upload");
+  return {
+    ...safeFile,
+    kind,
+    category: safeFile.category || kind,
+    ...filePublicMetadata(file),
+  };
 }
 
 export async function getReadinessStatus() {
@@ -2987,6 +3259,9 @@ const API_ENDPOINTS = [
   ["PUT", "/api/patients/:id/tooth-chart", "Save patient tooth chart", true],
   ["POST", "/api/patients/:id/reminders", "Create patient reminder", true],
   ["POST", "/api/patients/:id/documents/protocol", "Create protocol document", true],
+  ["GET", "/api/patients/:id/documents/protocol/latest", "Latest protocol PDF document", true],
+  ["GET", "/api/patients/:id/billing-summary", "Patient invoice billing summary", true],
+  ["POST", "/api/patients/:id/appointment-requests", "Create patient portal appointment request", true],
   ["POST", "/api/visits/start", "Start visit", true],
   ["POST", "/api/visits/finish", "Finish visit", true],
   ["GET", "/api/visits", "List visits", true],
@@ -3130,6 +3405,14 @@ function openApiRequestBody(method, pathname) {
       channel: { type: "string", enum: ["sms", "whatsapp", "email"] },
     }));
   }
+  if (pathname === "/api/patients/:id/appointment-requests") {
+    return requestBody(objectSchema({
+      doctorId: { type: "string" },
+      preferredDate: { type: "string", format: "date" },
+      preferredTime: { type: "string" },
+      comment: { type: "string" },
+    }, ["doctorId", "preferredDate"]));
+  }
   if (pathname === "/api/visits/start") return requestBody(objectSchema({ appointmentId: { type: "string" } }, ["appointmentId"]));
   if (pathname === "/api/visits/finish") return requestBody(schemaRef("VisitFinishInput"));
   if (pathname === "/api/files") return requestBody(schemaRef("FileUploadInput"));
@@ -3187,6 +3470,10 @@ function openApiResponseSchema(method, pathname) {
   if (pathname.includes("/medical-card")) return schemaRef("MedicalCard");
   if (pathname.includes("/treatment-plan")) return arraySchema(schemaRef("TreatmentPlanItem"));
   if (pathname.includes("/tooth-chart")) return schemaRef("ToothChart");
+  if (pathname === "/api/patients/:id/documents/protocol") return schemaRef("FileRecord");
+  if (pathname === "/api/patients/:id/documents/protocol/latest") return schemaRef("FileRecord");
+  if (pathname === "/api/patients/:id/billing-summary") return schemaRef("BillingSummary");
+  if (pathname === "/api/patients/:id/appointment-requests") return schemaRef("Appointment");
   if (pathname.includes("/protocol")) return objectSchema({ text: { type: "string" }, document: schemaRef("FileRecord") });
   if (pathname.startsWith("/api/visits")) return pathname.includes("/materials") || pathname.includes("/services") ? arraySchema(objectSchema()) : arraySchema(schemaRef("Visit"));
   if (pathname === "/api/files") return method === "GET" ? arraySchema(schemaRef("FileRecord")) : schemaRef("FileRecord");
@@ -3407,8 +3694,40 @@ function openApiSchemas() {
       reason: { type: "string" },
       visitId: id,
     }, ["inventoryId", "type", "quantity"]),
-    FileRecord: objectSchema({ id, patientId: id, visitId: id, fileName: { type: "string" }, mimeType: { type: "string" }, createdAt: dateTime, cloudStorage: objectSchema() }),
-    FileUploadInput: objectSchema({ patientId: id, visitId: id, fileName: { type: "string" }, mimeType: { type: "string" }, base64: { type: "string" } }, ["fileName", "base64"]),
+    BillingSummary: objectSchema({
+      patientId: id,
+      total: { type: "number" },
+      paid: { type: "number" },
+      debt: { type: "number" },
+      invoices: arraySchema(schemaRef("Invoice")),
+    }),
+    FileRecord: objectSchema({
+      id,
+      patientId: id,
+      visitId: id,
+      fileName: { type: "string" },
+      mimeType: { type: "string" },
+      mimeGroup: { type: "string" },
+      kind: { type: "string", enum: Array.from(FILE_KINDS) },
+      category: { type: "string" },
+      createdAt: dateTime,
+      downloadUrl: { type: "string" },
+      previewUrl: { type: "string" },
+      thumbnailUrl: { type: "string" },
+      signatureStatus: { type: "string" },
+      signedAt: dateTime,
+      signedBy: id,
+      cloudStorage: objectSchema(),
+    }),
+    FileUploadInput: objectSchema({
+      patientId: id,
+      visitId: id,
+      fileName: { type: "string" },
+      mimeType: { type: "string" },
+      kind: { type: "string", enum: Array.from(FILE_KINDS) },
+      category: { type: "string" },
+      base64: { type: "string" },
+    }, ["fileName", "base64"]),
     DocumentSignInput: objectSchema({ signerName: { type: "string" }, signature: { type: "string" } }),
     Notification: objectSchema({ id, type: { type: "string" }, title: { type: "string" }, body: { type: "string" }, role: { type: "string" }, isRead: { type: "boolean" }, createdAt: dateTime }),
     AuditLog: objectSchema({ id: { type: "integer" }, actorUserId: id, action: { type: "string" }, entityType: { type: "string" }, entityId: id, createdAt: dateTime }),

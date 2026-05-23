@@ -71,6 +71,17 @@ GET /api/openapi.json
 
 The API uses the `nd_token` HTTP-only cookie and also accepts `Authorization: Bearer <token>`.
 
+Patient portal endpoints:
+
+```text
+POST /api/patients/:id/documents/protocol
+GET  /api/patients/:id/documents/protocol/latest
+GET  /api/patients/:id/billing-summary
+POST /api/patients/:id/appointment-requests
+```
+
+Backend files support `kind` / `category` values such as `xray`, `ct`, `before`, `after`, `protocol`, `consent` and `invoice`.
+
 ## Environment
 
 Copy `.env.example` to `.env.local` for local secrets:

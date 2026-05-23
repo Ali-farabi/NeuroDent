@@ -111,9 +111,35 @@ GET  /api/admin/backups/:fileName/download
 DELETE /api/admin/backups/:fileName
 ```
 
+## Patient Portal Backend
+
+Patient-facing API includes scoped endpoints for documents, billing and appointment requests:
+
+```text
+POST /api/patients/:id/documents/protocol
+GET  /api/patients/:id/documents/protocol/latest
+GET  /api/patients/:id/billing-summary
+POST /api/patients/:id/appointment-requests
+POST /api/auth/change-password
+POST /api/auth/request-password-reset
+POST /api/auth/reset-password
+```
+
+Patient users can only access their own `patientId`. Protocol documents are stored as real `application/pdf` backend files with `kind=protocol`.
+
+File metadata supports patient document categories:
+
+```text
+xray, ct, before, after, protocol, consent, invoice, upload, other
+```
+
+`GET /api/files` accepts `kind` or `category` filters and returns preview metadata such as `downloadUrl`, `previewUrl`, `thumbnailUrl` and `mimeGroup`.
+
 ## External Integrations
 
 Email, SMS, WhatsApp, file storage, fiscalization, e-signature and AI delivery are implemented through webhook adapters. Email also supports direct Resend delivery through `RESEND_API_KEY`. File storage also supports direct Supabase Storage delivery through server-only Supabase keys. If provider URLs or cloud keys are not configured, delivery is safely marked as `skipped`.
+
+The admin integrations page shows `Missing: ...` when a provider env var is not configured. This is expected for local development until real provider credentials are added.
 
 ```text
 RESEND_API_KEY=

@@ -306,8 +306,11 @@ async function handleApi(request) {
   }
 
   if (method === "POST" && pathname === "/api/auth/change-password") {
-    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
+    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
     const body = await readJsonBody(request);
+    if (user.role === "patient") {
+      return json(await api.changePatientPortalPassword(user.patientId || user.id, body.currentPassword, body.nextPassword, { actorUserId: user.id }));
+    }
     return json(await api.changePassword(user.id, body.currentPassword, body.nextPassword));
   }
 
@@ -491,10 +494,31 @@ async function handleApi(request) {
   }
 
   const patientDocumentParams = routeParams(pathname, "/api/patients/:id/documents/protocol");
+  const latestPatientDocumentParams = routeParams(pathname, "/api/patients/:id/documents/protocol/latest");
+  if (method === "GET" && latestPatientDocumentParams) {
+    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
+    assertUserPatientAccess(user, latestPatientDocumentParams.id);
+    return json(await api.getLatestPatientProtocolDocument(latestPatientDocumentParams.id));
+  }
+
   if (method === "POST" && patientDocumentParams) {
-    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant"]);
-    assertDoctorPatientAccess(user, patientDocumentParams.id);
+    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
+    assertUserPatientAccess(user, patientDocumentParams.id);
     return json(await api.createPatientProtocolDocument(patientDocumentParams.id, { actorUserId: user.id }), 201);
+  }
+
+  const patientBillingParams = routeParams(pathname, "/api/patients/:id/billing-summary");
+  if (method === "GET" && patientBillingParams) {
+    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
+    assertUserPatientAccess(user, patientBillingParams.id);
+    return json(await api.getPatientBillingSummary(patientBillingParams.id));
+  }
+
+  const patientAppointmentRequestParams = routeParams(pathname, "/api/patients/:id/appointment-requests");
+  if (method === "POST" && patientAppointmentRequestParams) {
+    const user = await requireRole(request, ["owner", "admin", "doctor", "assistant", "patient"]);
+    assertUserPatientAccess(user, patientAppointmentRequestParams.id);
+    return json(await api.createPatientAppointmentRequest(patientAppointmentRequestParams.id, await readJsonBody(request), { actorUserId: user.id }), 201);
   }
 
   const patientParams = routeParams(pathname, "/api/patients/:id");
@@ -562,7 +586,12 @@ async function handleApi(request) {
     const patientId = scopedPatientId(user, searchParams.get("patientId"));
     if (user.role === "doctor" && !patientId) throw forbidden("Укажите patientId для просмотра файлов пациента");
     assertUserPatientAccess(user, patientId);
-    return json(await api.getFiles({ patientId, visitId: searchParams.get("visitId") || "" }));
+    return json(await api.getFiles({
+      patientId,
+      visitId: searchParams.get("visitId") || "",
+      kind: searchParams.get("kind") || "",
+      category: searchParams.get("category") || "",
+    }));
   }
 
   if (method === "POST" && pathname === "/api/files") {

@@ -117,10 +117,15 @@ const fileUpload = await request("POST", "/api/files", {
     patientId: patient.data.id,
     fileName: "smoke-test.txt",
     mimeType: "text/plain",
+    kind: "xray",
     base64: Buffer.from("NeuroDent smoke file").toString("base64"),
   },
 });
 assert(fileUpload.status === 201 && fileUpload.data.id && fileUpload.data.cloudStorage?.provider, "file upload with cloud metadata failed");
+assert(fileUpload.data.kind === "xray" && fileUpload.data.category === "xray" && fileUpload.data.previewUrl, "file kind/category preview metadata failed");
+
+const xrayFiles = await request("GET", `/api/files?patientId=${patient.data.id}&kind=xray`, { token });
+assert(xrayFiles.status === 200 && xrayFiles.data.some((file) => file.id === fileUpload.data.id), "file kind filter failed");
 
 const fileDownload = await request("GET", `/api/files/${fileUpload.data.id}/download`, { token });
 assert(fileDownload.status === 200 && String(fileDownload.data).includes("NeuroDent smoke file"), "file download failed");
@@ -145,6 +150,66 @@ const payment = await request("POST", `/api/invoices/${invoice.data.id}/pay`, {
   body: { amount: 1000, method: "cash" },
 });
 assert(payment.status === 200 && payment.data.status === "paid", "invoice payment failed");
+
+const billingSummary = await request("GET", `/api/patients/${patient.data.id}/billing-summary`, { token });
+assert(billingSummary.status === 200 && billingSummary.data.total >= 1000 && billingSummary.data.debt === 0, "patient billing summary failed");
+
+const patientLogin = await request("POST", "/api/auth/login", {
+  body: { phone: patient.data.phone, password: "patient" },
+});
+assert(patientLogin.status === 200 && patientLogin.data.user?.role === "patient", "patient portal login failed");
+
+const appointmentRequest = await request("POST", `/api/patients/${patient.data.id}/appointment-requests`, {
+  token: patientLogin.data.token,
+  body: {
+    doctorId,
+    preferredDate: testDate,
+    preferredTime: "14:30",
+    comment: "Smoke test appointment request",
+  },
+});
+assert(appointmentRequest.status === 201 && appointmentRequest.data.status === "requested", "patient appointment request failed");
+
+const protocolDocument = await request("POST", `/api/patients/${patient.data.id}/documents/protocol`, { token: patientLogin.data.token });
+assert(protocolDocument.status === 201 && protocolDocument.data.mimeType === "application/pdf" && protocolDocument.data.kind === "protocol", "patient protocol PDF creation failed");
+
+const latestProtocol = await request("GET", `/api/patients/${patient.data.id}/documents/protocol/latest`, { token: patientLogin.data.token });
+assert(latestProtocol.status === 200 && latestProtocol.data?.id === protocolDocument.data.id, "latest patient protocol endpoint failed");
+
+const protocolDownload = await request("GET", `/api/files/${protocolDocument.data.id}/download`, { token: patientLogin.data.token });
+assert(protocolDownload.status === 200 && String(protocolDownload.data).startsWith("%PDF-"), "protocol document is not a PDF");
+
+const signedDocument = await request("POST", `/api/documents/${protocolDocument.data.id}/sign`, {
+  token,
+  body: { signerName: "Smoke Test Owner" },
+});
+assert(signedDocument.status === 200 && signedDocument.data.signatureId && signedDocument.data.file?.signatureStatus, "signed document status failed");
+
+const patientPasswordChange = await request("POST", "/api/auth/change-password", {
+  token: patientLogin.data.token,
+  body: { currentPassword: "patient", nextPassword: "portal123" },
+});
+assert(patientPasswordChange.status === 200 && patientPasswordChange.data.ok, "patient portal password change failed");
+
+const changedPatientLogin = await request("POST", "/api/auth/login", {
+  body: { phone: patient.data.phone, password: "portal123" },
+});
+assert(changedPatientLogin.status === 200 && changedPatientLogin.data.user?.role === "patient", "patient portal changed password login failed");
+
+const patientReset = await request("POST", "/api/auth/request-password-reset", {
+  body: { phone: patient.data.phone },
+});
+assert(patientReset.status === 200 && patientReset.data.ok && patientReset.data.resetToken, "patient portal password reset request failed");
+
+const patientResetApply = await request("POST", "/api/auth/reset-password", {
+  body: { token: patientReset.data.resetToken, nextPassword: "portal456" },
+});
+assert(patientResetApply.status === 200 && patientResetApply.data.ok, "patient portal password reset apply failed");
+
+const resetPatientLogin = await request("POST", "/api/auth/login", {
+  body: { phone: patient.data.phone, password: "portal456" },
+});
+assert(resetPatientLogin.status === 200 && resetPatientLogin.data.user?.role === "patient", "patient portal reset password login failed");
 
 const inventory = await request("GET", "/api/inventory", { token });
 assert(inventory.status === 200 && Array.isArray(inventory.data) && inventory.data.length > 0, "inventory endpoint failed");

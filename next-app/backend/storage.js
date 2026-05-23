@@ -830,6 +830,22 @@ export function deleteFileRecord(id) {
   database.prepare("DELETE FROM files WHERE id = ?").run(id);
 }
 
+export function updateFileRecordExtra(id, patch = {}) {
+  const database = getDb();
+  const current = getFileRecord(id);
+  if (!current) return null;
+  const extra = { ...current, ...patch };
+  delete extra.id;
+  delete extra.patientId;
+  delete extra.visitId;
+  delete extra.fileName;
+  delete extra.mimeType;
+  delete extra.storagePath;
+  delete extra.createdAt;
+  database.prepare("UPDATE files SET extra_json = ? WHERE id = ?").run(encodeJson(extra), id);
+  return getFileRecord(id);
+}
+
 function mapNotification(row) {
   return {
     ...parseJson(row.extra_json, {}),
