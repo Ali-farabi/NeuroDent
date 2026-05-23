@@ -15,9 +15,12 @@ import {
   deleteFile,
   getFileDownloadUrl,
   createPatientProtocolDocument,
+  getLatestPatientProtocolDocument,
+  getPatientBillingSummary,
+  createPatientAppointmentRequest,
+  getDoctors,
   getPatientAiContext,
   getPatientMedicalCard,
-  getPatientProtocol,
   getPatientTreatmentPlan,
 } from "@/lib/api";
 import { Bot, HeartPulse, CalendarDays, FileDown, AlertTriangle, UserRound, Upload, ScanLine } from "lucide-react";
@@ -33,15 +36,6 @@ function firstFilled(...values) {
   return values.find((value) => typeof value === "string" && value.trim()) || "";
 }
 
-function downloadTextFile(fileName, text) {
-  const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 function readAsBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -49,6 +43,65 @@ function readAsBase64(file) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+const FILE_KIND_OPTIONS = [
+  { value: "xray", label: "Рентген" },
+  { value: "ct", label: "КТ / 3D" },
+  { value: "before", label: "Фото до" },
+  { value: "after", label: "Фото после" },
+  { value: "consent", label: "Согласие" },
+  { value: "invoice", label: "Счет" },
+  { value: "other", label: "Другое" },
+];
+
+const FILE_KIND_LABELS = {
+  xray: "Рентген",
+  ct: "КТ / 3D",
+  before: "Фото до",
+  after: "Фото после",
+  protocol: "AI протокол",
+  consent: "Согласие",
+  invoice: "Счет",
+  upload: "Файл",
+  other: "Другое",
+};
+
+function normalizeFileKind(file) {
+  return String(file?.kind || file?.category || file?.type || "").trim().toLowerCase();
+}
+
+function fileKindLabel(file) {
+  const kind = normalizeFileKind(file);
+  return FILE_KIND_LABELS[kind] || kind || "Файл";
+}
+
+function findLatestFile(files, kinds) {
+  const wanted = new Set(Array.isArray(kinds) ? kinds : [kinds]);
+  return (files || []).find((file) => wanted.has(normalizeFileKind(file))) || null;
+}
+
+function filePublicUrl(file) {
+  if (!file) return "";
+  return firstFilled(file.previewUrl, file.thumbnailUrl, file.downloadUrl, file.id ? getFileDownloadUrl(file.id) : "");
+}
+
+function formatMoneyAmount(amount) {
+  return `${Number(amount || 0).toLocaleString("ru-RU")} ₸`;
+}
+
+function invoiceStatusLabel(status) {
+  const labels = {
+    paid: "оплачен",
+    sent: "отправлен",
+    draft: "черновик",
+    overdue: "просрочен",
+  };
+  return labels[String(status || "").toLowerCase()] || status || "счет";
 }
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
@@ -180,6 +233,7 @@ function PatientCard({ patient }) {
   const [tab, setTab] = useState("info");
   const [visits, setVisits] = useState(null);
   const [files, setFiles] = useState([]);
+  const [uploadKind, setUploadKind] = useState("xray");
   const [fileMessage, setFileMessage] = useState("");
 
   useEffect(() => {
@@ -197,7 +251,14 @@ function PatientCard({ patient }) {
     setFileMessage("");
     try {
       const base64 = await readAsBase64(file);
-      await uploadFile({ patientId: patient.id, fileName: file.name, mimeType: file.type || "application/octet-stream", base64 });
+      await uploadFile({
+        patientId: patient.id,
+        fileName: file.name,
+        mimeType: file.type || "application/octet-stream",
+        base64,
+        kind: uploadKind,
+        category: uploadKind,
+      });
       event.target.value = "";
       await reloadFiles();
       setFileMessage("Файл загружен");
@@ -352,6 +413,16 @@ function PatientCard({ patient }) {
       {tab === "documents" && (
         <div style={{ display: "grid", gap: 12 }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            <select
+              value={uploadKind}
+              onChange={(event) => setUploadKind(event.target.value)}
+              style={{ ...inputStyle, width: 170 }}
+              aria-label="Категория файла"
+            >
+              {FILE_KIND_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
             <label style={{ ...btnPrimary, display: "inline-flex", alignItems: "center", gap: 6 }}>
               <Upload size={14} /> Загрузить файл
               <input type="file" onChange={handleFileUpload} style={{ display: "none" }} />
@@ -366,7 +437,11 @@ function PatientCard({ patient }) {
               <div key={file.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 12 }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.fileName}</div>
-                  <div style={{ color: "var(--muted)", fontSize: 11 }}>{file.mimeType} · {file.createdAt}</div>
+                  <div style={{ color: "var(--muted)", fontSize: 11 }}>
+                    {fileKindLabel(file)} · {file.mimeType}
+                    {file.signatureStatus === "signed" ? " · подписан" : ""}
+                    {" · "}{file.createdAt}
+                  </div>
                 </div>
                 <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                   <a href={getFileDownloadUrl(file.id)} style={btnOutline}>Скачать</a>
@@ -391,6 +466,17 @@ function PatientCabinet() {
   const [treatmentPlan, setTreatmentPlan] = useState([]);
   const [aiContext, setAiContext] = useState(null);
   const [patientFiles, setPatientFiles] = useState([]);
+  const [billingSummary, setBillingSummary] = useState(null);
+  const [doctors, setDoctors] = useState([]);
+  const [showAppointmentForm, setShowAppointmentForm] = useState(false);
+  const [appointmentForm, setAppointmentForm] = useState({
+    doctorId: "",
+    preferredDate: todayIso(),
+    preferredTime: "10:00",
+    comment: "",
+  });
+  const [appointmentSaving, setAppointmentSaving] = useState(false);
+  const [appointmentMessage, setAppointmentMessage] = useState("");
   const [downloading, setDownloading] = useState(null);
   const [loadError, setLoadError] = useState("");
 
@@ -406,8 +492,10 @@ function PatientCabinet() {
       getPatientTreatmentPlan(patientId),
       getPatientAiContext(patientId),
       getFiles({ patientId }),
+      getPatientBillingSummary(patientId).catch(() => null),
+      getDoctors().catch(() => []),
     ])
-      .then(([patient, visits, card, plan, context, files]) => {
+      .then(([patient, visits, card, plan, context, files, billing, doctorList]) => {
         if (!active) return;
         setLoadError("");
         setPatientData(card?.patient || patient);
@@ -415,6 +503,13 @@ function PatientCabinet() {
         setTreatmentPlan(plan || []);
         setAiContext(context || null);
         setPatientFiles(files || card?.files || []);
+        setBillingSummary(billing || null);
+        setDoctors(doctorList || []);
+        setAppointmentForm((prev) => (
+          prev.doctorId || !(doctorList || []).length
+            ? prev
+            : { ...prev, doctorId: doctorList[0].id }
+        ));
         setPatientVisits((card?.visits || visits || []).map((visit) => {
           const date = visit.date || String(visit.startedAt || "").slice(0, 10);
           const time = visit.time || String(visit.startedAt || "").slice(11, 16);
@@ -434,8 +529,18 @@ function PatientCabinet() {
   const bonusPoints = Number(patientData?.bonusPoints ?? user?.bonusPoints ?? 0);
   const bonusFromCard = Number(medicalCard?.bonuses ?? bonusPoints);
   const bonusLabel = `${bonusFromCard.toLocaleString("ru-RU")} т`;
+  const protocolFile = findLatestFile(patientFiles, "protocol");
+  const xrayFile = findLatestFile(patientFiles, "xray");
+  const ctFile = findLatestFile(patientFiles, "ct");
+  const beforeFile = findLatestFile(patientFiles, "before");
+  const afterFile = findLatestFile(patientFiles, "after");
+  const invoiceFiles = patientFiles.filter((file) => normalizeFileKind(file) === "invoice");
+  const consentFiles = patientFiles.filter((file) => normalizeFileKind(file) === "consent");
+  const billingInvoices = billingSummary?.invoices || [];
   const imagingAssets = {
     model3d: firstFilled(
+      filePublicUrl(ctFile),
+      filePublicUrl(xrayFile),
       aiContext?.toothChart?.model3dImageUrl,
       patientData?.model3dImageUrl,
       patientData?.xrayImageUrl,
@@ -445,12 +550,14 @@ function PatientCabinet() {
       user?.model3dImageUrl,
     ),
     before: firstFilled(
+      filePublicUrl(beforeFile),
       aiContext?.beforeTreatmentImageUrl,
       patientData?.beforeTreatmentImageUrl,
       patientData?.beforeImageUrl,
       patientData?.images?.before,
     ),
     after: firstFilled(
+      filePublicUrl(afterFile),
       aiContext?.afterTreatmentImageUrl,
       patientData?.afterTreatmentImageUrl,
       patientData?.afterImageUrl,
@@ -508,10 +615,15 @@ function PatientCabinet() {
     if (!patientId) return;
     setDownloading(itemId);
     try {
-      const text = await getPatientProtocol(patientId);
-      downloadTextFile(`AI_Protocol_${patientId}.txt`, text || "");
+      let documentFile = protocolFile || await getLatestPatientProtocolDocument(patientId);
+      if (!documentFile?.id) {
+        documentFile = await createPatientProtocolDocument(patientId);
+      }
+      if (!documentFile?.id) throw new Error("PDF-протокол еще не создан");
+      setPatientFiles((prev) => [documentFile, ...prev.filter((file) => file.id !== documentFile.id)]);
+      window.open(getFileDownloadUrl(documentFile.id), "_blank", "noopener,noreferrer");
     } catch (error) {
-      setLoadError(error?.message || "Не удалось скачать AI протокол");
+      setLoadError(error?.message || "Не удалось открыть PDF-протокол");
     } finally {
       setDownloading(null);
     }
@@ -519,13 +631,32 @@ function PatientCabinet() {
 
   function openPatientFiles(category = "") {
     const target = category
-      ? patientFiles.find((file) => String(file.category || file.type || "").includes(category))
+      ? findLatestFile(patientFiles, category)
       : patientFiles[0];
     if (target?.id) {
       window.open(getFileDownloadUrl(target.id), "_blank", "noopener,noreferrer");
       return;
     }
     setLoadError("Документ еще не загружен в карту пациента");
+  }
+
+  async function handleAppointmentRequest(event) {
+    event.preventDefault();
+    const patientId = user?.patientId || user?.id;
+    if (!patientId) return;
+    setAppointmentSaving(true);
+    setAppointmentMessage("");
+    setLoadError("");
+    try {
+      await createPatientAppointmentRequest(patientId, appointmentForm);
+      setAppointmentMessage("Заявка отправлена. Администратор подтвердит время приема.");
+      setShowAppointmentForm(false);
+      setAppointmentForm((prev) => ({ ...prev, comment: "" }));
+    } catch (error) {
+      setAppointmentMessage(error?.message || "Не удалось отправить заявку на прием");
+    } finally {
+      setAppointmentSaving(false);
+    }
   }
 
   return (
@@ -670,6 +801,19 @@ function PatientCabinet() {
           text-align: center;
           box-shadow: 0 4px 16px rgba(28, 48, 89, 0.04);
         }
+        .patient-billing-row {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 10px;
+          align-items: center;
+          padding: 10px 0;
+          border-top: 1px solid #edf2f8;
+        }
+        .patient-appointment-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+        }
         @media (max-width: 1320px) {
           .patient-home-grid {
             grid-template-columns: minmax(0, 1fr);
@@ -680,6 +824,9 @@ function PatientCabinet() {
             gap: 16px;
           }
           .patient-doc-grid {
+            grid-template-columns: 1fr;
+          }
+          .patient-appointment-grid {
             grid-template-columns: 1fr;
           }
         }
@@ -955,6 +1102,56 @@ function PatientCabinet() {
               </div>
             </section>
 
+            <section className="patient-home-card" style={{ overflow: "hidden" }}>
+              <div style={{ padding: "18px 20px", borderBottom: "1px solid #e8eef8", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "#1e2f49" }}>Баланс и счета</div>
+                  <div style={{ marginTop: 3, fontSize: 12, color: "#687891" }}>
+                    {billingInvoices.length ? `${billingInvoices.length} счет(а) в карте` : "Счета пока не выставлены"}
+                  </div>
+                </div>
+                <div style={{
+                  padding: "5px 10px",
+                  borderRadius: 9,
+                  background: billingSummary?.debt ? "#fff1f2" : "#f0fdf4",
+                  color: billingSummary?.debt ? "#dc2626" : "#15803d",
+                  fontSize: 12,
+                  fontWeight: 800,
+                }}>
+                  долг {formatMoneyAmount(billingSummary?.debt || 0)}
+                </div>
+              </div>
+              <div style={{ padding: "14px 20px 16px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10, marginBottom: 8 }}>
+                  {[
+                    { label: "Всего", value: formatMoneyAmount(billingSummary?.total || 0) },
+                    { label: "Оплачено", value: formatMoneyAmount(billingSummary?.paid || 0) },
+                    { label: "Остаток", value: formatMoneyAmount(billingSummary?.debt || 0) },
+                  ].map((item) => (
+                    <div key={item.label} style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 11, color: "#7a8aa3", fontWeight: 700, textTransform: "uppercase" }}>{item.label}</div>
+                      <div style={{ marginTop: 4, fontSize: 14, fontWeight: 800, color: "#1e2f49", whiteSpace: "nowrap" }}>{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+                {billingInvoices.slice(0, 3).map((invoice) => (
+                  <div key={invoice.id} className="patient-billing-row">
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#27364f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {invoice.id}
+                      </div>
+                      <div style={{ marginTop: 2, fontSize: 12, color: "#728199" }}>
+                        {invoice.date || invoice.createdAt?.slice(0, 10)} · {invoiceStatusLabel(invoice.status)}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: "#1e2f49", whiteSpace: "nowrap" }}>
+                      {formatMoneyAmount(invoice.total)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
             <section className="patient-home-card" style={{ overflow: "hidden", background: "#fffdfa" }}>
               <div style={{ padding: "0" }}>
                 <div style={{
@@ -1025,16 +1222,100 @@ function PatientCabinet() {
                   fontWeight: 800,
                   boxShadow: "0 14px 26px rgba(49, 103, 227, 0.22)",
                   letterSpacing: "0.01em",
-                }}>
+                }} onClick={() => setShowAppointmentForm((value) => !value)}>
                   ЗАПИСАТЬСЯ НА ПРИЕМ
                 </button>
+
+                {appointmentMessage && (
+                  <div style={{
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    background: appointmentMessage.includes("Не удалось") ? "#fff1f2" : "#eefbf3",
+                    color: appointmentMessage.includes("Не удалось") ? "#b91c1c" : "#17643b",
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}>
+                    {appointmentMessage}
+                  </div>
+                )}
+
+                {showAppointmentForm && (
+                  <form onSubmit={handleAppointmentRequest} style={{ display: "grid", gap: 10 }}>
+                    <div className="patient-appointment-grid">
+                      <label style={{ display: "grid", gap: 5 }}>
+                        <span style={{ fontSize: 11, color: "#6c7b91", fontWeight: 800, textTransform: "uppercase" }}>Врач</span>
+                        <select
+                          value={appointmentForm.doctorId}
+                          onChange={(event) => setAppointmentForm((prev) => ({ ...prev, doctorId: event.target.value }))}
+                          style={{ ...inputStyle, height: 40, borderRadius: 10 }}
+                          required
+                        >
+                          <option value="">Выберите врача</option>
+                          {doctors.map((doctor) => (
+                            <option key={doctor.id} value={doctor.id}>
+                              {doctor.name?.split(" ").slice(0, 2).join(" ") || doctor.name} {doctor.specialty ? `· ${doctor.specialty}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label style={{ display: "grid", gap: 5 }}>
+                        <span style={{ fontSize: 11, color: "#6c7b91", fontWeight: 800, textTransform: "uppercase" }}>Дата</span>
+                        <input
+                          type="date"
+                          value={appointmentForm.preferredDate}
+                          min={todayIso()}
+                          onChange={(event) => setAppointmentForm((prev) => ({ ...prev, preferredDate: event.target.value }))}
+                          style={{ ...inputStyle, height: 40, borderRadius: 10 }}
+                          required
+                        />
+                      </label>
+                    </div>
+                    <div className="patient-appointment-grid">
+                      <label style={{ display: "grid", gap: 5 }}>
+                        <span style={{ fontSize: 11, color: "#6c7b91", fontWeight: 800, textTransform: "uppercase" }}>Время</span>
+                        <input
+                          type="time"
+                          value={appointmentForm.preferredTime}
+                          onChange={(event) => setAppointmentForm((prev) => ({ ...prev, preferredTime: event.target.value }))}
+                          style={{ ...inputStyle, height: 40, borderRadius: 10 }}
+                        />
+                      </label>
+                      <label style={{ display: "grid", gap: 5 }}>
+                        <span style={{ fontSize: 11, color: "#6c7b91", fontWeight: 800, textTransform: "uppercase" }}>Комментарий</span>
+                        <input
+                          value={appointmentForm.comment}
+                          onChange={(event) => setAppointmentForm((prev) => ({ ...prev, comment: event.target.value }))}
+                          placeholder="Например: болит зуб"
+                          style={{ ...inputStyle, height: 40, borderRadius: 10 }}
+                        />
+                      </label>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={appointmentSaving}
+                      style={{
+                        height: 44,
+                        border: "1px solid #cfe0ff",
+                        borderRadius: 12,
+                        background: "#eef5ff",
+                        color: "#1855c9",
+                        fontSize: 13,
+                        fontWeight: 800,
+                      }}
+                    >
+                      {appointmentSaving ? "Отправка..." : "Отправить заявку"}
+                    </button>
+                  </form>
+                )}
               </div>
             </section>
 
             <div className="patient-doc-grid">
               {[
-                { label: "Договор", icon: "doc", category: "contract" },
-                { label: `Чеки и счета${medicalCard?.payments?.length ? ` (${medicalCard.payments.length})` : ""}`, icon: "receipt", category: "receipt" },
+                { label: `AI протокол${protocolFile ? " (PDF)" : ""}`, icon: "doc", category: "protocol" },
+                { label: `Согласия${consentFiles.length ? ` (${consentFiles.length})` : ""}`, icon: "doc", category: "consent" },
+                { label: `Счета${billingInvoices.length || invoiceFiles.length ? ` (${Math.max(billingInvoices.length, invoiceFiles.length)})` : ""}`, icon: "receipt", category: "invoice" },
+                { label: `Снимки${xrayFile || ctFile ? " (есть)" : ""}`, icon: "receipt", category: xrayFile ? "xray" : "ct" },
               ].map((item) => (
                 <button key={item.label} type="button" className="patient-doc-card" onClick={() => openPatientFiles(item.category)}>
                   <span style={{ color: "#3167e3", display: "inline-flex" }}>

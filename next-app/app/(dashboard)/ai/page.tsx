@@ -19,6 +19,8 @@ import {
   getFiles,
   getFileDownloadUrl,
   signDocument,
+  uploadFile,
+  getInventoryItems,
 } from "@/lib/api";
 import {
   Bot,
@@ -100,9 +102,46 @@ interface PatientFile {
   originalName?: string;
   fileName?: string;
   type?: string;
+  kind?: string;
   category?: string;
+  mimeType?: string;
+  mimeGroup?: string;
+  downloadUrl?: string;
+  previewUrl?: string;
+  thumbnailUrl?: string;
+  signatureStatus?: string;
   signedAt?: string;
   createdAt?: string;
+}
+
+interface InventoryItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  category?: string;
+}
+
+function normalizePatientFileKind(file: PatientFile | null | undefined) {
+  return String(file?.kind || file?.category || file?.type || "").toLowerCase();
+}
+
+function findPatientFile(files: PatientFile[], kind: string) {
+  return files.find((file) => normalizePatientFileKind(file) === kind) || null;
+}
+
+function patientFileUrl(file: PatientFile | null | undefined) {
+  if (!file) return "";
+  return file.previewUrl || file.thumbnailUrl || file.downloadUrl || (file.id ? getFileDownloadUrl(file.id) : "");
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -707,9 +746,11 @@ function AiCorePage({ patientId }: { patientId: string }) {
 
   // Dynamic materials
   const [materials, setMaterials] = useState([
-    { code: "ultracain", name: "Ultracain D-S forte 1.7ml", qty: 1, unit: "амп" },
-    { code: "filtek", name: "Filtek Z250 (шприц)", qty: 1, unit: "шт" },
+    { inventoryId: "inv2", code: "ultracain", name: "Ultracain D-S forte 1.7ml", qty: 1, unit: "амп" },
+    { inventoryId: "inv3", code: "filtek", name: "Filtek Z250 (шприц)", qty: 1, unit: "шт" },
   ]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [materialSelectId, setMaterialSelectId] = useState("");
 
   // Prescription & Before/After
   const [showPrescription, setShowPrescription] = useState(false);
@@ -718,6 +759,8 @@ function AiCorePage({ patientId }: { patientId: string }) {
   const afterFileRef = useRef<HTMLInputElement>(null);
   const [beforeImage, setBeforeImage] = useState<string | null>(null);
   const [afterImage, setAfterImage] = useState<string | null>(null);
+  const [imageUploadKind, setImageUploadKind] = useState("xray");
+  const [imageMessage, setImageMessage] = useState("");
 
   // Load data
   useEffect(() => {
@@ -728,13 +771,45 @@ function AiCorePage({ patientId }: { patientId: string }) {
       getVisitsByPatient(patientId) as Promise<Visit[]>,
       getPatientAiContext(patientId),
       getFiles({ patientId }) as Promise<PatientFile[]>,
+      getInventoryItems().catch(() => []) as Promise<InventoryItem[]>,
     ])
-      .then(([patient, appt, visitList, aiContext, files]) => {
+      .then(([patient, appt, visitList, aiContext, files, inventory]) => {
         setPatientData(patient);
         setActiveAppointment(appt);
         setVisits(visitList);
         setPatientFiles(files || []);
-        setProtocolDocument((files || []).find((file) => file.category === "protocol") || null);
+        const protocolFile = findPatientFile(files || [], "protocol");
+        const beforeFile = findPatientFile(files || [], "before");
+        const afterFile = findPatientFile(files || [], "after");
+        const galleryFiles = (files || []).filter((file) => {
+          const kind = normalizePatientFileKind(file);
+          const isImage = file.mimeGroup === "image" || String(file.mimeType || "").startsWith("image/");
+          return isImage && !["before", "after", "protocol"].includes(kind);
+        });
+        setProtocolDocument(protocolFile);
+        setEgovSigned(protocolFile?.signatureStatus === "signed");
+        if (beforeFile) setBeforeImage(patientFileUrl(beforeFile));
+        if (afterFile) setAfterImage(patientFileUrl(afterFile));
+        if (galleryFiles.length) {
+          const nextImages = galleryFiles.map((file) => ({ id: file.id, url: patientFileUrl(file) })).filter((item) => item.url);
+          setImages(nextImages);
+          setActiveImage(nextImages[0]?.url || null);
+        }
+        setInventoryItems(inventory || []);
+        if ((inventory || []).length) setMaterialSelectId((prev) => prev || inventory[0].id);
+        const preferredMaterials = (inventory || []).filter((item) => {
+          const name = item.name.toLowerCase();
+          return name.includes("ultracain") || name.includes("filtek");
+        }).slice(0, 2);
+        if (preferredMaterials.length) {
+          setMaterials(preferredMaterials.map((item) => ({
+            inventoryId: item.id,
+            code: item.id,
+            name: item.name,
+            qty: 1,
+            unit: item.unit || "шт",
+          })));
+        }
         if (aiContext?.toothChart?.bite) setBite(aiContext.toothChart.bite);
         if (aiContext?.toothChart?.teeth) setTeeth(aiContext.toothChart.teeth);
         if (aiContext?.aiSummary?.suggestedDiagnosisCode) setDiagnosisCode(aiContext.aiSummary.suggestedDiagnosisCode);
@@ -764,13 +839,13 @@ function AiCorePage({ patientId }: { patientId: string }) {
 
   // Default image
   useEffect(() => {
-    if (!loading && patientData) {
+    if (!loading && patientData && images.length === 0) {
       const url = "/images/examplecoreai.png";
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setImages([{ id: "default", url }]);
       setActiveImage(url);
     }
-  }, [loading, patientData]);
+  }, [images.length, loading, patientData]);
 
   // Cleanup URLs
   useEffect(() => () => urlsRef.current.forEach((u) => URL.revokeObjectURL(u)), []);
@@ -970,7 +1045,13 @@ function AiCorePage({ patientId }: { patientId: string }) {
       cariesType,
       toothNumber: selectedTooth ? String(selectedTooth) : "",
       protocol: { complaints, anamnesis, objective, diagnosisText, treatment },
-      materials: materials.map((m) => ({ code: m.code, name: m.name, qty: m.qty, unit: m.unit })),
+      materials: materials.map((m) => ({
+        inventoryId: m.inventoryId,
+        code: m.code,
+        name: m.name,
+        qty: m.qty,
+        unit: m.unit,
+      })),
     };
   }
 
@@ -1016,8 +1097,9 @@ function AiCorePage({ patientId }: { patientId: string }) {
   async function reloadPatientFiles() {
     const files = (await getFiles({ patientId })) as PatientFile[];
     setPatientFiles(files || []);
-    const protocol = (files || []).find((file) => file.category === "protocol") || null;
+    const protocol = findPatientFile(files || [], "protocol");
     setProtocolDocument(protocol);
+    setEgovSigned(protocol?.signatureStatus === "signed");
     return protocol;
   }
 
@@ -1060,13 +1142,35 @@ function AiCorePage({ patientId }: { patientId: string }) {
     }
   }
 
-  function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function uploadPatientImage(file: File, kind: string) {
+    if (!file.type.startsWith("image/")) throw new Error("Выберите изображение");
+    const base64 = await readFileAsDataUrl(file);
+    const stored = (await uploadFile({
+      patientId,
+      visitId: activeAppointment?.visitId || "",
+      fileName: file.name,
+      mimeType: file.type || "image/*",
+      base64,
+      kind,
+      category: kind,
+    })) as PatientFile;
+    const url = patientFileUrl(stored);
+    setPatientFiles((prev) => [stored, ...prev.filter((item) => item.id !== stored.id)]);
+    return { stored, url };
+  }
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
-    if (!f?.type.startsWith("image/")) return;
-    const url = URL.createObjectURL(f);
-    urlsRef.current.push(url);
-    setImages((p) => [...p, { id: `img_${Date.now()}`, url }]);
-    setActiveImage(url);
+    if (!f) return;
+    setImageMessage("");
+    try {
+      const { stored, url } = await uploadPatientImage(f, imageUploadKind);
+      setImages((p) => [{ id: stored.id, url }, ...p.filter((item) => item.id !== "default")]);
+      setActiveImage(url);
+      setImageMessage("Изображение сохранено в файлах пациента");
+    } catch (err) {
+      setImageMessage(err instanceof Error ? err.message : "Не удалось загрузить изображение");
+    }
     e.target.value = "";
   }
 
@@ -1076,6 +1180,31 @@ function AiCorePage({ patientId }: { patientId: string }) {
       const next = p.filter((i) => i.id !== id);
       if (activeImage === rm?.url) setActiveImage(next.length ? next[next.length - 1].url : null);
       return next;
+    });
+  }
+
+  function addSelectedMaterial() {
+    const item = inventoryItems.find((entry) => entry.id === materialSelectId);
+    if (!item) return;
+    setMaterials((prev) => {
+      const existing = prev.find((material) => material.inventoryId === item.id);
+      if (existing) {
+        return prev.map((material) => (
+          material.inventoryId === item.id
+            ? { ...material, qty: material.qty + 1 }
+            : material
+        ));
+      }
+      return [
+        ...prev,
+        {
+          inventoryId: item.id,
+          code: item.id,
+          name: item.name,
+          qty: 1,
+          unit: item.unit || "шт",
+        },
+      ];
     });
   }
 
@@ -1473,13 +1602,29 @@ function AiCorePage({ patientId }: { patientId: string }) {
       {activeTab === "images" && (
         <div className="w-full max-w-[1180px] mx-auto p-6 flex flex-col gap-5">
           <input type="file" ref={fileRef} accept="image/*" className="hidden" onChange={handleImageUpload} />
-          <input type="file" ref={beforeFileRef} accept="image/*" className="hidden" onChange={(e) => {
+          <input type="file" ref={beforeFileRef} accept="image/*" className="hidden" onChange={async (e) => {
             const f = e.target.files?.[0]; if (!f) return;
-            const url = URL.createObjectURL(f); urlsRef.current.push(url); setBeforeImage(url); e.target.value = "";
+            setImageMessage("");
+            try {
+              const { url } = await uploadPatientImage(f, "before");
+              setBeforeImage(url);
+              setImageMessage("Фото до лечения сохранено в файлах пациента");
+            } catch (err) {
+              setImageMessage(err instanceof Error ? err.message : "Не удалось загрузить фото до лечения");
+            }
+            e.target.value = "";
           }} />
-          <input type="file" ref={afterFileRef} accept="image/*" className="hidden" onChange={(e) => {
+          <input type="file" ref={afterFileRef} accept="image/*" className="hidden" onChange={async (e) => {
             const f = e.target.files?.[0]; if (!f) return;
-            const url = URL.createObjectURL(f); urlsRef.current.push(url); setAfterImage(url); e.target.value = "";
+            setImageMessage("");
+            try {
+              const { url } = await uploadPatientImage(f, "after");
+              setAfterImage(url);
+              setImageMessage("Фото после лечения сохранено в файлах пациента");
+            } catch (err) {
+              setImageMessage(err instanceof Error ? err.message : "Не удалось загрузить фото после лечения");
+            }
+            e.target.value = "";
           }} />
 
           <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -1502,6 +1647,18 @@ function AiCorePage({ patientId }: { patientId: string }) {
               >
                 До / После
               </button>
+              {!beforeAfterMode && (
+                <select
+                  value={imageUploadKind}
+                  onChange={(event) => setImageUploadKind(event.target.value)}
+                  className="px-3.5 py-2 text-sm font-medium rounded-xl border border-gray-200 bg-white text-gray-700 outline-none"
+                  aria-label="Категория изображения"
+                >
+                  <option value="xray">ОПТГ / рентген</option>
+                  <option value="ct">КТ / 3D</option>
+                  <option value="other">Другое изображение</option>
+                </select>
+              )}
               <button
                 type="button"
                 className="px-3.5 py-2 text-sm font-medium rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
@@ -1511,6 +1668,11 @@ function AiCorePage({ patientId }: { patientId: string }) {
               </button>
             </div>
           </div>
+          {imageMessage && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700">
+              {imageMessage}
+            </div>
+          )}
 
           {beforeAfterMode ? (
             <div className="grid grid-cols-2 gap-4 max-[900px]:grid-cols-1">
@@ -1626,13 +1788,29 @@ function AiCorePage({ patientId }: { patientId: string }) {
                 </div>
               </div>
             ))}
-            <button
-              type="button"
-              className="mt-1 px-3 py-2 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition"
-              onClick={() => setMaterials((p) => [...p, { code: `mat_${Date.now()}`, name: "Новый материал", qty: 1, unit: "шт" }])}
-            >
-              + Добавить материал
-            </button>
+            <div className="mt-1 grid grid-cols-[minmax(0,1fr)_auto] gap-2 max-[640px]:grid-cols-1">
+              <select
+                value={materialSelectId}
+                onChange={(event) => setMaterialSelectId(event.target.value)}
+                className="min-h-9 rounded-lg border border-blue-200 bg-white px-3 text-xs font-medium text-gray-700 outline-none"
+              >
+                {inventoryItems.length === 0 ? (
+                  <option value="">Склад пока не загружен</option>
+                ) : inventoryItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} · {item.quantity} {item.unit}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="px-3 py-2 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition disabled:opacity-50"
+                disabled={!materialSelectId}
+                onClick={addSelectedMaterial}
+              >
+                + Добавить со склада
+              </button>
+            </div>
           </div>
         </div>
       )}

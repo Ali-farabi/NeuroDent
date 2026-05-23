@@ -164,6 +164,21 @@ export async function createPatientProtocolDocument(patientId) {
   });
 }
 
+export async function getLatestPatientProtocolDocument(patientId) {
+  return request(`/patients/${encodeURIComponent(patientId)}/documents/protocol/latest`);
+}
+
+export async function getPatientBillingSummary(patientId) {
+  return request(`/patients/${encodeURIComponent(patientId)}/billing-summary`);
+}
+
+export async function createPatientAppointmentRequest(patientId, data) {
+  return request(`/patients/${encodeURIComponent(patientId)}/appointment-requests`, {
+    method: "POST",
+    body: data,
+  });
+}
+
 export async function getPatientVisits(patientId) {
   return getVisitsByPatient(patientId);
 }

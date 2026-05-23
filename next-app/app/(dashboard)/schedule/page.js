@@ -48,6 +48,7 @@ function makeTimeOptions(startHour = 8, endHour = 20, step = 15) {
 }
 
 const STATUS_STYLE = {
+  requested: { bg: "#f5f3ff", color: "#6d28d9", border: "#ddd6fe", stripe: "#8b5cf6", label: "Заявка пациента" },
   scheduled: { bg: "#f0f6ff", color: "#1d4ed8", border: "#bfdbfe", stripe: "#3b82f6", label: "Запланировано" },
   arrived:   { bg: "#fffbeb", color: "#b45309", border: "#fde68a", stripe: "#f59e0b", label: "Пациент пришел" },
   completed: { bg: "#f0fdf4", color: "#15803d", border: "#bbf7d0", stripe: "#22c55e", label: "Завершено"},
@@ -55,6 +56,7 @@ const STATUS_STYLE = {
 };
 
 const STATUS_TRANSITIONS = {
+  requested: ["scheduled", "cancelled"],
   scheduled: ["arrived", "cancelled"],
   arrived:   ["completed", "cancelled"],
   completed: [],
@@ -156,6 +158,7 @@ function ApptDetailModal({ appt, doctors, role, onClose, onStatusChanged, onOpen
   }
 
   const STATUS_BTN = {
+    scheduled: { label: "Подтвердить", style: { background: "#3b82f6", color: "#fff", border: "none" } },
     arrived:   { label: "Пришёл",   style: { background: "#f59e0b", color: "#fff", border: "none" } },
     completed: { label: "Завершить", style: { background: "#22c55e", color: "#fff", border: "none" } },
     cancelled: { label: "Отменить",  style: { background: "#ef4444", color: "#fff", border: "none" } },
@@ -275,7 +278,7 @@ function ApptModal({ doctors, patients, date, selectedDoctorId = "", dayAppointm
     const end = start + durationMinutes;
     if (end > 20 * 60) return false;
     return !doctorAppointments.some((appt) => {
-      if (appt.status === "cancelled") return false;
+      if (["cancelled", "requested"].includes(appt.status)) return false;
       const apptStart = minutesFromTime(appt.time);
       const apptEnd = apptStart + Number(appt.duration || 30);
       return rangesOverlap(start, end, apptStart, apptEnd);
@@ -603,7 +606,7 @@ function CalendarTab({ doctors, patients, role }) {
         <ApptDetailModal
           appt={detailAppt} doctors={doctors} role={role}
           onClose={() => setDetail(null)}
-          onStatusChanged={() => load(date, doctorId)}
+          onStatusChanged={reload}
           onOpenAi={handleOpenAi}
         />
       )}

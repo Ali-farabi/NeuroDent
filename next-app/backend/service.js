@@ -505,7 +505,7 @@ function treatmentPlanForPatient(patientId) {
 }
 
 function validateStatus(status) {
-  const allowed = new Set(["scheduled", "arrived", "completed", "cancelled"]);
+  const allowed = new Set(["requested", "scheduled", "arrived", "completed", "cancelled"]);
   if (!allowed.has(status)) throw new Error("Неверный статус записи");
 }
 
@@ -541,7 +541,7 @@ function rangesOverlap(startA, endA, startB, endB) {
 }
 
 function appointmentBlocksSlot(appt) {
-  return appt.status !== "cancelled";
+  return !["cancelled", "requested"].includes(appt.status);
 }
 
 function assertAppointmentSlotAvailable({ doctorId, date, time, duration, excludeId = "" }) {
@@ -563,6 +563,20 @@ function assertAppointmentTransition(appt, nextStatus) {
   if (appt.status === nextStatus) return;
   if (appt.status === "cancelled") throw new Error("Отмененную запись нельзя изменить");
   if (appt.status === "completed") throw new Error("Завершенную запись нельзя изменить");
+  if (appt.status === "requested") {
+    if (nextStatus === "scheduled") {
+      assertAppointmentSlotAvailable({
+        doctorId: appt.doctorId,
+        date: appt.date,
+        time: appt.time,
+        duration: Number(appt.duration || 30),
+        excludeId: appt.id,
+      });
+      return;
+    }
+    if (nextStatus === "cancelled") return;
+    throw new Error("Заявку можно подтвердить или отменить");
+  }
   if (nextStatus === "completed") {
     const visit = appt.visitId ? getVisit(appt.visitId) : null;
     if (!visit?.isFinal) throw new Error("Нельзя завершить запись без завершенного визита");
@@ -1436,6 +1450,7 @@ export async function finishVisit(appointmentId, visitData, options = {}) {
     }
     if (Array.isArray(visitData.materials)) {
       visit.materials = visitData.materials.map((m) => ({
+        inventoryId: String(m.inventoryId || ""),
         code: String(m.code || ""),
         name: String(m.name || ""),
         qty: Number(m.qty) || 0,
@@ -1454,9 +1469,11 @@ export async function finishVisit(appointmentId, visitData, options = {}) {
       for (const m of visit.materials) {
         const qty = Number(m.qty) || 0;
         if (!qty) continue;
+        const inventoryId = String(m.inventoryId || "");
         const code = String(m.code || "").toLowerCase();
         const name = String(m.name || "").toLowerCase();
         const item =
+          db.inventory.find((i) => inventoryId && i.id === inventoryId) ||
           db.inventory.find((i) =>
             code ? i.name.toLowerCase().includes(code) : false,
           ) ||
