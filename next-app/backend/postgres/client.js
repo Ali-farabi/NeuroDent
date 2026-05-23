@@ -31,6 +31,14 @@ const EXPECTED_TABLES = [
 
 let pool = null;
 
+function missingDatabaseUrlHint() {
+  return [
+    "Set NEURODENT_DATABASE_URL before running PostgreSQL commands.",
+    "For local Docker Postgres, run: npm run db:postgres:local, then npm run db:postgres:local:migrate.",
+    "For Supabase, put NEURODENT_DATABASE_URL and NEURODENT_POSTGRES_SSL=require in next-app/.env.local.",
+  ].join(" ");
+}
+
 export function isPostgresConfigured() {
   return Boolean(process.env.NEURODENT_DATABASE_URL || process.env.DATABASE_URL);
 }
@@ -71,6 +79,7 @@ export function getPostgresConfigSummary() {
       database: "",
       user: "",
       ssl: "",
+      hint: missingDatabaseUrlHint(),
     };
   }
 
@@ -125,6 +134,26 @@ function safeError(error) {
   };
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function connectWithRetry() {
+  const retries = Math.max(0, Number(process.env.NEURODENT_POSTGRES_CONNECT_RETRIES || 0));
+  const retryMs = Math.max(50, Number(process.env.NEURODENT_POSTGRES_CONNECT_RETRY_MS || 500));
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await getPool().connect();
+    } catch (error) {
+      lastError = error;
+      if (attempt === retries) break;
+      await delay(retryMs);
+    }
+  }
+  throw lastError;
+}
+
 async function getSchemaState(client) {
   const result = await client.query(
     `
@@ -158,7 +187,7 @@ export async function checkPostgresConnection() {
   }
 
   try {
-    const client = await getPool().connect();
+    const client = await connectWithRetry();
     try {
       const startedAt = Date.now();
       const info = await client.query(
@@ -196,10 +225,10 @@ export async function checkPostgresConnection() {
 
 export async function applyPostgresSchema() {
   if (!isPostgresConfigured()) {
-    throw new Error("NEURODENT_DATABASE_URL or DATABASE_URL is required for PostgreSQL migration");
+    throw new Error(missingDatabaseUrlHint());
   }
 
-  const client = await getPool().connect();
+  const client = await connectWithRetry();
   let inTransaction = false;
   try {
     const schemaSql = await readFile(SCHEMA_FILE, "utf8");

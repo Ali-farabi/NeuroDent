@@ -36,6 +36,7 @@ jobs:
           node --check next-app/backend/storage.js
           node --check next-app/backend/smoke-test.js
           node --check next-app/backend/postgres/client.js
+          node --check next-app/backend/postgres/env.js
           node --check next-app/backend/postgres/check.js
           node --check next-app/backend/postgres/migrate.js
 

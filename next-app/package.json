@@ -12,6 +12,9 @@
     "start": "next start",
     "lint": "eslint",
     "db:postgres:check": "node --no-warnings backend/postgres/check.js",
+    "db:postgres:local": "docker compose -f ../docker-compose.yml --profile postgres up -d postgres",
+    "db:postgres:local:check": "node --no-warnings backend/postgres/check.js --local",
+    "db:postgres:local:migrate": "node --no-warnings backend/postgres/migrate.js --local",
     "db:postgres:migrate": "node --no-warnings backend/postgres/migrate.js",
     "reset:dev-passwords": "node --no-warnings backend/reset-dev-passwords.js",
     "test:backend": "node --no-warnings backend/smoke-test.js",
@@ -19,6 +22,7 @@
     "test:postgres": "node --no-warnings backend/postgres/check.js --skip-if-missing"
   },
   "dependencies": {
+    "@next/env": "16.2.6",
     "lucide-react": "^1.8.0",
     "next": "16.2.6",
     "pg": "^8.21.0",

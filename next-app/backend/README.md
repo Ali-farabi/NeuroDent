@@ -200,6 +200,15 @@ npm run db:postgres:migrate
 npm run db:postgres:check
 ```
 
+Local Docker PostgreSQL:
+
+```bash
+cd next-app
+npm run db:postgres:local
+npm run db:postgres:local:migrate
+npm run db:postgres:local:check
+```
+
 These commands apply the prepared schema and verify connection/schema readiness. The main runtime remains SQLite until the PostgreSQL storage adapter is implemented.
 
 ## CI

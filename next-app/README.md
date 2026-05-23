@@ -98,6 +98,16 @@ npm run db:postgres:migrate
 npm run db:postgres:check
 ```
 
+For local Docker PostgreSQL without editing env first:
+
+```bash
+npm run db:postgres:local
+npm run db:postgres:local:migrate
+npm run db:postgres:local:check
+```
+
+The Postgres CLI scripts load `.env.local` automatically. Without `NEURODENT_DATABASE_URL`, `db:postgres:migrate` has no database to connect to and will stop with a configuration hint.
+
 Deployment guide:
 
 ```text

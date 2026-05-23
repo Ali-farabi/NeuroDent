@@ -142,6 +142,17 @@ npm run db:postgres:check
 
 The app also reports PostgreSQL preflight state in `/api/capabilities` and the admin system status.
 
+The PostgreSQL CLI scripts load `next-app/.env.local` automatically. If no `NEURODENT_DATABASE_URL` or `DATABASE_URL` is configured, migration cannot run because there is no target database.
+
+For local Docker PostgreSQL:
+
+```bash
+cd next-app
+npm run db:postgres:local
+npm run db:postgres:local:migrate
+npm run db:postgres:local:check
+```
+
 ## Next Stage
 
 The next implementation stage is the PostgreSQL/Supabase runtime storage adapter that keeps the existing service-layer API and makes serverless production deployment possible. Until that adapter is enabled, keep `NEURODENT_STORAGE_DRIVER=sqlite`.

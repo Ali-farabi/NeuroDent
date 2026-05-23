@@ -42,6 +42,17 @@ Check connection and schema readiness:
 npm run db:postgres:check
 ```
 
+The scripts load `next-app/.env.local` automatically. If no database URL is configured, migration stops because there is no PostgreSQL target.
+
+Local Docker shortcut:
+
+```bash
+cd next-app
+npm run db:postgres:local
+npm run db:postgres:local:migrate
+npm run db:postgres:local:check
+```
+
 For Supabase, use the Supabase Postgres connection string and set:
 
 ```text
