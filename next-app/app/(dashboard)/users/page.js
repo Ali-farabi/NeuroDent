@@ -124,7 +124,7 @@ function UserModal({ mode, user, existingUsers, onClose, onSaved }) {
               placeholder="87001234567" style={inputStyle} required />
           </Field>
 
-          <Field label="Email">
+          <Field label="Эл. почта">
             <input type="email" value={form.email} onChange={set("email")}
               placeholder="user@clinic.kz" style={inputStyle} />
           </Field>

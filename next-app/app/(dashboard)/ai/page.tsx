@@ -410,14 +410,14 @@ function PatientSelectPage() {
     <div className="min-h-full bg-white px-6 py-5 lg:px-8 lg:py-6">
       <div className="max-w-310">
         <header className="mb-8">
-          <h1 className="text-2xl leading-tight font-bold text-gray-950">Core AI Layer</h1>
+          <h1 className="text-2xl leading-tight font-bold text-gray-950">AI-протокол</h1>
           <p className="mt-0 text-s leading-5 text-gray-500">Автопротоколирование, МКБ-10 и анализ истории</p>
         </header>
 
         <section className="rounded-lg border border-gray-200 bg-white px-3 py-4 shadow-[0_1px_4px_rgba(15,23,42,0.1)]">
           <div className="px-1">
             <h2 className="text-lg leading-tight font-semibold text-blue-600">Выберите пациента для приема</h2>
-            <p className="mt-1 text-[13px] leading-5 text-gray-600">Чтобы Core AI Layer начал слушать и писать протокол, выберите пациента из базы.</p>
+            <p className="mt-1 text-[13px] leading-5 text-gray-600">Чтобы AI-протокол начал слушать и писать протокол, выберите пациента из базы.</p>
           </div>
         </section>
 
@@ -1111,7 +1111,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
         <div className="flex flex-col gap-1">
             <h1 className="flex items-center gap-2 text-xl font-bold text-gray-900 m-0">
             <img src="/images/Medimetricslogotype.png" alt="Neurodent" className="w-7 h-7" />
-            <span>Core AI Layer</span>
+            <span>AI-протокол</span>
           </h1>
           <p className="text-xs text-gray-500 m-0">Автопротоколирование, МКБ-10, тип кариеса и зубная формула</p>
         </div>

@@ -213,7 +213,7 @@ export default function ReportPage() {
       <div className="mx-auto max-w-325">
         <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="m-0 text-[24px] font-bold leading-tight text-black">Business Analytics</h1>
+            <h1 className="m-0 text-[24px] font-bold leading-tight text-black">Бизнес-аналитика</h1>
             <p className="mt-1 text-s text-slate-500">Ключевые показатели клиники и контроль рисков</p>
           </div>
           <div className="flex items-center gap-2.5">

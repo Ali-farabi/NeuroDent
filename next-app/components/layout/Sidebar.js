@@ -9,7 +9,7 @@ const menuItems = [
   {
     route: "ai",
     href: "/ai",
-    label: "AI Protocol",
+    label: "AI-протокол",
     roles: ["owner", "doctor", "assistant"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -20,7 +20,7 @@ const menuItems = [
   {
     route: "report",
     href: "/report",
-    label: "Analytics",
+    label: "Аналитика",
     roles: ["owner"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -34,7 +34,7 @@ const menuItems = [
   {
     route: "schedule",
     href: "/schedule",
-    label: "Calendar / CRM",
+    label: "Запись / CRM",
     roles: ["owner", "admin", "doctor", "assistant"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

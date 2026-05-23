@@ -15,6 +15,10 @@ import {
   deleteFile,
   getFileDownloadUrl,
   createPatientProtocolDocument,
+  getPatientAiContext,
+  getPatientMedicalCard,
+  getPatientProtocol,
+  getPatientTreatmentPlan,
 } from "@/lib/api";
 import { Bot, HeartPulse, CalendarDays, FileDown, AlertTriangle, UserRound, Upload, ScanLine } from "lucide-react";
 
@@ -27,6 +31,15 @@ function fmtDate(iso) {
 
 function firstFilled(...values) {
   return values.find((value) => typeof value === "string" && value.trim()) || "";
+}
+
+function downloadTextFile(fileName, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function readAsBase64(file) {
@@ -126,7 +139,7 @@ function PatientForm({ mode, patient, onSave, onCancel }) {
         <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
           placeholder="8700..." style={inputStyle} required />
       </Field>
-      <Field label="Email">
+      <Field label="Эл. почта">
         <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
           placeholder="example@mail.com" style={inputStyle} />
       </Field>
@@ -236,7 +249,7 @@ function PatientCard({ patient }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px 32px" }}>
           {[
             { icon: "phone", label: "Телефон", value: patient.phone },
-            { icon: "mail",  label: "Email",   value: patient.email || "—" },
+            { icon: "mail",  label: "Эл. почта", value: patient.email || "—" },
             { icon: "cal",   label: "Дата рождения", value: patient.birthDate || "—" },
             { icon: "pin",   label: "Адрес",   value: patient.address || "—" },
           ].map(({ label, value }) => (
@@ -374,6 +387,10 @@ function PatientCabinet() {
   const { user } = useAuth();
   const [patientData, setPatientData] = useState(null);
   const [patientVisits, setPatientVisits] = useState([]);
+  const [medicalCard, setMedicalCard] = useState(null);
+  const [treatmentPlan, setTreatmentPlan] = useState([]);
+  const [aiContext, setAiContext] = useState(null);
+  const [patientFiles, setPatientFiles] = useState([]);
   const [downloading, setDownloading] = useState(null);
   const [loadError, setLoadError] = useState("");
 
@@ -385,12 +402,20 @@ function PatientCabinet() {
     Promise.all([
       getPatientById(patientId),
       getPatientVisits(patientId),
+      getPatientMedicalCard(patientId),
+      getPatientTreatmentPlan(patientId),
+      getPatientAiContext(patientId),
+      getFiles({ patientId }),
     ])
-      .then(([patient, visits]) => {
+      .then(([patient, visits, card, plan, context, files]) => {
         if (!active) return;
         setLoadError("");
-        setPatientData(patient);
-        setPatientVisits((visits || []).map((visit) => {
+        setPatientData(card?.patient || patient);
+        setMedicalCard(card || null);
+        setTreatmentPlan(plan || []);
+        setAiContext(context || null);
+        setPatientFiles(files || card?.files || []);
+        setPatientVisits((card?.visits || visits || []).map((visit) => {
           const date = visit.date || String(visit.startedAt || "").slice(0, 10);
           const time = visit.time || String(visit.startedAt || "").slice(11, 16);
           return { ...visit, date, time };
@@ -407,10 +432,11 @@ function PatientCabinet() {
   const patientName = patientData?.name || user?.name || "Пациент";
   const firstName = patientName.split(" ")[0] || patientName;
   const bonusPoints = Number(patientData?.bonusPoints ?? user?.bonusPoints ?? 0);
-  const bonusLabel = `${bonusPoints.toLocaleString("ru-RU")} т`;
-  const primaryVisit = completedVisits[0];
+  const bonusFromCard = Number(medicalCard?.bonuses ?? bonusPoints);
+  const bonusLabel = `${bonusFromCard.toLocaleString("ru-RU")} т`;
   const imagingAssets = {
     model3d: firstFilled(
+      aiContext?.toothChart?.model3dImageUrl,
       patientData?.model3dImageUrl,
       patientData?.xrayImageUrl,
       patientData?.ctImageUrl,
@@ -419,11 +445,13 @@ function PatientCabinet() {
       user?.model3dImageUrl,
     ),
     before: firstFilled(
+      aiContext?.beforeTreatmentImageUrl,
       patientData?.beforeTreatmentImageUrl,
       patientData?.beforeImageUrl,
       patientData?.images?.before,
     ),
     after: firstFilled(
+      aiContext?.afterTreatmentImageUrl,
       patientData?.afterTreatmentImageUrl,
       patientData?.afterImageUrl,
       patientData?.images?.after,
@@ -436,28 +464,20 @@ function PatientCabinet() {
     description: visit.notes || visit.complaint || "Обновлен клинический протокол и рекомендации по уходу.",
     isActive: index === 0,
   }));
-  const planItems = [
-    {
-      id: "plan-urgent",
-      title: primaryVisit?.diagnosis?.includes("мудр")
-        ? primaryVisit.diagnosis
-        : "Удаление зуба мудрости",
-      subtitle: primaryVisit?.toothNumber
-        ? `Зуб ${primaryVisit.toothNumber} (дистопированный)`
-        : "Зуб 4.8 (дистопированный)",
-      tone: "danger",
-    },
-    {
-      id: "plan-next",
-      title: primaryVisit?.diagnosisCode?.startsWith("K07")
-        ? "Ортодонтический этап"
-        : "Установка имплантата",
-      subtitle: primaryVisit?.toothNumber
-        ? `Зуб ${primaryVisit.toothNumber} (Nobel Biocare)`
-        : "Зуб 1.6 (Nobel Biocare)",
+  const planItems = (treatmentPlan.length ? treatmentPlan : medicalCard?.treatmentPlan || []).map((item, index) => ({
+    id: item.id || `plan-${index}`,
+    title: item.text || item.title || "План лечения",
+    subtitle: item.toothNumber ? `Зуб ${item.toothNumber}` : item.status || "Запланировано",
+    tone: index === 0 ? "danger" : "muted",
+  }));
+  if (!planItems.length) {
+    planItems.push({
+      id: "plan-empty",
+      title: "Первичная диагностика и составление плана лечения",
+      subtitle: "Запланировано",
       tone: "muted",
-    },
-  ];
+    });
+  }
   const timelineFallback = [
     {
       id: "fallback-1",
@@ -482,6 +502,31 @@ function PatientCabinet() {
     },
   ];
   const displayHistory = historyItems.length ? historyItems : timelineFallback;
+
+  async function downloadPatientProtocol(itemId) {
+    const patientId = user?.patientId || user?.id;
+    if (!patientId) return;
+    setDownloading(itemId);
+    try {
+      const text = await getPatientProtocol(patientId);
+      downloadTextFile(`AI_Protocol_${patientId}.txt`, text || "");
+    } catch (error) {
+      setLoadError(error?.message || "Не удалось скачать AI протокол");
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  function openPatientFiles(category = "") {
+    const target = category
+      ? patientFiles.find((file) => String(file.category || file.type || "").includes(category))
+      : patientFiles[0];
+    if (target?.id) {
+      window.open(getFileDownloadUrl(target.id), "_blank", "noopener,noreferrer");
+      return;
+    }
+    setLoadError("Документ еще не загружен в карту пациента");
+  }
 
   return (
     <div style={{ minHeight: "100%", background: "#fbfcfe", padding: "22px 24px 20px" }}>
@@ -886,10 +931,7 @@ function PatientCabinet() {
                           <button
                             type="button"
                             disabled={downloading === item.id}
-                            onClick={() => {
-                              setDownloading(item.id);
-                              setTimeout(() => setDownloading(null), 1200);
-                            }}
+                            onClick={() => downloadPatientProtocol(item.id)}
                             style={{
                               border: "none",
                               background: "transparent",
@@ -991,10 +1033,10 @@ function PatientCabinet() {
 
             <div className="patient-doc-grid">
               {[
-                { label: "Договор", icon: "doc" },
-                { label: "Чеки и счета", icon: "receipt" },
+                { label: "Договор", icon: "doc", category: "contract" },
+                { label: `Чеки и счета${medicalCard?.payments?.length ? ` (${medicalCard.payments.length})` : ""}`, icon: "receipt", category: "receipt" },
               ].map((item) => (
-                <button key={item.label} type="button" className="patient-doc-card">
+                <button key={item.label} type="button" className="patient-doc-card" onClick={() => openPatientFiles(item.category)}>
                   <span style={{ color: "#3167e3", display: "inline-flex" }}>
                     {item.icon === "doc" ? (
                       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

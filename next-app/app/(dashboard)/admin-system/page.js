@@ -99,10 +99,10 @@ export default function AdminSystemPage() {
     event.preventDefault();
     setMessage("");
     try {
-      const result = await sendAdminTestEmail({ to: email, subject: "NeuroDent integration test", message: "Email integration test from system page." });
-      setMessage(`Email test: ${result.delivery?.provider || "unknown"} ${result.ok ? "ok" : "skipped"}`);
+      const result = await sendAdminTestEmail({ to: email, subject: "Тест интеграции NeuroDent", message: "Тест почтовой интеграции со страницы системы." });
+      setMessage(`Тест почты: ${result.delivery?.provider || "неизвестно"} ${result.ok ? "успешно" : "пропущено"}`);
     } catch (error) {
-      setMessage(error?.message || "Email test failed");
+      setMessage(error?.message || "Тест почты не выполнен");
     }
   }
 
@@ -159,11 +159,11 @@ export default function AdminSystemPage() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="m-0 text-lg font-semibold text-slate-950">Интеграции</h2>
-            <p className="mt-1 text-sm text-slate-500">Email, SMS, WhatsApp, storage, fiscalization, E-sign и AI</p>
+            <p className="mt-1 text-sm text-slate-500">Почта, SMS, WhatsApp, хранилище, фискализация, ЭЦП и AI</p>
           </div>
           <form onSubmit={handleEmailTest} className="flex gap-2">
             <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="test@example.com" required />
-            <button className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold">Test email</button>
+            <button className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold">Проверить почту</button>
           </form>
         </div>
         <div className="grid gap-3 md:grid-cols-3">
