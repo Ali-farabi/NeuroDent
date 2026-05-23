@@ -19,6 +19,7 @@ import {
   getPatientBillingSummary,
   createPatientAppointmentRequest,
   getDoctors,
+  changePassword,
   getPatientAiContext,
   getPatientMedicalCard,
   getPatientTreatmentPlan,
@@ -80,6 +81,18 @@ function fileKindLabel(file) {
   return FILE_KIND_LABELS[kind] || kind || "Файл";
 }
 
+function mimeGroup(file) {
+  const explicit = String(file?.mimeGroup || "").toLowerCase();
+  if (explicit) return explicit;
+  const mimeType = String(file?.mimeType || "").toLowerCase();
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType === "application/pdf") return "pdf";
+  if (mimeType.includes("dicom") || mimeType.includes("model") || mimeType.includes("stl") || mimeType.includes("obj")) return "3d";
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("text/")) return "text";
+  return "binary";
+}
+
 function findLatestFile(files, kinds) {
   const wanted = new Set(Array.isArray(kinds) ? kinds : [kinds]);
   return (files || []).find((file) => wanted.has(normalizeFileKind(file))) || null;
@@ -102,6 +115,10 @@ function invoiceStatusLabel(status) {
     overdue: "просрочен",
   };
   return labels[String(status || "").toLowerCase()] || status || "счет";
+}
+
+function sortedByCreatedDesc(items) {
+  return [...(items || [])].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
 }
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
@@ -477,6 +494,13 @@ function PatientCabinet() {
   });
   const [appointmentSaving, setAppointmentSaving] = useState(false);
   const [appointmentMessage, setAppointmentMessage] = useState("");
+  const [documentModal, setDocumentModal] = useState(null);
+  const [selectedDocumentId, setSelectedDocumentId] = useState("");
+  const [showBillingModal, setShowBillingModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", nextPassword: "", repeatPassword: "" });
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState("");
   const [downloading, setDownloading] = useState(null);
   const [loadError, setLoadError] = useState("");
 
@@ -537,6 +561,8 @@ function PatientCabinet() {
   const invoiceFiles = patientFiles.filter((file) => normalizeFileKind(file) === "invoice");
   const consentFiles = patientFiles.filter((file) => normalizeFileKind(file) === "consent");
   const billingInvoices = billingSummary?.invoices || [];
+  const selectedModalFiles = sortedByCreatedDesc(documentModal?.files || []);
+  const selectedDocument = selectedModalFiles.find((file) => file.id === selectedDocumentId) || selectedModalFiles[0] || null;
   const imagingAssets = {
     model3d: firstFilled(
       filePublicUrl(ctFile),
@@ -629,12 +655,32 @@ function PatientCabinet() {
     }
   }
 
-  function openPatientFiles(category = "") {
-    const target = category
-      ? findLatestFile(patientFiles, category)
-      : patientFiles[0];
-    if (target?.id) {
-      window.open(getFileDownloadUrl(target.id), "_blank", "noopener,noreferrer");
+  async function openPatientFiles(category = "") {
+    setLoadError("");
+    let files = category
+      ? patientFiles.filter((file) => normalizeFileKind(file) === category)
+      : patientFiles;
+
+    if (!files.length && category === "protocol") {
+      const patientId = user?.patientId || user?.id;
+      if (!patientId) return;
+      setDownloading("protocol");
+      try {
+        const documentFile = await createPatientProtocolDocument(patientId);
+        files = [documentFile];
+        setPatientFiles((prev) => [documentFile, ...prev.filter((file) => file.id !== documentFile.id)]);
+      } catch (error) {
+        setLoadError(error?.message || "Не удалось создать PDF-протокол");
+        setDownloading(null);
+        return;
+      }
+      setDownloading(null);
+    }
+
+    if (files.length) {
+      const sorted = sortedByCreatedDesc(files);
+      setDocumentModal({ category, title: category ? FILE_KIND_LABELS[category] || "Документы" : "Документы", files: sorted });
+      setSelectedDocumentId(sorted[0]?.id || "");
       return;
     }
     setLoadError("Документ еще не загружен в карту пациента");
@@ -659,7 +705,27 @@ function PatientCabinet() {
     }
   }
 
+  async function handlePasswordChange(event) {
+    event.preventDefault();
+    setPasswordMessage("");
+    if (passwordForm.nextPassword !== passwordForm.repeatPassword) {
+      setPasswordMessage("Новый пароль и повтор не совпадают");
+      return;
+    }
+    setPasswordSaving(true);
+    try {
+      await changePassword(passwordForm.currentPassword, passwordForm.nextPassword);
+      setPasswordForm({ currentPassword: "", nextPassword: "", repeatPassword: "" });
+      setPasswordMessage("Пароль пациентского кабинета обновлен");
+    } catch (error) {
+      setPasswordMessage(error?.message || "Не удалось сменить пароль");
+    } finally {
+      setPasswordSaving(false);
+    }
+  }
+
   return (
+    <>
     <div style={{ minHeight: "100%", background: "#fbfcfe", padding: "22px 24px 20px" }}>
       <style>{`
         .patient-home {
@@ -814,6 +880,29 @@ function PatientCabinet() {
           grid-template-columns: 1fr 1fr;
           gap: 10px;
         }
+        .patient-document-layout {
+          display: grid;
+          grid-template-columns: minmax(220px, 0.42fr) minmax(0, 1fr);
+          gap: 14px;
+          min-height: 420px;
+        }
+        .patient-document-list {
+          display: grid;
+          align-content: start;
+          gap: 8px;
+          max-height: 520px;
+          overflow: auto;
+        }
+        .patient-document-preview {
+          min-height: 420px;
+          border: 1px solid #e1e8f2;
+          border-radius: 14px;
+          background: #f8fbff;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
         @media (max-width: 1320px) {
           .patient-home-grid {
             grid-template-columns: minmax(0, 1fr);
@@ -827,6 +916,9 @@ function PatientCabinet() {
             grid-template-columns: 1fr;
           }
           .patient-appointment-grid {
+            grid-template-columns: 1fr;
+          }
+          .patient-document-layout {
             grid-template-columns: 1fr;
           }
         }
@@ -883,6 +975,23 @@ function PatientCabinet() {
               <path d="m9 18 6-6-6-6" />
             </svg>
           </div>
+          <button
+            type="button"
+            onClick={() => { setPasswordMessage(""); setShowPasswordModal(true); }}
+            style={{
+              minHeight: 72,
+              padding: "12px 18px",
+              border: "1px solid #dbe3f1",
+              borderRadius: 16,
+              background: "#fff",
+              color: "#24364f",
+              fontSize: 13,
+              fontWeight: 800,
+              boxShadow: "0 1px 2px rgba(15, 23, 42, 0.03)",
+            }}
+          >
+            Сменить пароль
+          </button>
         </div>
 
         {(patientData?.allergies || user?.allergies) && (
@@ -1110,15 +1219,24 @@ function PatientCabinet() {
                     {billingInvoices.length ? `${billingInvoices.length} счет(а) в карте` : "Счета пока не выставлены"}
                   </div>
                 </div>
-                <div style={{
-                  padding: "5px 10px",
-                  borderRadius: 9,
-                  background: billingSummary?.debt ? "#fff1f2" : "#f0fdf4",
-                  color: billingSummary?.debt ? "#dc2626" : "#15803d",
-                  fontSize: 12,
-                  fontWeight: 800,
-                }}>
-                  долг {formatMoneyAmount(billingSummary?.debt || 0)}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowBillingModal(true)}
+                    style={{ border: "none", background: "transparent", color: "#0f45b9", fontSize: 12, fontWeight: 800 }}
+                  >
+                    Все счета
+                  </button>
+                  <div style={{
+                    padding: "5px 10px",
+                    borderRadius: 9,
+                    background: billingSummary?.debt ? "#fff1f2" : "#f0fdf4",
+                    color: billingSummary?.debt ? "#dc2626" : "#15803d",
+                    fontSize: 12,
+                    fontWeight: 800,
+                  }}>
+                    долг {formatMoneyAmount(billingSummary?.debt || 0)}
+                  </div>
                 </div>
               </div>
               <div style={{ padding: "14px 20px 16px" }}>
@@ -1345,6 +1463,176 @@ function PatientCabinet() {
         </div>
       </div>
     </div>
+    {documentModal && (
+      <Modal title={documentModal.title || "Документы"} onClose={() => setDocumentModal(null)} wide>
+        <div className="patient-document-layout">
+          <div className="patient-document-list">
+            {selectedModalFiles.map((file) => (
+              <button
+                key={file.id}
+                type="button"
+                onClick={() => setSelectedDocumentId(file.id)}
+                style={{
+                  minHeight: 74,
+                  padding: "10px 12px",
+                  border: selectedDocument?.id === file.id ? "1px solid #3167e3" : "1px solid #e1e8f2",
+                  borderRadius: 12,
+                  background: selectedDocument?.id === file.id ? "#edf4ff" : "#fff",
+                  textAlign: "left",
+                  color: "#22324a",
+                  display: "grid",
+                  gap: 4,
+                }}
+              >
+                <span style={{ fontSize: 13, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {file.fileName || file.name || file.id}
+                </span>
+                <span style={{ fontSize: 11, color: "#6d7d95" }}>
+                  {fileKindLabel(file)} · {file.mimeType || mimeGroup(file)}
+                </span>
+                {file.signatureStatus === "signed" && (
+                  <span style={{ fontSize: 11, color: "#15803d", fontWeight: 800 }}>Подписан</span>
+                )}
+              </button>
+            ))}
+            {!selectedModalFiles.length && (
+              <div style={{ padding: 18, textAlign: "center", color: "#708097", fontSize: 13 }}>Файлов пока нет</div>
+            )}
+          </div>
+          <div style={{ display: "grid", gap: 12 }}>
+            <div className="patient-document-preview">
+              {selectedDocument && mimeGroup(selectedDocument) === "image" && (
+                <img
+                  src={filePublicUrl(selectedDocument)}
+                  alt={selectedDocument.fileName || "Документ"}
+                  style={{ width: "100%", height: "100%", maxHeight: 520, objectFit: "contain", display: "block" }}
+                />
+              )}
+              {selectedDocument && mimeGroup(selectedDocument) === "pdf" && (
+                <iframe
+                  title={selectedDocument.fileName || "PDF"}
+                  src={getFileDownloadUrl(selectedDocument.id)}
+                  style={{ width: "100%", height: 520, border: "none", background: "#fff" }}
+                />
+              )}
+              {selectedDocument && !["image", "pdf"].includes(mimeGroup(selectedDocument)) && (
+                <div style={{ padding: 28, textAlign: "center", color: "#5c6e88" }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#24364f" }}>{fileKindLabel(selectedDocument)}</div>
+                  <div style={{ marginTop: 8, fontSize: 13 }}>{selectedDocument.mimeType || "Файл доступен для скачивания"}</div>
+                </div>
+              )}
+            </div>
+            {selectedDocument && (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#22324a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {selectedDocument.fileName || selectedDocument.name || selectedDocument.id}
+                  </div>
+                  <div style={{ marginTop: 3, fontSize: 12, color: "#708097" }}>{selectedDocument.createdAt || ""}</div>
+                </div>
+                <a href={getFileDownloadUrl(selectedDocument.id)} target="_blank" rel="noreferrer" style={btnPrimary}>
+                  Открыть / скачать
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+    )}
+    {showBillingModal && (
+      <Modal title="Счета пациента" onClose={() => setShowBillingModal(false)} wide>
+        <div style={{ display: "grid", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+            {[
+              { label: "Всего", value: formatMoneyAmount(billingSummary?.total || 0) },
+              { label: "Оплачено", value: formatMoneyAmount(billingSummary?.paid || 0) },
+              { label: "Долг", value: formatMoneyAmount(billingSummary?.debt || 0) },
+            ].map((item) => (
+              <div key={item.label} style={{ border: "1px solid #e1e8f2", borderRadius: 12, padding: 12 }}>
+                <div style={{ fontSize: 11, color: "#708097", fontWeight: 800, textTransform: "uppercase" }}>{item.label}</div>
+                <div style={{ marginTop: 6, fontSize: 16, fontWeight: 900, color: "#22324a" }}>{item.value}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {billingInvoices.map((invoice) => (
+              <div key={invoice.id} style={{ border: "1px solid #e1e8f2", borderRadius: 12, padding: 12, display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#22324a" }}>{invoice.id}</div>
+                  <div style={{ marginTop: 3, fontSize: 12, color: "#708097" }}>
+                    {invoice.date || invoice.createdAt?.slice(0, 10)} · {invoiceStatusLabel(invoice.status)}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: "#22324a" }}>{formatMoneyAmount(invoice.total)}</div>
+                  <div style={{ marginTop: 3, fontSize: 11, color: "#708097" }}>оплачено {formatMoneyAmount(invoice.paid)}</div>
+                </div>
+              </div>
+            ))}
+            {!billingInvoices.length && (
+              <div style={{ padding: 24, textAlign: "center", color: "#708097", fontSize: 13 }}>Счетов пока нет</div>
+            )}
+          </div>
+        </div>
+      </Modal>
+    )}
+    {showPasswordModal && (
+      <Modal title="Смена пароля" onClose={() => setShowPasswordModal(false)}>
+        <form onSubmit={handlePasswordChange} style={{ display: "grid", gap: 12 }}>
+          <Field label="Текущий пароль">
+            <input
+              type="password"
+              value={passwordForm.currentPassword}
+              onChange={(event) => setPasswordForm((prev) => ({ ...prev, currentPassword: event.target.value }))}
+              style={inputStyle}
+              autoComplete="current-password"
+              required
+            />
+          </Field>
+          <Field label="Новый пароль">
+            <input
+              type="password"
+              value={passwordForm.nextPassword}
+              onChange={(event) => setPasswordForm((prev) => ({ ...prev, nextPassword: event.target.value }))}
+              style={inputStyle}
+              autoComplete="new-password"
+              minLength={4}
+              required
+            />
+          </Field>
+          <Field label="Повторите новый пароль">
+            <input
+              type="password"
+              value={passwordForm.repeatPassword}
+              onChange={(event) => setPasswordForm((prev) => ({ ...prev, repeatPassword: event.target.value }))}
+              style={inputStyle}
+              autoComplete="new-password"
+              minLength={4}
+              required
+            />
+          </Field>
+          {passwordMessage && (
+            <div style={{
+              padding: "9px 11px",
+              borderRadius: 10,
+              background: passwordMessage.includes("обновлен") ? "#eefbf3" : "#fff1f2",
+              color: passwordMessage.includes("обновлен") ? "#17643b" : "#b91c1c",
+              fontSize: 12,
+              fontWeight: 800,
+            }}>
+              {passwordMessage}
+            </div>
+          )}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <button type="button" onClick={() => setShowPasswordModal(false)} style={btnOutline}>Закрыть</button>
+            <button type="submit" disabled={passwordSaving} style={btnPrimary}>
+              {passwordSaving ? "Сохранение..." : "Сменить пароль"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+    )}
+    </>
   );
 }
 

@@ -539,6 +539,7 @@ function CalendarTab({ doctors, patients, role }) {
 
   const visibleDoctors = doctorId ? doctors.filter(d => d.id === doctorId) : doctors;
   const apptCount      = appointments.length;
+  const requestedAppointments = appointments.filter((appt) => appt.status === "requested");
 
   function handleApptClick(appt) {
     setDetail(appt);
@@ -571,6 +572,47 @@ function CalendarTab({ doctors, patients, role }) {
               onMouseLeave={e => { e.currentTarget.style.opacity="1"; }}
             >+ Новая запись</button>
           </div>
+        )}
+        {requestedAppointments.length > 0 && (
+          <>
+            <div style={{ height: 1, background: "var(--border)" }} />
+            <div style={{ padding: "14px 16px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", letterSpacing: 0.7, textTransform: "uppercase" }}>Заявки пациентов</div>
+                <span style={{ minWidth: 22, height: 22, borderRadius: 999, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe", display: "grid", placeItems: "center", fontSize: 11, fontWeight: 900 }}>
+                  {requestedAppointments.length}
+                </span>
+              </div>
+              <div style={{ display: "grid", gap: 8, maxHeight: 210, overflowY: "auto" }}>
+                {requestedAppointments.map((appt) => {
+                  const doctor = doctors.find((item) => item.id === appt.doctorId);
+                  return (
+                    <button
+                      key={appt.id}
+                      type="button"
+                      onClick={() => setDetail(appt)}
+                      style={{
+                        padding: "10px 11px",
+                        border: "1px solid #ddd6fe",
+                        borderLeft: "4px solid #8b5cf6",
+                        borderRadius: 0,
+                        background: "#fbfaff",
+                        display: "grid",
+                        gap: 4,
+                        textAlign: "left",
+                        color: "var(--text)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <span style={{ fontSize: 13, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{appt.patientName}</span>
+                      <span style={{ fontSize: 11, color: "#6d28d9", fontWeight: 800 }}>{appt.time || "время не выбрано"} · {doctor?.name?.split(" ").slice(0, 2).join(" ") || "врач"}</span>
+                      {appt.comment && <span style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{appt.comment}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>
         )}
         <div style={{ height: 1, background: "var(--border)" }} />
         <div style={{ padding: "14px 16px", flex: 1 }}>
