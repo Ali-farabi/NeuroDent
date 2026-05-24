@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import PDFDocument from "pdfkit";
 import {
   getIntegrationStatus,
   deleteExternalFile,
@@ -145,6 +146,29 @@ export function getAppointmentById(appointmentId) {
 
 function normalizePersonName(name = "") {
   return String(name).trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function ensureDoctorProfileForUser(user) {
+  if (!user || user.role !== "doctor") return null;
+  const specialty = String(user.specialty || user.extra?.specialty || "Стоматолог").trim() || "Стоматолог";
+  let doctor = user.doctorId ? getDoctor(user.doctorId) : null;
+  if (!doctor) {
+    doctor = db.doctors.find((item) => normalizePersonName(item.name) === normalizePersonName(user.name));
+  }
+  if (!doctor) {
+    doctor = {
+      id: genId("d"),
+      name: user.name,
+      specialty,
+    };
+    db.doctors.push(doctor);
+  } else {
+    doctor.name = user.name;
+    doctor.specialty = specialty;
+  }
+  user.doctorId = doctor.id;
+  user.specialty = specialty;
+  return doctor;
 }
 
 export function getDoctorIdForUser(user = {}) {
@@ -348,51 +372,6 @@ function safeFileName(name, fallback = "file") {
   return raw.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").slice(0, 140);
 }
 
-function pdfEscape(value) {
-  return String(value || "")
-    .normalize("NFKD")
-    .replace(/[^\x20-\x7E]/g, "?")
-    .replace(/\\/g, "\\\\")
-    .replace(/\(/g, "\\(")
-    .replace(/\)/g, "\\)");
-}
-
-function createSimplePdf({ title = "NeuroDent document", lines = [] } = {}) {
-  const safeLines = [title, "", ...lines]
-    .flatMap((line) => String(line || "").split(/\r?\n/))
-    .slice(0, 42);
-  const content = [
-    "BT",
-    "/F1 18 Tf",
-    "50 790 Td",
-    `(${pdfEscape(safeLines.shift() || title)}) Tj`,
-    "/F1 10 Tf",
-    "0 -28 Td",
-    ...safeLines.flatMap((line) => [`(${pdfEscape(line)}) Tj`, "0 -15 Td"]),
-    "ET",
-  ].join("\n");
-  const objects = [
-    "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    `<< /Length ${Buffer.byteLength(content, "latin1")} >>\nstream\n${content}\nendstream`,
-  ];
-  let pdf = "%PDF-1.4\n";
-  const offsets = [0];
-  objects.forEach((object, index) => {
-    offsets.push(Buffer.byteLength(pdf, "latin1"));
-    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
-  });
-  const xrefOffset = Buffer.byteLength(pdf, "latin1");
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (let index = 1; index < offsets.length; index += 1) {
-    pdf += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
-  }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
-  return Buffer.from(pdf, "latin1");
-}
-
 function writeStoredFile(directory, fileName, bytes) {
   mkdirSync(directory, { recursive: true });
   const id = genId("file");
@@ -442,6 +421,99 @@ function filePublicMetadata(file) {
     thumbnailUrl: group === "image" ? downloadUrl : "",
     mimeGroup: group,
   };
+}
+
+function resolvePdfFont() {
+  const candidates = [
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/System/Library/Fonts/SFNS.ttf",
+    "/Library/Fonts/Arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+  ];
+  return candidates.find((fontPath) => existsSync(fontPath)) || null;
+}
+
+function safePdfText(value, fallback = "") {
+  const text = value === undefined || value === null ? fallback : String(value);
+  return text.trim() || fallback;
+}
+
+function createProtocolPdfBuffer({ patient, visit, protocol, text }) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const doc = new PDFDocument({
+      size: "A4",
+      margin: 48,
+      info: {
+        Title: "NeuroDent AI Protocol",
+        Author: "NeuroDent",
+        Subject: `AI protocol for ${patient?.name || "patient"}`,
+      },
+    });
+
+    const fontPath = resolvePdfFont();
+    if (fontPath) {
+      doc.registerFont("NeuroDentRegular", fontPath);
+      doc.font("NeuroDentRegular");
+    }
+
+    const section = (title, value) => {
+      doc.moveDown(0.8);
+      doc.fontSize(12).fillColor("#1f2937").text(title, { continued: false });
+      doc.moveDown(0.2);
+      doc.fontSize(10).fillColor("#374151").text(safePdfText(value, "-"), {
+        lineGap: 3,
+      });
+    };
+
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    doc.fontSize(20).fillColor("#1d4ed8").text("NeuroDent AI-протокол");
+    doc.moveDown(0.4);
+    doc.fontSize(10).fillColor("#6b7280").text(`Создано: ${new Date().toLocaleString("ru-RU")}`);
+    doc.moveDown(1);
+
+    doc.fontSize(11).fillColor("#111827");
+    doc.text(`Пациент: ${safePdfText(patient?.name, "-")}`);
+    doc.text(`Телефон: ${safePdfText(patient?.phone, "-")}`);
+    doc.text(`Дата визита: ${visit?.startedAt ? String(visit.startedAt).slice(0, 10) : "-"}`);
+    doc.text(`Врач: ${safePdfText(getDoctorName(visit?.doctorId), "-")}`);
+    doc.moveDown(0.6);
+
+    section("Жалобы", protocol?.complaints || visit?.complaint);
+    section("Анамнез", protocol?.anamnesis);
+    section("Объективно", protocol?.objective);
+    section("Диагноз", protocol?.diagnosisText || visit?.diagnosis);
+    section("Код МКБ-10", visit?.diagnosisCode);
+    section("Зуб", visit?.toothNumber);
+    section("Тип кариеса", visit?.cariesType);
+    section("Лечение", protocol?.treatment || visit?.notes);
+
+    doc.moveDown(0.8);
+    doc.fontSize(12).fillColor("#1f2937").text("Материалы");
+    const materials = visit?.materials || [];
+    if (materials.length) {
+      doc.moveDown(0.2);
+      materials.forEach((material) => {
+        doc.fontSize(10).fillColor("#374151").text(
+          `- ${safePdfText(material.name)}: ${safePdfText(material.qty)} ${safePdfText(material.unit)}`,
+          { lineGap: 2 },
+        );
+      });
+    } else {
+      doc.fontSize(10).fillColor("#374151").text("-");
+    }
+
+    doc.moveDown(1);
+    doc.fontSize(8).fillColor("#9ca3af").text(text, {
+      lineGap: 2,
+      opacity: 0.8,
+    });
+
+    doc.end();
+  });
 }
 
 function latestFinalVisit(patientId) {
@@ -1147,6 +1219,17 @@ export async function resetPassword(token, nextPassword) {
 // Backend: GET /doctors -> Doctor[]
 export async function getDoctors() {
   await delay();
+  let changed = false;
+  for (const user of db.users || []) {
+    if (user.role !== "doctor") continue;
+    const beforeDoctorId = user.doctorId || "";
+    const beforeDoctor = beforeDoctorId ? getDoctor(beforeDoctorId) : null;
+    const doctor = ensureDoctorProfileForUser(user);
+    if (!beforeDoctor || beforeDoctorId !== user.doctorId || doctor?.name !== beforeDoctor?.name || doctor?.specialty !== beforeDoctor?.specialty) {
+      changed = true;
+    }
+  }
+  if (changed) await saveDb();
   return clone(db.doctors);
 }
 
@@ -1982,10 +2065,12 @@ export async function createUser(data, options = {}) {
     phone,
     email,
     role,
+    specialty: String(data?.specialty || "").trim(),
     isActive: true,
     createdAt: new Date().toISOString().slice(0, 10),
     ...passwordFields,
   };
+  ensureDoctorProfileForUser(newUser);
   db.users.push(newUser);
   await saveDb();
   await audit("create", "user", newUser.id, { name, phone, role }, actorIdFromOptions(options));
@@ -2004,6 +2089,7 @@ export async function updateUser(id, patch, options = {}) {
     phone: patch.phone !== undefined ? String(patch.phone).replace(/\D/g, "") : u.phone,
     email: patch.email !== undefined ? String(patch.email).trim() : u.email,
     role: patch.role !== undefined && ROLES.includes(patch.role) ? patch.role : u.role,
+    specialty: patch.specialty !== undefined ? String(patch.specialty || "").trim() : u.specialty,
     isActive: patch.isActive !== undefined ? !!patch.isActive : u.isActive,
   };
   if (patch.password !== undefined && String(patch.password).length < 4) throw new Error("Пароль слишком короткий");
@@ -2019,6 +2105,7 @@ export async function updateUser(id, patch, options = {}) {
     throw new Error("Нельзя отключить или понизить последнего владельца");
   }
   Object.assign(u, next);
+  ensureDoctorProfileForUser(u);
   if (patch.password !== undefined) Object.assign(u, hashPassword(String(patch.password)));
   await saveDb();
   const auditPatch = { ...patch };
@@ -2065,7 +2152,7 @@ export async function getPatientMedicalCard(patientId) {
 
 export async function getPatientBillingSummary(patientId) {
   await delay(120);
-  if (!getPatient(patientId)) throw new Error("РџР°С†РёРµРЅС‚ РЅРµ РЅР°Р№РґРµРЅ");
+  if (!getPatient(patientId)) throw new Error("Пациент не найден");
   const invoices = await listInvoiceRecords({ patientId });
   const total = invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
   const paid = invoices.reduce((sum, invoice) => sum + Number(invoice.paid || 0), 0);
@@ -2084,14 +2171,14 @@ export async function getPatientBillingSummary(patientId) {
 export async function createPatientAppointmentRequest(patientId, data = {}, options = {}) {
   await delay(120);
   const patient = getPatient(patientId);
-  if (!patient) throw new Error("РџР°С†РёРµРЅС‚ РЅРµ РЅР°Р№РґРµРЅ");
+  if (!patient) throw new Error("Пациент не найден");
   const doctorId = String(data?.doctorId || "");
   const preferredDate = String(data?.preferredDate || data?.date || "");
   const preferredTime = String(data?.preferredTime || data?.time || "");
   const comment = String(data?.comment || "").trim();
-  if (!doctorId) throw new Error("Р’С‹Р±РµСЂРёС‚Рµ РІСЂР°С‡Р°");
-  if (!preferredDate) throw new Error("Р’С‹Р±РµСЂРёС‚Рµ РїСЂРµРґРїРѕС‡С‚РёС‚РµР»СЊРЅСѓСЋ РґР°С‚Сѓ");
-  if (!getDoctor(doctorId)) throw new Error("Р’СЂР°С‡ РЅРµ РЅР°Р№РґРµРЅ");
+  if (!doctorId) throw new Error("Выберите врача");
+  if (!preferredDate) throw new Error("Выберите предпочтительную дату");
+  if (!getDoctor(doctorId)) throw new Error("Врач не найден");
   const now = new Date().toISOString();
   const request = {
     id: genId("appt_req"),
@@ -2114,7 +2201,7 @@ export async function createPatientAppointmentRequest(patientId, data = {}, opti
   await createNotificationRecord({
     id: genId("notif"),
     type: "appointment_requested",
-    title: "New appointment request",
+    title: "Новая заявка на прием",
     body: `${patient.name}: ${preferredDate}${preferredTime ? ` ${preferredTime}` : ""}`,
     role: "admin",
     isRead: false,
@@ -2240,33 +2327,26 @@ export async function deleteFile(fileId, options = {}) {
 export async function createPatientProtocolDocument(patientId, options = {}) {
   await delay(250);
   const patient = getPatient(patientId);
-  if (!patient) throw new Error("РџР°С†РёРµРЅС‚ РЅРµ РЅР°Р№РґРµРЅ");
+  if (!patient) throw new Error("Пациент не найден");
   let text = "";
   try {
     text = await getPatientProtocol(patientId);
   } catch {
     text = [
-      "NeuroDent Patient Protocol",
-      `Patient: ${patient.name}`,
-      `Phone: ${patient.phone}`,
+      "NeuroDent AI-протокол",
+      `Пациент: ${patient.name}`,
+      `Телефон: ${patient.phone}`,
       "",
-      "No finalized AI visit protocol is available yet.",
-      "This PDF was generated from the patient portal as a placeholder protocol document.",
+      "У пациента пока нет завершенного ИИ-протокола.",
+      "Документ сформирован из пациентского кабинета как заготовка протокола.",
     ].join("\n");
   }
+  const visit = latestFinalVisit(patientId);
+  const protocol = visit?.protocol || {};
   const createdAt = new Date().toISOString();
-  const bytes = createSimplePdf({
-    title: "NeuroDent Patient Protocol",
-    lines: [
-      `Patient: ${patient?.name || patientId}`,
-      `Patient ID: ${patientId}`,
-      `Created at: ${createdAt}`,
-      "",
-      ...String(text || "").split(/\r?\n/),
-    ],
-  });
+  const bytes = await createProtocolPdfBuffer({ patient, visit, protocol, text });
   const stored = writeStoredFile(DOCUMENTS_DIR, `AI_Protocol_${patientId}.pdf`, bytes);
-  const visitId = latestFinalVisit(patientId)?.id || "";
+  const visitId = visit?.id || "";
   const cloudStorage = await uploadExternalFile({
     fileName: stored.fileName,
     mimeType: "application/pdf",
@@ -2291,13 +2371,13 @@ export async function createPatientProtocolDocument(patientId, options = {}) {
       externalStorage: cloudStorage,
     },
   });
-  await audit("create", "document", record.id, { patientId, type: "ai-protocol" }, actorIdFromOptions(options));
+  await audit("create", "document", record.id, { patientId, type: "ai-protocol-pdf" }, actorIdFromOptions(options));
   return clone(redactFileRecord(record));
 }
 
 export async function getLatestPatientProtocolDocument(patientId) {
   await delay(80);
-  if (!getPatient(patientId)) throw new Error("РџР°С†РёРµРЅС‚ РЅРµ РЅР°Р№РґРµРЅ");
+  if (!getPatient(patientId)) throw new Error("Пациент не найден");
   const latest = (await listFileRecords({ patientId }))
     .map(redactFileRecord)
     .filter((file) => normalizeFileKind(file.kind || file.category) === "protocol")

@@ -14,7 +14,7 @@ const PAGE_ROLES = {
   "/ai":       ["owner", "doctor", "assistant"],
   "/schedule": ["owner", "admin", "doctor", "assistant"],
   "/visits":   ["owner", "admin", "doctor", "assistant"],
-  "/patients": ["owner", "admin", "doctor", "assistant", "patient"],
+  "/patients": ["owner", "admin", "assistant", "patient"],
   "/price-items": ["owner", "admin", "doctor", "assistant"],
   "/notifications": ["owner", "admin", "doctor", "assistant", "patient"],
   "/audit-logs": ["owner"],
@@ -61,7 +61,7 @@ export default function DashboardLayout({ children }) {
   if (loading || !user) return null;
 
   const mobileTitle = (() => {
-    if (pathname.startsWith("/ai")) return "AI-протокол";
+    if (pathname.startsWith("/ai")) return "ИИ-протокол";
     if (pathname.startsWith("/report")) return "Аналитика";
     if (pathname.startsWith("/schedule")) return "Запись / CRM";
     if (pathname.startsWith("/visits")) return "История визитов";

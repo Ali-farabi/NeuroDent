@@ -49,10 +49,10 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const result = await requestPasswordReset(phone);
-      setResetToken(result?.resetToken || "");
+      await requestPasswordReset(phone);
+      setResetToken("");
       setMode("reset");
-      setMessage(result?.resetToken ? "Код получен. Проверьте поле кода." : "Код отправлен");
+      setMessage("Если телефон найден, код восстановления отправлен.");
     } catch (err) {
       setMessage(err?.message || "Не удалось отправить код");
     } finally {
@@ -438,9 +438,6 @@ export default function LoginPage() {
           </form>
         )}
 
-        <p className="auth-demo">
-          Demo password: <code>1234</code>, <code>admin</code>, <code>doctor</code>, <code>patient</code>
-        </p>
       </section>
     </main>
   );

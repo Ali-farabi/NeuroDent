@@ -3,16 +3,20 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   addInventoryItem,
+  createInvoice,
   createPayment,
+  createStockMovement,
   getDebtors,
   getDoctors,
   getInventoryItems,
+  getInvoices,
   getPaymentsByDate,
   getStockMovements,
   exportPaymentsCsv,
+  payInvoice,
   searchPatients,
+  sendInvoiceEmail,
   sendPatientReminder,
-  updateInventoryQuantity,
 } from "@/lib/api";
 import {
   AlertTriangle,
@@ -40,6 +44,15 @@ const METHOD_META = {
   card: { label: "Карта", icon: CreditCard, tone: "#2563eb", bg: "#eff6ff" },
   cash: { label: "Наличные", icon: Banknote, tone: "#64748b", bg: "#f8fafc" },
   kaspi: { label: "Kaspi/QR", icon: QrCode, tone: "#0f766e", bg: "#ecfdf5" },
+};
+
+const STATUS_META = {
+  draft: { label: "Черновик" },
+  partial: { label: "Частично оплачен" },
+  paid: { label: "Оплачен" },
+  sent: { label: "Отправлен" },
+  overdue: { label: "Просрочен" },
+  cancelled: { label: "Отменен" },
 };
 
 const CATEGORIES = [
@@ -120,6 +133,7 @@ function SearchInput({ value, onChange, placeholder, width = "420px" }) {
 function TopTabs({ active, onChange }) {
   const tabs = [
     ["kassa", "Касса"],
+    ["invoices", "Счета"],
     ["debtors", "Должники"],
     ["sklad", "Склад"],
   ];
@@ -138,6 +152,257 @@ function TopTabs({ active, onChange }) {
           {label}
         </button>
       ))}
+    </div>
+  );
+}
+
+function InvoicesTab() {
+  const [patients, setPatients] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({
+    patientId: "",
+    date: TODAY,
+    itemName: "Стоматологическая услуга",
+    quantity: "1",
+    unitPrice: "",
+    discount: "0",
+    paid: "0",
+    method: "card",
+  });
+
+  async function refresh(nextStatus = status) {
+    setLoading(true);
+    try {
+      const [patientList, invoiceList] = await Promise.all([
+        searchPatients(""),
+        getInvoices({ status: nextStatus }),
+      ]);
+      setPatients(patientList);
+      setInvoices(invoiceList);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      searchPatients(""),
+      getInvoices({ status: "" }),
+    ])
+      .then(([patientList, invoiceList]) => {
+        if (!active) return;
+        setPatients(patientList);
+        setInvoices(invoiceList);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const filteredInvoices = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return invoices;
+    return invoices.filter((invoice) =>
+      (invoice.patientName || "").toLowerCase().includes(q) ||
+      String(invoice.id || "").toLowerCase().includes(q) ||
+      String(invoice.status || "").toLowerCase().includes(q)
+    );
+  }, [invoices, query]);
+
+  const totals = filteredInvoices.reduce((acc, invoice) => {
+    acc.total += Number(invoice.total || 0);
+    acc.paid += Number(invoice.paid || 0);
+    return acc;
+  }, { total: 0, paid: 0 });
+  const debt = Math.max(0, totals.total - totals.paid);
+
+  async function handleCreate(event) {
+    event.preventDefault();
+    setMessage("");
+    try {
+      await createInvoice({
+        patientId: form.patientId,
+        date: form.date,
+        discount: Number(form.discount || 0),
+        paid: Number(form.paid || 0),
+        method: form.method,
+        items: [{
+          name: form.itemName,
+          quantity: Number(form.quantity || 1),
+          unitPrice: Number(form.unitPrice || 0),
+        }],
+      });
+      setForm((prev) => ({ ...prev, itemName: "Стоматологическая услуга", quantity: "1", unitPrice: "", discount: "0", paid: "0" }));
+      await refresh();
+      setMessage("Счет создан через backend");
+    } catch (error) {
+      setMessage(error?.message || "Не удалось создать счет");
+    }
+  }
+
+  async function handlePay(invoice) {
+    const amount = Math.max(0, Number(invoice.total || 0) - Number(invoice.paid || 0));
+    if (!amount) return;
+    setMessage("");
+    try {
+      await payInvoice(invoice.id, { amount, method: "card", date: TODAY });
+      await refresh();
+      setMessage("Счет оплачен и платеж создан");
+    } catch (error) {
+      setMessage(error?.message || "Не удалось оплатить счет");
+    }
+  }
+
+  async function handleSend(invoice) {
+    setMessage("");
+    try {
+      await sendInvoiceEmail(invoice.id, {
+        email: invoice.patientEmail,
+        message: "Здравствуйте! NeuroDent отправляет счет по вашему лечению.",
+      });
+      setMessage("Счет отправлен пациенту");
+    } catch (error) {
+      setMessage(error?.message || "Не удалось отправить счет. Проверьте почту пациента и почтовую интеграцию.");
+    }
+  }
+
+  function handleStatus(nextStatus) {
+    setStatus(nextStatus);
+    refresh(nextStatus);
+  }
+
+  return (
+    <div className="grid gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="m-0 text-2xl font-semibold text-slate-950">Счета пациентов</h1>
+          <p className="mt-1 text-sm text-slate-500">Создание, отправка и оплата счетов через серверный API счетов</p>
+        </div>
+        <div className="flex gap-2">
+          {["", "draft", "partial", "paid"].map((item) => (
+            <button
+              key={item || "all"}
+              type="button"
+              onClick={() => handleStatus(item)}
+              className={`h-9 rounded-lg border px-3 text-sm font-semibold ${status === item ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}
+            >
+              {STATUS_META[item]?.label || "Все"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {message && <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">{message}</div>}
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <StatCard title="Счетов" value={filteredInvoices.length} helper="по текущему фильтру" icon={ClipboardPlus} />
+        <StatCard title="Начислено" value={fmt(totals.total)} helper="общая сумма счетов" icon={Banknote} tone="#2563eb" />
+        <StatCard title="Остаток к оплате" value={fmt(debt)} helper="начислено минус оплачено" icon={Wallet} tone={debt ? "#ef4444" : "#16a34a"} />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[390px_minmax(0,1fr)]">
+        <form onSubmit={handleCreate} className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="m-0 text-xl font-semibold text-slate-950">Новый счет</h2>
+          <p className="mb-5 mt-1 text-sm text-slate-500">Форма использует существующий серверный endpoint</p>
+          <div className="grid gap-4">
+            <Field label="Пациент">
+              <select value={form.patientId} onChange={(event) => setForm((prev) => ({ ...prev, patientId: event.target.value }))} required className="field-control">
+                <option value="">Выберите пациента</option>
+                {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Дата">
+              <input type="date" value={form.date} onChange={(event) => setForm((prev) => ({ ...prev, date: event.target.value }))} className="field-control" />
+            </Field>
+            <Field label="Позиция">
+              <input value={form.itemName} onChange={(event) => setForm((prev) => ({ ...prev, itemName: event.target.value }))} required className="field-control" />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Кол-во">
+                <input type="number" min="1" value={form.quantity} onChange={(event) => setForm((prev) => ({ ...prev, quantity: event.target.value }))} className="field-control" />
+              </Field>
+              <Field label="Цена">
+                <input type="number" min="0" value={form.unitPrice} onChange={(event) => setForm((prev) => ({ ...prev, unitPrice: event.target.value }))} required className="field-control" />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Скидка ₸">
+                <input type="number" min="0" value={form.discount} onChange={(event) => setForm((prev) => ({ ...prev, discount: event.target.value }))} className="field-control" />
+              </Field>
+              <Field label="Оплачено сразу">
+                <input type="number" min="0" value={form.paid} onChange={(event) => setForm((prev) => ({ ...prev, paid: event.target.value }))} className="field-control" />
+              </Field>
+            </div>
+            <Field label="Метод оплаты">
+              <select value={form.method} onChange={(event) => setForm((prev) => ({ ...prev, method: event.target.value }))} className="field-control">
+                {Object.entries(METHOD_META).map(([method, meta]) => <option key={method} value={method}>{meta.label}</option>)}
+              </select>
+            </Field>
+            <button type="submit" className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/20">
+              <CheckCircle2 size={17} />
+              Создать счет
+            </button>
+          </div>
+        </form>
+
+        <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-6">
+            <div>
+              <h2 className="m-0 text-lg font-semibold text-slate-950">Реестр счетов</h2>
+              <p className="mt-1 text-sm text-slate-500">Список загружается из API счетов</p>
+            </div>
+            <SearchInput value={query} onChange={setQuery} placeholder="Поиск счета или пациента..." width="320px" />
+          </div>
+          {loading ? (
+            <EmptyState title="Загрузка счетов" text="Получаем данные из API счетов" />
+          ) : filteredInvoices.length === 0 ? (
+            <EmptyState title="Счета не найдены" text="Создайте первый счет или измените фильтр" />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="p-3">Счет</th>
+                    <th className="p-3">Пациент</th>
+                    <th className="p-3">Статус</th>
+                    <th className="p-3">Сумма</th>
+                    <th className="p-3">Оплачено</th>
+                    <th className="p-3 text-right">Действия</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredInvoices.map((invoice) => {
+                    const remaining = Math.max(0, Number(invoice.total || 0) - Number(invoice.paid || 0));
+                    return (
+                      <tr key={invoice.id} className="border-t border-slate-100">
+                        <td className="p-3 font-mono text-xs">{invoice.id}</td>
+                        <td className="p-3">{invoice.patientName || invoice.patientId}</td>
+                        <td className="p-3"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold">{STATUS_META[invoice.status]?.label || invoice.status}</span></td>
+                        <td className="p-3 font-semibold">{fmt(invoice.total)}</td>
+                        <td className="p-3">{fmt(invoice.paid)}</td>
+                        <td className="p-3">
+                          <div className="flex justify-end gap-2">
+                            <button type="button" disabled={!remaining} onClick={() => handlePay(invoice)} className="rounded-md border border-slate-200 px-3 py-1 text-xs font-semibold disabled:opacity-50">Оплатить</button>
+                            <button type="button" onClick={() => handleSend(invoice)} className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white">Отправить</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -532,6 +797,8 @@ function SkladTab() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
+  const [movementItem, setMovementItem] = useState(null);
+  const [message, setMessage] = useState("");
 
   async function refresh() {
     const [inventoryItems, stockMovements] = await Promise.all([
@@ -561,8 +828,7 @@ function SkladTab() {
       .filter((item) => !q || item.name.toLowerCase().includes(q) || (item.category || "").toLowerCase().includes(q));
   }, [items, query, category]);
   const lowStock = items.filter((item) => item.quantity <= item.minQuantity);
-  const expiringSoon = Math.max(2, Math.round(items.length * 0.25));
-  const stockValue = items.reduce((sum, item, index) => sum + Number(item.quantity || 0) * (900 + index * 120), 0);
+  const totalUnits = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
 
   function handleExport() {
     exportRowsCsv(
@@ -580,10 +846,27 @@ function SkladTab() {
 
   async function changeQty(id, delta) {
     try {
-      await updateInventoryQuantity(id, delta);
+      await createStockMovement({
+        inventoryId: id,
+        type: delta > 0 ? "in" : "out",
+        quantity: Math.abs(delta),
+        reason: delta > 0 ? "Быстрое поступление" : "Быстрое списание",
+      });
       await refresh();
+      setMessage("Движение склада сохранено");
     } catch (error) {
       alert(error?.message || "Не удалось изменить остаток");
+    }
+  }
+
+  async function addMovement(data) {
+    try {
+      await createStockMovement(data);
+      await refresh();
+      setMovementItem(null);
+      setMessage("Движение склада создано");
+    } catch (error) {
+      setMessage(error?.message || "Не удалось создать движение склада");
     }
   }
 
@@ -623,9 +906,10 @@ function SkladTab() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard title="Всего позиций" value={items.length} helper="норма" icon={ClipboardPlus} />
         <StatCard title="Критический остаток" value={lowStock.length} helper="срочно" icon={AlertTriangle} tone="#dc2626" />
-        <StatCard title="Срок годности < 30 дн." value={expiringSoon} helper="на контроле" icon={Timer} tone="#f59e0b" />
-        <StatCard title="Оценка склада" value={fmt(stockValue)} helper="расчет по остаткам" icon={Banknote} tone="#10b981" />
+        <StatCard title="Единиц на складе" value={totalUnits} helper="реальные остатки" icon={Package} tone="#f59e0b" />
+        <StatCard title="Движений" value={movements.length} helper="последние операции" icon={Timer} tone="#10b981" />
       </div>
+      {message && <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">{message}</div>}
 
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-100 p-6">
@@ -696,7 +980,7 @@ function SkladTab() {
                       <div className="flex justify-end gap-2">
                         <button onClick={() => changeQty(item.id, -1)} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-lg text-slate-600">−</button>
                         <button onClick={() => changeQty(item.id, 1)} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-lg text-slate-600">+</button>
-                        <button className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-slate-500"><MoreVertical size={16} /></button>
+                        <button onClick={() => setMovementItem(item)} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-slate-500"><MoreVertical size={16} /></button>
                       </div>
                     </td>
                   </tr>
@@ -748,6 +1032,63 @@ function SkladTab() {
       </div>
 
       {modalOpen && <StockModal onClose={() => setModalOpen(false)} onSubmit={addItem} />}
+      {movementItem && <StockMovementModal item={movementItem} onClose={() => setMovementItem(null)} onSubmit={addMovement} />}
+    </div>
+  );
+}
+
+function StockMovementModal({ item, onClose, onSubmit }) {
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ type: "in", quantity: "1", reason: "" });
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await onSubmit({
+        inventoryId: item.id,
+        type: form.type,
+        quantity: Number(form.quantity),
+        reason: form.reason,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4">
+      <form onSubmit={handleSubmit} className="w-full max-w-[440px] overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-slate-100 p-5">
+          <div>
+            <h2 className="m-0 text-xl font-semibold text-slate-950">Движение склада</h2>
+            <p className="mt-1 text-sm text-slate-500">{item.name} · остаток {item.quantity} {item.unit}</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700"><X size={22} /></button>
+        </div>
+        <div className="grid gap-4 p-5">
+          <Field label="Тип">
+            <select value={form.type} onChange={(event) => setForm((prev) => ({ ...prev, type: event.target.value }))} className="field-control">
+              <option value="in">Поступление</option>
+              <option value="out">Списание</option>
+              <option value="adjustment">Инвентаризация до остатка</option>
+            </select>
+          </Field>
+          <Field label={form.type === "adjustment" ? "Новый остаток" : "Количество"}>
+            <input type="number" min="0" value={form.quantity} onChange={(event) => setForm((prev) => ({ ...prev, quantity: event.target.value }))} required className="field-control" />
+          </Field>
+          <Field label="Причина">
+            <input value={form.reason} onChange={(event) => setForm((prev) => ({ ...prev, reason: event.target.value }))} placeholder="Поставка, списание на прием, инвентаризация..." className="field-control" />
+          </Field>
+        </div>
+        <div className="flex justify-end gap-3 border-t border-slate-100 p-5">
+          <button type="button" onClick={onClose} className="h-9 rounded-lg px-4 text-sm font-semibold text-slate-600">Отмена</button>
+          <button disabled={saving} type="submit" className="inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white disabled:opacity-60">
+            <CheckCircle2 size={17} />
+            {saving ? "Сохранение..." : "Сохранить"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -898,6 +1239,7 @@ export default function PaymentsPage() {
       <div className="mx-auto grid max-w-[1300px] gap-6">
         <TopTabs active={tab} onChange={setTab} />
         {tab === "kassa" && <KassaTab />}
+        {tab === "invoices" && <InvoicesTab />}
         {tab === "debtors" && <DebtorsTab />}
         {tab === "sklad" && <SkladTab />}
       </div>

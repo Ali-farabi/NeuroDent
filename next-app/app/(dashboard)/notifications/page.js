@@ -9,9 +9,20 @@ export default function NotificationsPage() {
   const [items, setItems] = useState([]);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
-    setItems(await getNotifications({ role: user?.role || "", unreadOnly: unreadOnly ? "true" : "" }));
+    setLoading(true);
+    setLoadError("");
+    try {
+      setItems(await getNotifications({ role: user?.role || "", unreadOnly: unreadOnly ? "true" : "" }));
+    } catch (error) {
+      setItems([]);
+      setLoadError(error?.message || "Не удалось загрузить уведомления");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -53,9 +64,12 @@ export default function NotificationsPage() {
       </div>
 
       {message && <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">{message}</div>}
+      {loadError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</div>}
 
       <div className="grid gap-3">
-        {items.map((item) => (
+        {loading ? (
+          <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Загрузка уведомлений...</div>
+        ) : items.map((item) => (
           <article key={item.id} className="rounded-lg border border-slate-200 bg-white p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -72,7 +86,11 @@ export default function NotificationsPage() {
             </div>
           </article>
         ))}
-        {!items.length && <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Уведомлений нет</div>}
+        {!loading && !items.length && (
+          <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+            {unreadOnly ? "Непрочитанных уведомлений нет" : "Уведомлений нет"}
+          </div>
+        )}
       </div>
     </section>
   );

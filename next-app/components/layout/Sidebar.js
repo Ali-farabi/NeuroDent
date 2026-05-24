@@ -3,17 +3,21 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { changePassword } from "@/lib/api";
 
 const menuItems = [
   {
     route: "ai",
     href: "/ai",
-    label: "AI-протокол",
+    label: "ИИ-протокол",
     roles: ["owner", "doctor", "assistant"],
     icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3a7 7 0 0 0-7 7c0 2.3 1.1 4.4 2.8 5.7.8.6 1.2 1.4 1.2 2.3v1h6v-1c0-.9.4-1.7 1.2-2.3A7 7 0 0 0 12 3Z" />
+        <path d="M9 21h6" />
+        <path d="M10 10h4" />
+        <path d="M12 8v4" />
       </svg>
     ),
   },
@@ -76,7 +80,7 @@ const menuItems = [
     route: "patients",
     href: "/patients",
     label: "Пациентский модуль",
-    roles: ["owner", "admin", "doctor", "assistant", "patient"],
+    roles: ["owner", "admin", "assistant", "patient"],
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -122,18 +126,6 @@ const menuItems = [
     ),
   },
   {
-    route: "audit-logs",
-    href: "/audit-logs",
-    label: "Аудит",
-    roles: ["owner"],
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 11l3 3L22 4" />
-        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-      </svg>
-    ),
-  },
-  {
     route: "admin-system",
     href: "/admin-system",
     label: "Система",
@@ -151,6 +143,9 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
   const pathname = usePathname();
   const visibleItems = menuItems.filter((item) => item.roles.includes(role));
   const isPatient = role === "patient";
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", nextPassword: "" });
+  const [passwordMessage, setPasswordMessage] = useState("");
 
   // ESC менен жабу
   useEffect(() => {
@@ -160,6 +155,18 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  async function handlePasswordSubmit(event) {
+    event.preventDefault();
+    setPasswordMessage("");
+    try {
+      await changePassword(passwordForm.currentPassword, passwordForm.nextPassword);
+      setPasswordForm({ currentPassword: "", nextPassword: "" });
+      setPasswordMessage("Пароль обновлен");
+    } catch (error) {
+      setPasswordMessage(error?.message || "Не удалось обновить пароль");
+    }
+  }
 
   return (
     <>
@@ -248,23 +255,25 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
           })}
         </nav>
 
-        <div style={{ marginTop: "auto", padding: isPatient ? "0 14px 34px" : "0 14px 30px", display: "grid", gap: 18 }}>
-          <button
-            type="button"
-            style={{
-              display: "flex", alignItems: "center", gap: 10,
-              border: "none", background: "transparent", padding: 0,
-              color: "var(--text)", fontSize: isPatient ? 15 : 14, fontWeight: isPatient ? 500 : 600, cursor: "pointer",
-              textAlign: "left",
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M9.1 9a3 3 0 1 1 5.8 1c-.5 1.3-2.1 1.8-2.6 3" />
-              <path d="M12 17h.01" />
-            </svg>
-            <span>Центр Помощи</span>
-          </button>
+	        <div style={{ marginTop: "auto", padding: isPatient ? "0 14px 34px" : "0 14px 30px", display: "grid", gap: 18 }}>
+	          {!isPatient && (
+	            <button
+	              type="button"
+	              onClick={() => setPasswordOpen(true)}
+	              style={{
+	                display: "flex", alignItems: "center", gap: 10,
+	                border: "none", background: "transparent", padding: 0,
+	                color: "var(--text)", fontSize: 14, fontWeight: 600, cursor: "pointer",
+	                textAlign: "left",
+	              }}
+	            >
+	              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+	                <rect x="3" y="11" width="18" height="10" rx="2" />
+	                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+	              </svg>
+	              <span>Сменить пароль</span>
+	            </button>
+	          )}
           <button
             type="button"
             onClick={onLogout}
@@ -282,8 +291,44 @@ export default function Sidebar({ role = "owner", isOpen, onClose, onLogout }) {
             </svg>
             <span>Выйти</span>
           </button>
-        </div>
-      </aside>
-    </>
-  );
-}
+	        </div>
+	      </aside>
+	      {passwordOpen && (
+	        <div style={{ position: "fixed", inset: 0, zIndex: 1200, display: "grid", placeItems: "center", background: "rgba(15,23,42,0.35)", padding: 16 }}>
+	          <form onSubmit={handlePasswordSubmit} style={{ width: "min(100%, 380px)", borderRadius: 14, background: "#fff", boxShadow: "0 20px 50px rgba(15,23,42,0.18)", overflow: "hidden" }}>
+	            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: 18, borderBottom: "1px solid var(--border)" }}>
+	              <div>
+	                <div style={{ fontSize: 17, fontWeight: 800, color: "var(--text)" }}>Смена пароля</div>
+	              </div>
+	              <button type="button" onClick={() => setPasswordOpen(false)} style={{ border: 0, background: "transparent", fontSize: 22, color: "var(--muted)", cursor: "pointer" }}>×</button>
+	            </div>
+	            <div style={{ display: "grid", gap: 12, padding: 18 }}>
+	              <input
+	                type="password"
+	                value={passwordForm.currentPassword}
+	                onChange={(event) => setPasswordForm((prev) => ({ ...prev, currentPassword: event.target.value }))}
+	                placeholder="Текущий пароль"
+	                required
+	                style={{ height: 40, border: "1px solid var(--border)", borderRadius: 10, padding: "0 12px" }}
+	              />
+	              <input
+	                type="password"
+	                value={passwordForm.nextPassword}
+	                onChange={(event) => setPasswordForm((prev) => ({ ...prev, nextPassword: event.target.value }))}
+	                placeholder="Новый пароль"
+	                required
+	                minLength={4}
+	                style={{ height: 40, border: "1px solid var(--border)", borderRadius: 10, padding: "0 12px" }}
+	              />
+	              {passwordMessage && <div style={{ fontSize: 12, color: passwordMessage.includes("обновлен") ? "#15803d" : "#dc2626" }}>{passwordMessage}</div>}
+	            </div>
+	            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: 18, borderTop: "1px solid var(--border)" }}>
+	              <button type="button" onClick={() => setPasswordOpen(false)} style={{ height: 36, border: "1px solid var(--border)", borderRadius: 9, background: "#fff", padding: "0 14px", fontWeight: 700 }}>Отмена</button>
+	              <button type="submit" style={{ height: 36, border: 0, borderRadius: 9, background: "var(--primary)", color: "#fff", padding: "0 14px", fontWeight: 700 }}>Сохранить</button>
+	            </div>
+	          </form>
+	        </div>
+	      )}
+	    </>
+	  );
+	}
