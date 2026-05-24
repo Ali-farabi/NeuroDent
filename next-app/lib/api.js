@@ -528,6 +528,13 @@ export async function getAdminIntegrations() {
   return request("/admin/integrations");
 }
 
+export async function checkAdminIntegrations(data = {}) {
+  return request("/admin/integrations/check", {
+    method: "POST",
+    body: data,
+  });
+}
+
 export async function sendAdminTestEmail(data) {
   return request("/admin/email/test", {
     method: "POST",

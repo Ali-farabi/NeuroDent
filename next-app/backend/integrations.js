@@ -38,6 +38,9 @@ const PROVIDERS = {
   },
 };
 
+const WEBHOOK_TIMEOUT_MS = Math.max(1000, Number(process.env.NEURODENT_WEBHOOK_TIMEOUT_MS || 10_000));
+const WEBHOOK_HEALTHCHECK_SEND_ENABLED = String(process.env.NEURODENT_INTEGRATION_HEALTHCHECK_SEND || "").toLowerCase() === "true";
+
 function providerConfig(providerName) {
   const provider = PROVIDERS[providerName];
   const url = process.env[provider.urlEnv] || "";
@@ -59,6 +62,45 @@ function envPresence(names = []) {
 
 function missingEnv(names = []) {
   return names.filter((name) => !process.env[name]);
+}
+
+function truncateText(value, limit = 1200) {
+  const text = String(value || "");
+  return text.length > limit ? `${text.slice(0, limit)}...` : text;
+}
+
+async function parseResponseBody(response) {
+  const contentType = response.headers.get("content-type") || "";
+  const text = await response.text();
+  if (!text) return null;
+  if (contentType.includes("application/json")) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return truncateText(text);
+    }
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return truncateText(text);
+  }
+}
+
+function responseError(body) {
+  if (!body) return "";
+  if (typeof body === "string") return body;
+  return body.message || body.error || body.reason || "";
+}
+
+function responseId(body) {
+  if (!body || typeof body !== "object") return "";
+  return body.id || body.externalId || body.requestId || body.signatureId || body.receiptId || "";
+}
+
+function responseStatus(body, fallback) {
+  if (!body || typeof body !== "object") return fallback;
+  return body.status || body.state || fallback;
 }
 
 async function sendResendEmail({ to, subject, text, html, metadata = {} }) {
@@ -133,10 +175,12 @@ async function postWebhook(providerName, payload) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-NeuroDent-Provider": providerName,
+        "X-NeuroDent-Event": payload?.type || payload?.event || "message",
         ...(config.token ? { Authorization: `Bearer ${config.token}` } : {}),
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
     });
   } catch (err) {
     return {
@@ -147,11 +191,15 @@ async function postWebhook(providerName, payload) {
     };
   }
 
+  const body = await parseResponseBody(response);
   return {
     ok: response.ok,
     provider: providerName,
-    status: response.ok ? "sent" : "failed",
+    status: response.ok ? responseStatus(body, "sent") : "failed",
     statusCode: response.status,
+    id: responseId(body),
+    error: response.ok ? "" : responseError(body),
+    response: body,
   };
 }
 
@@ -477,6 +525,95 @@ export function getIntegrationStatus() {
     missingRequiredEnv: storageRequired.filter((item) => !item.configured).map((item) => item.name),
   });
   return statuses;
+}
+
+function webhookHealthPayload(providerName) {
+  return {
+    type: "health_check",
+    event: "health_check",
+    dryRun: true,
+    provider: providerName,
+    source: "neurodent-backend",
+    sentAt: new Date().toISOString(),
+  };
+}
+
+async function checkWebhookHealth(providerName, { sendWebhookChecks = WEBHOOK_HEALTHCHECK_SEND_ENABLED } = {}) {
+  const config = providerConfig(providerName);
+  if (!config.configured) {
+    return {
+      provider: providerName,
+      reachable: false,
+      checked: false,
+      status: "skipped",
+      reason: "not_configured",
+    };
+  }
+  if (!sendWebhookChecks) {
+    return {
+      provider: providerName,
+      reachable: null,
+      checked: false,
+      status: "configured",
+      reason: "healthcheck_not_sent",
+    };
+  }
+  const result = await postWebhook(providerName, webhookHealthPayload(providerName));
+  return {
+    provider: providerName,
+    reachable: !!result.ok,
+    checked: true,
+    status: result.ok ? "ready" : "failed",
+    statusCode: result.statusCode,
+    error: result.error || "",
+    response: result.response,
+  };
+}
+
+export async function checkIntegrationHealth({ sendWebhookChecks = WEBHOOK_HEALTHCHECK_SEND_ENABLED } = {}) {
+  const baseStatuses = getIntegrationStatus();
+  const healthResults = await Promise.all(baseStatuses.map(async (status) => {
+    if (PROVIDERS[status.provider]) {
+      return checkWebhookHealth(status.provider, { sendWebhookChecks });
+    }
+    if (status.provider === "supabaseStorage") {
+      const storage = await checkSupabaseStorage();
+      return {
+        provider: status.provider,
+        reachable: storage.reachable,
+        checked: true,
+        status: storage.bucketReady ? "ready" : storage.configured ? "failed" : "skipped",
+        bucketReady: storage.bucketReady,
+        bucketStatus: storage.bucketStatus,
+        error: storage.error || "",
+      };
+    }
+    if (status.provider === "resend") {
+      return {
+        provider: status.provider,
+        reachable: null,
+        checked: false,
+        status: status.configured ? "configured" : "skipped",
+        reason: status.configured ? "send_email_to_test" : "not_configured",
+      };
+    }
+    return {
+      provider: status.provider,
+      reachable: null,
+      checked: false,
+      status: status.configured ? "configured" : "skipped",
+    };
+  }));
+
+  const healthByProvider = new Map(healthResults.map((item) => [item.provider, item]));
+  return baseStatuses.map((status) => {
+    const health = healthByProvider.get(status.provider) || {};
+    return {
+      ...status,
+      status: health.status || status.status,
+      health,
+    };
+  });
 }
 
 export async function sendEmail({ to, subject, text, html, metadata = {} }) {

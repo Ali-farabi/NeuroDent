@@ -264,6 +264,12 @@ const integrations = await request("GET", "/api/admin/integrations", { token });
 assert(integrations.status === 200 && integrations.data.some((item) => item.provider === "sms"), "integration status failed");
 assert(integrations.data.some((item) => item.provider === "supabaseStorage"), "Supabase storage integration status failed");
 
+const integrationChecks = await request("POST", "/api/admin/integrations/check", {
+  token,
+  body: { sendWebhookChecks: false },
+});
+assert(integrationChecks.status === 200 && integrationChecks.data.some((item) => item.provider === "supabaseStorage"), "integration check failed");
+
 const sessions = await request("GET", "/api/admin/sessions", { token });
 assert(sessions.status === 200 && sessions.data.some((item) => item.subjectType === "user"), "sessions endpoint failed");
 

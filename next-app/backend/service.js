@@ -13,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import PDFDocument from "pdfkit";
 import {
+  checkIntegrationHealth,
   getIntegrationStatus,
   deleteExternalFile,
   downloadExternalFile,
@@ -3214,6 +3215,17 @@ export async function getAdminIntegrations() {
   return getIntegrationStatus();
 }
 
+export async function checkAdminIntegrations({ sendWebhookChecks = false } = {}, options = {}) {
+  await delay(80);
+  const checks = await checkIntegrationHealth({ sendWebhookChecks: sendWebhookChecks === true });
+  await audit("check_integrations", "system", "integrations", {
+    sendWebhookChecks: sendWebhookChecks === true,
+    configured: checks.filter((item) => item.configured).map((item) => item.provider),
+    failed: checks.filter((item) => item.health?.status === "failed").map((item) => item.provider),
+  }, actorIdFromOptions(options));
+  return checks;
+}
+
 export async function sendAdminTestEmail({ to, subject = "", message = "" } = {}, options = {}) {
   await delay(80);
   const recipient = String(to || "").trim();
@@ -3365,6 +3377,7 @@ const API_ENDPOINTS = [
   ["POST", "/api/auth/reset-password", "Reset password with token", false],
   ["GET", "/api/admin/system", "Backend system status", true],
   ["GET", "/api/admin/integrations", "External integration status", true],
+  ["POST", "/api/admin/integrations/check", "Check external integration readiness", true],
   ["POST", "/api/admin/email/test", "Send test email through configured provider", true],
   ["GET", "/api/admin/sessions", "List active backend sessions without raw tokens", true],
   ["GET", "/api/admin/export", "Export sanitized system data", true],
@@ -3520,6 +3533,11 @@ function openApiRequestBody(method, pathname) {
   if (pathname === "/api/admin/maintenance/cleanup") {
     return requestBody(objectSchema({ backupRetentionDays: { type: "integer", minimum: 0 } }), false);
   }
+  if (pathname === "/api/admin/integrations/check") {
+    return requestBody(objectSchema({
+      sendWebhookChecks: { type: "boolean", example: false },
+    }), false);
+  }
   if (pathname === "/api/admin/email/test") {
     return requestBody(objectSchema({
       to: { type: "string", format: "email", example: "owner@example.com" },
@@ -3589,6 +3607,7 @@ function openApiResponseSchema(method, pathname) {
   if (pathname.startsWith("/api/auth/")) return schemaRef("StatusResponse");
   if (pathname === "/api/admin/system") return schemaRef("SystemStatus");
   if (pathname === "/api/admin/integrations") return arraySchema(schemaRef("IntegrationStatus"));
+  if (pathname === "/api/admin/integrations/check") return arraySchema(schemaRef("IntegrationStatus"));
   if (pathname === "/api/admin/email/test") return schemaRef("EmailTestResult");
   if (pathname === "/api/admin/sessions") return arraySchema(schemaRef("SessionInfo"));
   if (pathname === "/api/admin/export") return schemaRef("SystemExport");
@@ -3898,9 +3917,20 @@ function openApiSchemas() {
     IntegrationStatus: objectSchema({
       provider: { type: "string", enum: ["email", "sms", "whatsapp", "fileStorage", "fiscalization", "eSignature", "ai", "resend", "supabaseStorage"] },
       configured: { type: "boolean" },
+      status: { type: "string" },
       urlEnv: { type: "string" },
       tokenEnv: { type: "string" },
       bucketEnv: { type: "string" },
+      missingRequiredEnv: arraySchema({ type: "string" }),
+      health: objectSchema({
+        provider: { type: "string" },
+        checked: { type: "boolean" },
+        reachable: { type: "boolean", nullable: true },
+        status: { type: "string" },
+        reason: { type: "string" },
+        error: { type: "string" },
+        bucketReady: { type: "boolean" },
+      }),
     }, ["provider", "configured"]),
     EmailTestResult: objectSchema({
       ok: { type: "boolean" },

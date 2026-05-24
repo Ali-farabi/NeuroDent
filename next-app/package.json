@@ -17,6 +17,7 @@
     "db:postgres:local:migrate": "node --no-warnings backend/postgres/migrate.js --local",
     "db:postgres:migrate": "node --no-warnings backend/postgres/migrate.js",
     "reset:dev-passwords": "node --no-warnings backend/reset-dev-passwords.js",
+    "integrations:check": "node --no-warnings backend/integrations/check.js",
     "storage:supabase:check": "node --no-warnings backend/supabase-storage/check.js",
     "test:backend": "node --no-warnings backend/smoke-test.js",
     "test:e2e": "node --no-warnings backend/next-smoke-test.js",

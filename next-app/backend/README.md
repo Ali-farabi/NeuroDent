@@ -101,6 +101,7 @@ Owner-only operational routes:
 ```text
 GET  /api/admin/system
 GET  /api/admin/integrations
+POST /api/admin/integrations/check
 POST /api/admin/email/test
 GET  /api/admin/sessions
 GET  /api/admin/export
@@ -146,6 +147,8 @@ RESEND_API_KEY=
 EMAIL_FROM=NeuroDent <onboarding@resend.dev>
 NEURODENT_EMAIL_WEBHOOK_URL=
 NEURODENT_EMAIL_WEBHOOK_TOKEN=
+NEURODENT_WEBHOOK_TIMEOUT_MS=10000
+NEURODENT_INTEGRATION_HEALTHCHECK_SEND=false
 NEURODENT_SMS_WEBHOOK_URL=
 NEURODENT_SMS_WEBHOOK_TOKEN=
 NEURODENT_WHATSAPP_WEBHOOK_URL=
@@ -175,6 +178,14 @@ npm run storage:supabase:check
 ```
 
 The check loads `.env.local`, verifies the server key, and creates the configured bucket if it does not exist.
+
+All integration readiness check:
+
+```bash
+npm run integrations:check
+```
+
+The check loads `.env.local`, verifies Supabase Storage down to bucket readiness, and reports webhook/Resend configuration. It does not send webhook health-check POST requests unless `-- --send-webhook-checks` is passed or `NEURODENT_INTEGRATION_HEALTHCHECK_SEND=true` is set.
 
 Cloud file storage behavior:
 

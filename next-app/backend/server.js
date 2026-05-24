@@ -306,6 +306,11 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, await api.getAdminIntegrations());
   }
 
+  if (method === "POST" && pathname === "/api/admin/integrations/check") {
+    const user = await requireRole(req, ["owner"]);
+    return sendJson(res, 200, await api.checkAdminIntegrations(await readJsonBody(req), { actorUserId: user.id }));
+  }
+
   if (method === "POST" && pathname === "/api/admin/email/test") {
     const user = await requireRole(req, ["owner"]);
     return sendJson(res, 200, await api.sendAdminTestEmail(await readJsonBody(req), { actorUserId: user.id }));

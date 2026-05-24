@@ -334,6 +334,11 @@ async function handleApi(request) {
     return json(await api.getAdminIntegrations());
   }
 
+  if (method === "POST" && pathname === "/api/admin/integrations/check") {
+    const user = await requireRole(request, ["owner"]);
+    return json(await api.checkAdminIntegrations(await readJsonBody(request), { actorUserId: user.id }));
+  }
+
   if (method === "POST" && pathname === "/api/admin/email/test") {
     const user = await requireRole(request, ["owner"]);
     return json(await api.sendAdminTestEmail(await readJsonBody(request), { actorUserId: user.id }));

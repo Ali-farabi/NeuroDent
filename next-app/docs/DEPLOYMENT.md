@@ -95,9 +95,17 @@ NEURODENT_ESIGN_WEBHOOK_URL
 NEURODENT_ESIGN_WEBHOOK_TOKEN
 NEURODENT_AI_WEBHOOK_URL
 NEURODENT_AI_WEBHOOK_TOKEN
+NEURODENT_WEBHOOK_TIMEOUT_MS
+NEURODENT_INTEGRATION_HEALTHCHECK_SEND
 ```
 
-The admin integrations page shows missing integration env vars at runtime.
+The admin integrations page shows missing integration env vars at runtime and has a safe readiness check. The same check is available from CLI:
+
+```bash
+npm run integrations:check
+```
+
+By default this verifies env configuration and Supabase Storage bucket readiness without sending webhook traffic. To POST dry-run health checks to configured webhook providers, run `npm run integrations:check -- --send-webhook-checks` or set `NEURODENT_INTEGRATION_HEALTHCHECK_SEND=true`.
 
 For Supabase Storage file persistence, set one server-only key: `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_SECRET_KEY`. The `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` key is only for browser/SSR client setup and must not be used as the backend storage secret.
 

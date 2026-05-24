@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { getAllVisits, getDoctors } from "@/lib/api";
+import { getAllVisits, getDoctors, getVisitMaterials } from "@/lib/api";
 import { useAuth } from "@/lib/AuthContext";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -92,6 +92,7 @@ export default function VisitsPage() {
   const [doctorId, setDoctorId] = useState("");
   const [from, setFrom]         = useState(MONTH_AGO);
   const [to, setTo]             = useState(TODAY);
+  const [materialsModal, setMaterialsModal] = useState(null);
   const timer = useRef(null);
 
   async function load(q, dId, f, t) {
@@ -137,6 +138,11 @@ export default function VisitsPage() {
     const v = e.target.value;
     setTo(v);
     load(query, doctorId, from, v);
+  }
+
+  async function openMaterials(visit) {
+    const materials = await getVisitMaterials(visit.id).catch(() => visit.materials || []);
+    setMaterialsModal({ visit, materials });
   }
 
   const byCaries = visits.reduce((acc, v) => {
@@ -332,9 +338,20 @@ export default function VisitsPage() {
                       </td>
 
                       <td className="vis-col-sm" style={{ ...tdStyle, textAlign: "center" }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: v.materials?.length ? "var(--primary)" : "var(--muted)" }}>
+                        <button
+                          type="button"
+                          onClick={() => openMaterials(v)}
+                          style={{
+                            border: "none",
+                            background: "transparent",
+                            fontSize: 14,
+                            fontWeight: 700,
+                            color: v.materials?.length ? "var(--primary)" : "var(--muted)",
+                            cursor: "pointer",
+                          }}
+                        >
                           {v.materials?.length || 0}
-                        </div>
+                        </button>
                       </td>
 
                       <td style={{ ...tdStyle, textAlign: "center" }}>
@@ -361,6 +378,38 @@ export default function VisitsPage() {
           </div>
         )}
       </div>
+
+      {materialsModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(15,23,42,0.35)", display: "grid", placeItems: "center", padding: 16 }}>
+          <div style={{ width: "min(560px, 100%)", borderRadius: 16, background: "#fff", boxShadow: "0 24px 60px rgba(15,23,42,0.22)", overflow: "hidden" }}>
+            <div style={{ padding: 18, borderBottom: "1px solid var(--border)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text)" }}>Материалы визита</div>
+                <div style={{ marginTop: 3, fontSize: 12, color: "var(--muted)" }}>
+                  {materialsModal.visit.patientName} · {fmtDate(materialsModal.visit.date)}
+                </div>
+              </div>
+              <button type="button" onClick={() => setMaterialsModal(null)} style={{ border: "none", background: "transparent", fontSize: 22, color: "var(--muted)", cursor: "pointer" }}>×</button>
+            </div>
+            <div style={{ padding: 18, display: "grid", gap: 8 }}>
+              {materialsModal.materials.map((material, index) => (
+                <div key={`${material.inventoryId || material.name}-${index}`} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center", border: "1px solid var(--border)", borderRadius: 12, padding: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text)" }}>{material.name || material.inventoryId || "Материал"}</div>
+                    <div style={{ marginTop: 3, fontSize: 11, color: "var(--muted)" }}>{material.code || material.inventoryId || ""}</div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "var(--primary)" }}>
+                    {material.qty || material.quantity || 0} {material.unit || ""}
+                  </div>
+                </div>
+              ))}
+              {!materialsModal.materials.length && (
+                <div style={{ padding: "28px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>Материалы для визита не указаны</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
