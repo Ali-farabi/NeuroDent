@@ -1221,6 +1221,14 @@ export async function resetPassword(token, nextPassword) {
 export async function getDoctors() {
   await delay();
   let changed = false;
+  if (!Array.isArray(db.doctors)) {
+    db.doctors = [];
+    changed = true;
+  }
+  if (db.doctors.length === 0) {
+    db.doctors.push(...clone(initialDb.doctors));
+    changed = true;
+  }
   for (const user of db.users || []) {
     if (user.role !== "doctor") continue;
     const beforeDoctorId = user.doctorId || "";
