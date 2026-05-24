@@ -840,15 +840,22 @@ function AiCorePage({ patientId }: { patientId: string }) {
 
   useEffect(() => {
     if (!patientId) return;
-    Promise.all([
+    Promise.allSettled([
       getPatientById(patientId) as Promise<Patient>,
       getActiveAppointmentByPatient(patientId) as Promise<Appointment | null>,
       getVisitsByPatient(patientId) as Promise<Visit[]>,
       getPatientAiContext(patientId),
       getFiles({ patientId }) as Promise<PatientFile[]>,
-      getInventoryItems().catch(() => []) as Promise<InventoryItem[]>,
+      getInventoryItems() as Promise<InventoryItem[]>,
     ])
-      .then(([patient, appt, visitList, aiContext, files, inventory]) => {
+      .then(([patientResult, apptResult, visitResult, aiContextResult, filesResult, inventoryResult]) => {
+        if (patientResult.status !== "fulfilled") throw patientResult.reason;
+        const patient = patientResult.value;
+        const appt = apptResult.status === "fulfilled" ? apptResult.value : null;
+        const visitList = visitResult.status === "fulfilled" ? visitResult.value : [];
+        const aiContext = aiContextResult.status === "fulfilled" ? aiContextResult.value : null;
+        const files = filesResult.status === "fulfilled" ? filesResult.value : [];
+        const inventory = inventoryResult.status === "fulfilled" ? inventoryResult.value : [];
         setPatientData(patient);
         setActiveAppointment(appt);
         setVisits(visitList);

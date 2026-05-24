@@ -993,7 +993,15 @@ export default function SchedulePage() {
   const [patients, setPatients] = useState([]);
 
   useEffect(() => {
-    Promise.all([getDoctors(), searchPatients("")]).then(([d, p]) => { setDoctors(d); setPatients(p); });
+    let active = true;
+    Promise.allSettled([getDoctors(), searchPatients("")]).then(([doctorResult, patientResult]) => {
+      if (!active) return;
+      setDoctors(doctorResult.status === "fulfilled" && Array.isArray(doctorResult.value) ? doctorResult.value : []);
+      setPatients(patientResult.status === "fulfilled" && Array.isArray(patientResult.value) ? patientResult.value : []);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   // badge — пациенты с новыми сообщениями (backend: unread_count)

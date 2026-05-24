@@ -590,19 +590,31 @@ function PatientCabinet() {
     if (!patientId) return;
     let active = true;
 
-    Promise.all([
+    Promise.allSettled([
       getPatientById(patientId),
       getPatientVisits(patientId),
       getPatientMedicalCard(patientId),
       getPatientTreatmentPlan(patientId),
       getPatientAiContext(patientId),
       getFiles({ patientId }),
-      getPatientBillingSummary(patientId).catch(() => null),
-      getDoctors().catch(() => []),
-      getActiveAppointmentByPatient(patientId).catch(() => null),
+      getPatientBillingSummary(patientId),
+      getDoctors(),
+      getActiveAppointmentByPatient(patientId),
     ])
-      .then(([patient, visits, card, plan, context, files, billing, doctorList, appointment]) => {
+      .then(([patientResult, visitsResult, cardResult, planResult, contextResult, filesResult, billingResult, doctorResult, appointmentResult]) => {
         if (!active) return;
+        if (patientResult.status !== "fulfilled" && cardResult.status !== "fulfilled") {
+          throw patientResult.reason || cardResult.reason;
+        }
+        const patient = patientResult.status === "fulfilled" ? patientResult.value : null;
+        const visits = visitsResult.status === "fulfilled" ? visitsResult.value : [];
+        const card = cardResult.status === "fulfilled" ? cardResult.value : null;
+        const plan = planResult.status === "fulfilled" ? planResult.value : [];
+        const context = contextResult.status === "fulfilled" ? contextResult.value : null;
+        const files = filesResult.status === "fulfilled" ? filesResult.value : [];
+        const billing = billingResult.status === "fulfilled" ? billingResult.value : null;
+        const doctorList = doctorResult.status === "fulfilled" ? doctorResult.value : [];
+        const appointment = appointmentResult.status === "fulfilled" ? appointmentResult.value : null;
         setLoadError("");
         setPatientData(card?.patient || patient);
         setMedicalCard(card || null);
