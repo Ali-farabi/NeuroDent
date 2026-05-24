@@ -9,6 +9,17 @@ const MAX_BODY_BYTES = Number(process.env.NEURODENT_MAX_BODY_BYTES || 4_000_000)
 const API_RATE_LIMIT_MAX = Number(process.env.NEURODENT_RATE_LIMIT_MAX || 300);
 const API_RATE_LIMIT_WINDOW_MS = Number(process.env.NEURODENT_RATE_LIMIT_WINDOW_MS || 60_000);
 const LOGIN_RATE_LIMIT_MAX = Number(process.env.NEURODENT_LOGIN_RATE_LIMIT_MAX || 20);
+const DEMO_MODE = process.env.NEURODENT_DEMO_MODE === "true";
+const DEMO_LOGIN = { phone: "87001234567", password: "1234" };
+const DEMO_USER = {
+  id: "u1",
+  name: "Demo Owner",
+  phone: DEMO_LOGIN.phone,
+  email: "owner@neurodent.kz",
+  role: "owner",
+  isActive: true,
+  demoMode: true,
+};
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": CORS_ORIGIN,
@@ -85,7 +96,7 @@ function clearAuthCookie() {
 }
 
 async function getRequestUser(request) {
-  return api.getCurrentUser(getAuthToken(request));
+  return (await api.getCurrentUser(getAuthToken(request))) || (DEMO_MODE ? DEMO_USER : null);
 }
 
 function forbidden(message = "Недостаточно прав") {
@@ -291,12 +302,18 @@ async function handleApi(request) {
   if (method === "POST" && pathname === "/api/auth/login") {
     assertLoginRateLimit(request);
     const body = await readJsonBody(request);
-    const result = await api.login(body.phone, body.password);
+    let result;
+    try {
+      result = await api.login(body.phone, body.password);
+    } catch (err) {
+      if (!DEMO_MODE) throw err;
+      result = await api.login(DEMO_LOGIN.phone, DEMO_LOGIN.password);
+    }
     return json(result, 200, { "Set-Cookie": authCookie(result.token) });
   }
 
   if (method === "GET" && pathname === "/api/auth/me") {
-    const user = await api.getCurrentUser(getAuthToken(request));
+    const user = await getRequestUser(request);
     return json(user ? { user } : { error: "Сессия не найдена" }, user ? 200 : 401);
   }
 

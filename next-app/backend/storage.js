@@ -9,8 +9,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 loadEnvConfig(path.resolve(__dirname, ".."), process.env.NODE_ENV !== "production");
 
+const DEMO_MODE = process.env.NEURODENT_DEMO_MODE === "true";
 const REQUESTED_STORAGE_DRIVER = String(process.env.NEURODENT_STORAGE_DRIVER || "sqlite").toLowerCase();
-const ACTIVE_STORAGE = REQUESTED_STORAGE_DRIVER === "postgres" ? postgresStorage : sqliteStorage;
+const EFFECTIVE_STORAGE_DRIVER = DEMO_MODE ? "sqlite" : REQUESTED_STORAGE_DRIVER;
+const ACTIVE_STORAGE = EFFECTIVE_STORAGE_DRIVER === "postgres" ? postgresStorage : sqliteStorage;
 
 export function getSqliteFilePath() {
   return sqliteStorage.getSqliteFilePath();
@@ -21,6 +23,8 @@ export function getStorageInfo() {
   return {
     ...activeInfo,
     requestedDriver: REQUESTED_STORAGE_DRIVER,
+    demoMode: DEMO_MODE,
+    effectiveDriver: EFFECTIVE_STORAGE_DRIVER,
     activeDriver: activeInfo.driver,
   };
 }
