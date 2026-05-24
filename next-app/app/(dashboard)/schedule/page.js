@@ -82,6 +82,31 @@ const btnOutline = {
 };
 
 // ── Mini Calendar ──────────────────────────────────────────────────────────────
+const DEMO_DOCTORS = [
+  { id: "demo-doctor-1", name: "Демо врач Алибек", specialty: "Терапевт", isDemo: true },
+  { id: "demo-doctor-2", name: "Демо врач Айнур", specialty: "Ортодонт", isDemo: true },
+  { id: "demo-doctor-3", name: "Демо врач Марат", specialty: "Хирург", isDemo: true },
+];
+
+const DEMO_PATIENTS = [
+  { id: "demo-patient-1", name: "Тестовый пациент 1", phone: "87000000001", birthDate: "1996-04-12", channel: "WhatsApp", lastMessage: "Здравствуйте, хочу записаться", lastMessageTime: "10:42", isDemo: true },
+  { id: "demo-patient-2", name: "Тестовый пациент 2", phone: "87000000002", birthDate: "1988-11-03", channel: "WhatsApp", lastMessage: "Можно перенести прием?", lastMessageTime: "11:15", isDemo: true },
+  { id: "demo-patient-3", name: "Тестовый пациент 3", phone: "87000000003", birthDate: "2001-07-20", channel: "Call", lastMessage: "Пропущенный звонок", lastMessageTime: "12:06", isDemo: true },
+];
+
+function demoAppointmentsFor(date, doctors = DEMO_DOCTORS, patients = DEMO_PATIENTS) {
+  if (!doctors.length || !patients.length) return [];
+  return [
+    { id: `demo-appt-${date}-1`, doctorId: doctors[0]?.id, patientId: patients[0]?.id, patientName: patients[0]?.name, date, time: "09:00", duration: 30, status: "scheduled", comment: "Демо-запись для проверки UI", isDemo: true },
+    { id: `demo-appt-${date}-2`, doctorId: doctors[1]?.id || doctors[0]?.id, patientId: patients[1]?.id || patients[0]?.id, patientName: patients[1]?.name || patients[0]?.name, date, time: "11:30", duration: 45, status: "requested", comment: "Заявка пациента из демо-данных", isDemo: true },
+    { id: `demo-appt-${date}-3`, doctorId: doctors[2]?.id || doctors[0]?.id, patientId: patients[2]?.id || patients[0]?.id, patientName: patients[2]?.name || patients[0]?.name, date, time: "15:00", duration: 60, status: "arrived", comment: "Пациент пришел", isDemo: true },
+  ].filter((appt) => appt.doctorId && appt.patientId);
+}
+
+function withDemoFallback(items, fallback) {
+  return Array.isArray(items) && items.length ? items : fallback;
+}
+
 function MiniCalendar({ value, onChange }) {
   const sel = value ? new Date(value + "T00:00:00") : new Date();
   const [view, setView] = useState({ year: sel.getFullYear(), month: sel.getMonth() });
@@ -531,12 +556,18 @@ function CalendarTab({ doctors, patients, role }) {
       .then(arrays => {
         if (!cancelled) {
           setLoading(false);
-          setAppts(arrays.flat().map(a => ({ ...a, duration: a.duration || 30 })));
+          const loadedAppointments = arrays.flat().map(a => ({ ...a, duration: a.duration || 30 }));
+          setAppts(withDemoFallback(loadedAppointments, demoAppointmentsFor(date, toShow, patients)));
         }
       })
-      .catch(() => { if (!cancelled) setLoading(false); });
+      .catch(() => {
+        if (!cancelled) {
+          setLoading(false);
+          setAppts(demoAppointmentsFor(date, toShow, patients));
+        }
+      });
     return () => { cancelled = true; };
-  }, [date, effectiveDoctorId, doctors, refresh]);
+  }, [date, effectiveDoctorId, doctors, patients, refresh]);
 
   const visibleDoctors = effectiveDoctorId ? doctors.filter(d => d.id === effectiveDoctorId) : doctors;
   const apptCount      = appointments.length;
@@ -996,8 +1027,8 @@ export default function SchedulePage() {
     let active = true;
     Promise.allSettled([getDoctors(), searchPatients("")]).then(([doctorResult, patientResult]) => {
       if (!active) return;
-      setDoctors(doctorResult.status === "fulfilled" && Array.isArray(doctorResult.value) ? doctorResult.value : []);
-      setPatients(patientResult.status === "fulfilled" && Array.isArray(patientResult.value) ? patientResult.value : []);
+      setDoctors(withDemoFallback(doctorResult.status === "fulfilled" ? doctorResult.value : [], DEMO_DOCTORS));
+      setPatients(withDemoFallback(patientResult.status === "fulfilled" ? patientResult.value : [], DEMO_PATIENTS));
     });
     return () => {
       active = false;
