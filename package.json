@@ -14,6 +14,7 @@
     "db:postgres:local:migrate": "npm --prefix next-app run db:postgres:local:migrate",
     "db:postgres:migrate": "npm --prefix next-app run db:postgres:migrate",
     "reset:dev-passwords": "node --no-warnings next-app/backend/reset-dev-passwords.js",
+    "integrations:check": "npm --prefix next-app run integrations:check",
     "storage:supabase:check": "npm --prefix next-app run storage:supabase:check",
     "test:backend": "npm --prefix next-app run test:backend",
     "test:postgres": "npm --prefix next-app run test:postgres"
