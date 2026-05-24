@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getDayReport } from "@/lib/api";
+import { getBusinessAnalytics, getDayReport, getPeriodReport } from "@/lib/api";
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -143,15 +143,25 @@ function Donut({ items }) {
 
 export default function ReportPage() {
   const [date, setDate] = useState(TODAY);
+  const [dateFrom, setDateFrom] = useState(TODAY.slice(0, 8) + "01");
+  const [dateTo, setDateTo] = useState(TODAY);
   const [report, setReport] = useState(null);
+  const [periodReport, setPeriodReport] = useState(null);
+  const [business, setBusiness] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  function refreshReport(targetDate = date) {
+  function refreshReport(targetDate = date, from = dateFrom, to = dateTo) {
     setLoading(true);
-    getDayReport(targetDate)
-      .then((data) => {
-        setReport(data);
+    Promise.all([
+      getDayReport(targetDate),
+      getPeriodReport(from, to),
+      getBusinessAnalytics(from, to),
+    ])
+      .then(([dayData, periodData, businessData]) => {
+        setReport(dayData);
+        setPeriodReport(periodData);
+        setBusiness(businessData);
         setError("");
       })
       .catch((err) => setError(err?.message || "Не удалось загрузить отчет"))
@@ -161,10 +171,16 @@ export default function ReportPage() {
   useEffect(() => {
     let active = true;
 
-    getDayReport(date)
-      .then((data) => {
+    Promise.all([
+      getDayReport(date),
+      getPeriodReport(dateFrom, dateTo),
+      getBusinessAnalytics(dateFrom, dateTo),
+    ])
+      .then(([dayData, periodData, businessData]) => {
         if (!active) return;
-        setReport(data);
+        setReport(dayData);
+        setPeriodReport(periodData);
+        setBusiness(businessData);
         setError("");
       })
       .catch((err) => {
@@ -178,7 +194,7 @@ export default function ReportPage() {
     return () => {
       active = false;
     };
-  }, [date]);
+  }, [date, dateFrom, dateTo]);
 
   const doctorStats = (report?.doctorStats || report?.doctorRevenue || []).map((doctor) => ({
     ...doctor,
@@ -231,7 +247,7 @@ export default function ReportPage() {
             </label>
             <button
               type="button"
-              onClick={() => refreshReport(date)}
+              onClick={() => refreshReport(date, dateFrom, dateTo)}
               className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50"
             >
               <RefreshCw size={16} />
@@ -255,6 +271,49 @@ export default function ReportPage() {
 
         {!loading && !error && report && (
           <div className="space-y-6">
+            <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="m-0 text-lg font-semibold text-black">Период и KPI</h2>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="text-xs font-semibold uppercase text-slate-500">
+                    C
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(event) => setDateFrom(event.target.value)}
+                      className="ml-2 h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal text-slate-600"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold uppercase text-slate-500">
+                    По
+                    <input
+                      type="date"
+                      value={dateTo}
+                      onChange={(event) => setDateTo(event.target.value)}
+                      className="ml-2 h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal text-slate-600"
+                    />
+                  </label>
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <KpiCard title="Выручка за период" value={money(periodReport?.totalRevenue || business?.revenue)} helper={`${periodReport?.paymentsCount || business?.paymentsCount || 0} платежей`} />
+                <KpiCard title="Счета выставлено" value={money(periodReport?.invoiceTotal || business?.invoiceTotal)} helper={`оплачено ${money(periodReport?.invoicePaid || business?.invoicePaid)}`} />
+                <KpiCard title="Долг по счетам" value={money(periodReport?.invoiceDebt || Math.max(0, Number(business?.invoiceTotal || 0) - Number(business?.invoicePaid || 0)))} tone="danger" helper="invoice debt" />
+                <KpiCard title="Конверсия приемов" value={`${business?.conversionRate ?? 0}%`} helper={`${business?.appointmentsCount || periodReport?.appointmentsCount || 0} записей`} />
+              </div>
+              {business?.businessRisks?.length > 0 && (
+                <div className="mt-3 grid gap-2">
+                  {business.businessRisks.map((risk) => (
+                    <div key={risk.code} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700">
+                      {risk.message}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
             <section className="grid gap-3.5 lg:grid-cols-2">
               <AlertCard
                 type="danger"

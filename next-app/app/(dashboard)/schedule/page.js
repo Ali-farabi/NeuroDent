@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   getDoctors, getSchedule, createAppointment, searchPatients,
   updateAppointmentStatus, getPatientById, getVisitsByPatient,
-  getConversations, getConversationMessages, sendConversationMessage,
-  createConversationAiDraft,
+  getConversations, createConversation, getConversationMessages, sendConversationMessage,
+  createConversationAiDraft, updateConversationStatus,
 } from "@/lib/api";
 import { useAuth } from "@/lib/AuthContext";
 import { Bot, Stethoscope, Phone, CalendarDays, MessageCircle, Sparkles, ClipboardList, Bell, UserRound, X, Clock } from "lucide-react";
@@ -207,7 +207,7 @@ function ApptDetailModal({ appt, doctors, role, onClose, onStatusChanged, onOpen
             {/* AI button — doctor/assistant/owner */}
             {["doctor","assistant","owner"].includes(role) && (
               <button onClick={() => { onOpenAi(appt.patientId); onClose(); }} style={{ ...btnPrimary, width: "100%", padding: "11px 0", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                <Bot size={16} /> Открыть AI-протокол
+                <Bot size={16} /> Открыть ИИ-протокол
               </button>
             )}
 
@@ -521,11 +521,12 @@ function CalendarTab({ doctors, patients, role }) {
 
   const [refresh, setRefresh] = useState(0);
   const reload = useCallback(() => setRefresh(r => r + 1), []);
+  const effectiveDoctorId = role === "doctor" ? doctors[0]?.id || "" : doctorId;
 
   useEffect(() => {
     if (!doctors.length) return;
     let cancelled = false;
-    const toShow = doctorId ? doctors.filter(x => x.id === doctorId) : doctors;
+    const toShow = effectiveDoctorId ? doctors.filter(x => x.id === effectiveDoctorId) : doctors;
     Promise.all(toShow.map(doc => getSchedule(doc.id, date)))
       .then(arrays => {
         if (!cancelled) {
@@ -535,9 +536,9 @@ function CalendarTab({ doctors, patients, role }) {
       })
       .catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [date, doctorId, doctors, refresh]);
+  }, [date, effectiveDoctorId, doctors, refresh]);
 
-  const visibleDoctors = doctorId ? doctors.filter(d => d.id === doctorId) : doctors;
+  const visibleDoctors = effectiveDoctorId ? doctors.filter(d => d.id === effectiveDoctorId) : doctors;
   const apptCount      = appointments.length;
   const requestedAppointments = appointments.filter((appt) => appt.status === "requested");
 
@@ -555,8 +556,8 @@ function CalendarTab({ doctors, patients, role }) {
       <div className="calendar-side-panel" style={{ width: 290, flexShrink: 0, borderRight: "1px solid var(--border)", background: "var(--surface)", display: "flex", flexDirection: "column", overflowY: "hidden" }}>
         <div style={{ padding: "16px 16px 14px" }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", letterSpacing: 0.7, textTransform: "uppercase", marginBottom: 7 }}>Врач</div>
-          <select value={doctorId} onChange={e => setDoctorId(e.target.value)} style={{ ...inputStyle, borderRadius: 0 }}>
-            <option value="">Все врачи</option>
+          <select value={effectiveDoctorId} onChange={e => setDoctorId(e.target.value)} disabled={role === "doctor"} style={{ ...inputStyle, borderRadius: 0, opacity: role === "doctor" ? 0.75 : 1 }}>
+            {role !== "doctor" && <option value="">Все врачи</option>}
             {doctors.map(d => <option key={d.id} value={d.id}>{d.name.split(" ").slice(0,2).join(" ")}</option>)}
           </select>
         </div>
@@ -693,8 +694,26 @@ function CrmTab({ patients, onNewAppt }) {
   const [search, setSearch]             = useState("");
   const messagesEnd                     = useRef(null);
 
+  async function reloadConversations() {
+    try {
+      setConversations(await getConversations({ limit: 100 }));
+    } catch {
+      setConversations([]);
+    }
+  }
+
   useEffect(() => {
-    getConversations({ limit: 100 }).then(setConversations).catch(() => setConversations([]));
+    let active = true;
+    getConversations({ limit: 100 })
+      .then((items) => {
+        if (active) setConversations(items);
+      })
+      .catch(() => {
+        if (active) setConversations([]);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const conversationPatients = conversations.map((conversation) => ({
@@ -705,6 +724,7 @@ function CrmTab({ patients, onNewAppt }) {
     channel: conversation.channel || "WhatsApp",
     lastMessage: conversation.status === "closed" ? "Диалог закрыт" : "Открытый диалог",
     lastMessageTime: conversation.lastMessageAt ? conversation.lastMessageAt.slice(11, 16) : "",
+    status: conversation.status || "open",
   }));
   const chatPatients = conversationPatients.length ? conversationPatients : patients.slice(0, 8);
   const filtered = chatPatients.filter(p =>
@@ -749,7 +769,7 @@ function CrmTab({ patients, onNewAppt }) {
         setSendStatus("Сообщение сохранено в CRM");
         return;
       } catch {
-        setSendStatus("Backend CRM недоступен, открыт WhatsApp");
+        setSendStatus("Серверная CRM недоступна, открыт WhatsApp");
       }
     }
     setChatByPatient((current) => ({
@@ -769,6 +789,39 @@ function CrmTab({ patients, onNewAppt }) {
       setMsg(draft.body || draft.message || "");
     } catch {
       setMsg("Добрый день! Сейчас проверим расписание и подберем удобное время.");
+    }
+  }
+
+  async function ensureConversation() {
+    if (!selected?.id || selected.conversationId) return;
+    setSendStatus("");
+    try {
+      const conversation = await createConversation({
+        patientId: selected.id,
+        channel: selected.channel || "whatsapp",
+        title: selected.name,
+        externalId: selected.phone || "",
+      });
+      await reloadConversations();
+      setSelected((prev) => prev ? { ...prev, conversationId: conversation.id, status: conversation.status || "open" } : prev);
+      setBackendMessages([]);
+      setSendStatus("CRM-диалог создан в backend");
+    } catch (error) {
+      setSendStatus(error?.message || "Не удалось создать CRM-диалог");
+    }
+  }
+
+  async function toggleConversationStatus() {
+    if (!selected?.conversationId) return;
+    const nextStatus = selected.status === "closed" ? "open" : "closed";
+    setSendStatus("");
+    try {
+      await updateConversationStatus(selected.conversationId, nextStatus);
+      await reloadConversations();
+      setSelected((prev) => prev ? { ...prev, status: nextStatus, lastMessage: nextStatus === "closed" ? "Диалог закрыт" : "Открытый диалог" } : prev);
+      setSendStatus(nextStatus === "closed" ? "Диалог закрыт" : "Диалог открыт");
+    } catch (error) {
+      setSendStatus(error?.message || "Не удалось обновить статус CRM");
     }
   }
 
@@ -825,11 +878,13 @@ function CrmTab({ patients, onNewAppt }) {
             <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{selected?.name || "Выберите чат"}</div>
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>{selected?.phone || "Нажмите на диалог слева"}</div>
           </div>
-          {selected && (
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={callPatient} style={{ ...btnOutline, fontSize: 12, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 4 }}><Phone size={13} /> Позвонить</button>
-              <button onClick={onNewAppt} style={{ ...btnOutline, fontSize: 12, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 4 }}><CalendarDays size={13} /> Записать</button>
-            </div>
+	          {selected && (
+	            <div style={{ display: "flex", gap: 8 }}>
+	              {!selected.conversationId && <button onClick={ensureConversation} style={{ ...btnOutline, fontSize: 12, padding: "6px 12px" }}>Создать CRM</button>}
+	              {selected.conversationId && <button onClick={toggleConversationStatus} style={{ ...btnOutline, fontSize: 12, padding: "6px 12px" }}>{selected.status === "closed" ? "Открыть" : "Закрыть"}</button>}
+	              <button onClick={callPatient} style={{ ...btnOutline, fontSize: 12, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 4 }}><Phone size={13} /> Позвонить</button>
+	              <button onClick={onNewAppt} style={{ ...btnOutline, fontSize: 12, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 4 }}><CalendarDays size={13} /> Записать</button>
+	            </div>
           )}
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "18px 22px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -913,14 +968,14 @@ function CrmTab({ patients, onNewAppt }) {
             {/* Actions */}
             <div style={{ display: "grid", gap: 8 }}>
               {[
-                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Phone size={13} /> Позвонить</span>,
+                { key: "call", label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Phone size={13} /> Позвонить</span>,
                   fn: callPatient },
-                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><CalendarDays size={13} /> Записать на приём</span>,
+                { key: "appointment", label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><CalendarDays size={13} /> Записать на приём</span>,
                   fn: () => onNewAppt?.() },
-                { label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><ClipboardList size={13} /> Карточка пациента</span>,
+                { key: "patient-card", label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><ClipboardList size={13} /> Карточка пациента</span>,
                   fn: () => router.push(`/patients?q=${encodeURIComponent(selected.name)}`) },
               ].map(b => (
-                <button key={b.label} onClick={b.fn} style={{ ...btnOutline, width: "100%", fontSize: 12, padding: "8px 0" }}>{b.label}</button>
+                <button key={b.key} onClick={b.fn} style={{ ...btnOutline, width: "100%", fontSize: 12, padding: "8px 0" }}>{b.label}</button>
               ))}
             </div>
           </div>

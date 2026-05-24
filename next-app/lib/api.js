@@ -33,7 +33,7 @@ async function request(path, options = {}) {
   try {
     response = await fetch(`${API_BASE}${path}`, fetchOptions);
   } catch {
-    throw new Error("Backend недоступен. Запустите Next.js сервер командой: npm run dev");
+    throw new Error("Сервер недоступен. Запустите Next.js сервер командой: npm run dev");
   }
 
   const text = await response.text();
@@ -45,11 +45,11 @@ async function request(path, options = {}) {
   }
   if (!response.ok) {
     const fallback = text?.startsWith("<!DOCTYPE")
-      ? "Backend вернул HTML-ошибку. Проверьте терминал Next.js."
+      ? "Сервер вернул HTML-ошибку. Проверьте терминал Next.js."
       : text;
     throw new Error(data?.error || data?.message || fallback || "Ошибка backend-запроса");
   }
-  if (text && data === null) throw new Error("Backend вернул некорректный JSON");
+  if (text && data === null) throw new Error("Сервер вернул некорректный JSON");
   return data;
 }
 
@@ -518,6 +518,10 @@ export async function payInvoice(id, data = {}) {
 
 export async function getSystemStatus() {
   return request("/admin/system");
+}
+
+export async function getBackendCapabilities() {
+  return request("/capabilities");
 }
 
 export async function getAdminIntegrations() {

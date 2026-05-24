@@ -18,6 +18,7 @@ import {
   createPatientProtocolDocument,
   getFiles,
   getFileDownloadUrl,
+  getIcd10Reference,
   signDocument,
   uploadFile,
   deleteFile,
@@ -451,14 +452,14 @@ function PatientSelectPage() {
     <div className="min-h-full bg-white px-6 py-5 lg:px-8 lg:py-6">
       <div className="max-w-310">
         <header className="mb-8">
-          <h1 className="text-2xl leading-tight font-bold text-gray-950">AI-протокол</h1>
+          <h1 className="text-2xl leading-tight font-bold text-gray-950">ИИ-протокол</h1>
           <p className="mt-0 text-s leading-5 text-gray-500">Автопротоколирование, МКБ-10 и анализ истории</p>
         </header>
 
         <section className="rounded-lg border border-gray-200 bg-white px-3 py-4 shadow-[0_1px_4px_rgba(15,23,42,0.1)]">
           <div className="px-1">
             <h2 className="text-lg leading-tight font-semibold text-blue-600">Выберите пациента для приема</h2>
-            <p className="mt-1 text-[13px] leading-5 text-gray-600">Чтобы AI-протокол начал слушать и писать протокол, выберите пациента из базы.</p>
+            <p className="mt-1 text-[13px] leading-5 text-gray-600">Чтобы ИИ-протокол начал слушать и писать протокол, выберите пациента из базы.</p>
           </div>
         </section>
 
@@ -567,7 +568,34 @@ function IcdTree({ activeCode, dataset, onSelect }: { activeCode: string; datase
     return m;
   });
   const [search, setSearch] = useState("");
+  const [backendItems, setBackendItems] = useState<IcdItem[]>([]);
+  const [backendStatus, setBackendStatus] = useState("");
   const q = search.toLowerCase().trim();
+
+  useEffect(() => {
+    let active = true;
+    if (!q) {
+      return () => { active = false; };
+    }
+    const timer = setTimeout(() => {
+      setBackendStatus("Поиск на сервере...");
+      getIcd10Reference(q)
+        .then((items: Array<IcdItem & { name?: string }>) => {
+          if (!active) return;
+          setBackendItems((items || []).map((item) => ({ code: item.code, label: item.label || `${item.code} ${item.name || ""}`.trim() })));
+          setBackendStatus("");
+        })
+        .catch(() => {
+          if (!active) return;
+          setBackendItems([]);
+          setBackendStatus("Серверный справочник недоступен, показан локальный список");
+        });
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [q]);
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm max-h-[680px] flex flex-col gap-4">
@@ -607,6 +635,24 @@ function IcdTree({ activeCode, dataset, onSelect }: { activeCode: string; datase
         />
       </div>
       <div className="flex-1 overflow-y-auto pr-1 text-sm">
+        {q && backendItems.length > 0 && (
+          <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 p-2">
+            <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-blue-600">Серверный МКБ-10</div>
+            <div className="flex flex-col gap-0.5">
+              {backendItems.map((item) => (
+                <button
+                  key={`backend-${item.code}`}
+                  type="button"
+                  className={`rounded px-1.5 py-1 text-left text-xs transition ${activeCode === item.code ? "bg-blue-600 text-white" : "text-blue-700 hover:bg-white"}`}
+                  onClick={() => onSelect(item.code, item.label)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {q && backendStatus && <div className="mb-2 text-[11px] text-gray-400">{backendStatus}</div>}
         {dataset.groups.map((group) => {
           const matchItems = group.items.filter((i) => !q || i.label.toLowerCase().includes(q));
           if (q && !group.title.toLowerCase().includes(q) && matchItems.length === 0) return null;
@@ -1232,7 +1278,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
   if (!patientData) return <div className="p-6 text-center text-gray-400">Пациент не найден</div>;
 
   const tabs = [
-    { key: "protocol", label: "AI Протокол" },
+    { key: "protocol", label: "ИИ-протокол" },
     { key: "images", label: "Изображения" },
     { key: "materials", label: "Материалы" },
     { key: "services", label: "Оказанные услуги" },
@@ -1260,7 +1306,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
         <div className="flex flex-col gap-1">
             <h1 className="flex items-center gap-2 text-xl font-bold text-gray-900 m-0">
             <img src="/images/Medimetricslogotype.png" alt="Neurodent" className="w-7 h-7" />
-            <span>AI-протокол</span>
+            <span>ИИ-протокол</span>
           </h1>
           <p className="text-xs text-gray-500 m-0">Автопротоколирование, МКБ-10, тип кариеса и зубная формула</p>
         </div>
@@ -1365,7 +1411,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
           {/* AI Summary */}
           <div className="w-full bg-blue-50/60 border border-blue-100 rounded-2xl p-4 shadow-sm">
             <div className="text-[11px] font-bold text-blue-600 uppercase mb-2 flex items-center gap-1">
-              <Sparkles size={12} /> AI-Summary пациента
+              <Sparkles size={12} /> ИИ-резюме пациента
             </div>
             <div className="text-[13px] text-gray-700 leading-relaxed">
               {(() => {
@@ -1482,7 +1528,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
               <div className="flex items-center gap-2">
                 {isRecording && <span className="inline-block w-3.5 h-3.5 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin" />}
                 <span className="font-bold text-blue-600 text-[15px] flex items-center gap-1.5">
-                  <Bot size={16} /> AI-Автопротокол
+                  <Bot size={16} /> ИИ-автопротокол
                 </span>
               </div>
               <span className="text-[11px] text-gray-400 bg-gray-50 px-2 py-1 rounded flex items-center gap-1">
@@ -1526,7 +1572,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
                     </select>
                     {AI_SUGGESTIONS[diagnosisCode] && (
                       <div className="mt-1.5 p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-[11px] flex flex-col gap-1">
-                        <div className="font-bold text-blue-600 flex items-center gap-1"><Sparkles size={11} /> AI-рекомендация</div>
+                        <div className="font-bold text-blue-600 flex items-center gap-1"><Sparkles size={11} /> ИИ-рекомендация</div>
                         <div><span className="text-gray-500">Материал:</span> {AI_SUGGESTIONS[diagnosisCode].material}</div>
                         <div><span className="text-gray-500">Анестезия:</span> {AI_SUGGESTIONS[diagnosisCode].anesthesia}</div>
                         <div><span className="text-gray-500">Время:</span> {AI_SUGGESTIONS[diagnosisCode].time}</div>
@@ -1769,7 +1815,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
                           <button type="button" className="block w-full text-left" onClick={() => setActiveImage(img.url)}>
                             <img src={img.url} alt="Миниатюра" className="h-24 w-full rounded-lg object-cover bg-gray-50" />
                             <div className="mt-2 text-xs font-medium text-gray-700">Изображение визита</div>
-                            <div className="text-[11px] text-gray-400">Прикреплено к Core AI</div>
+                            <div className="text-[11px] text-gray-400">Прикреплено к ИИ-модулю</div>
                           </button>
                           <button
                             type="button"
@@ -1860,7 +1906,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
       {activeTab === "history" && (
         <div className="p-5 bg-white border border-gray-200 rounded-xl shadow-sm">
           <h3 className="text-base font-bold text-gray-900 mt-0 mb-1.5">История болезни</h3>
-          <p className="text-[13px] text-gray-500 mb-2.5">Визиты пациента по данным Core AI.</p>
+          <p className="text-[13px] text-gray-500 mb-2.5">Визиты пациента по данным ИИ-модуля.</p>
           <div className="flex flex-col gap-1.5 mt-1.5">
             {visits.length === 0 ? (
               <div className="text-xs text-gray-400">Пока нет завершённых визитов</div>
@@ -1957,7 +2003,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
           )}
           {modal.title.includes("eGov") && modal.phase === "select" && (
             <div className="p-2.5">
-              <div className="text-[13px] text-gray-500 mb-2">Документ для подписи сформирован на основе AI-протокола:</div>
+              <div className="text-[13px] text-gray-500 mb-2">Документ для подписи сформирован на основе ИИ-протокола:</div>
               <div className="text-[13px] text-gray-500 mb-3"><b>МКБ-10:</b> {diagnosisCode || "—"} &bull; <b>Тип кариеса:</b> {cariesType || "—"} &bull; <b>Зуб:</b> {selectedTooth || "—"}</div>
               <div
                 className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer bg-gray-50 mb-5 hover:border-blue-500 hover:bg-blue-50/30 transition"

@@ -7,9 +7,20 @@ export default function AuditLogsPage() {
   const [logs, setLogs] = useState([]);
   const [filters, setFilters] = useState({ entityType: "", entityId: "", limit: "100" });
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
-    setLogs(await getAuditLogs(filters));
+    setLoading(true);
+    setLoadError("");
+    try {
+      setLogs(await getAuditLogs(filters));
+    } catch (error) {
+      setLogs([]);
+      setLoadError(error?.message || "Не удалось загрузить аудит");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -51,6 +62,7 @@ export default function AuditLogsPage() {
       </form>
 
       {message && <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">{message}</div>}
+      {loadError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</div>}
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <table className="w-full border-collapse text-left text-sm">
@@ -58,7 +70,9 @@ export default function AuditLogsPage() {
             <tr><th className="p-3">Время</th><th className="p-3">Пользователь</th><th className="p-3">Действие</th><th className="p-3">Объект</th><th className="p-3">Детали</th></tr>
           </thead>
           <tbody>
-            {logs.map((log) => (
+            {loading ? (
+              <tr><td className="p-6 text-center text-slate-500" colSpan="5">Загрузка аудита...</td></tr>
+            ) : logs.map((log) => (
               <tr key={log.id} className="border-t border-slate-100">
                 <td className="p-3">{log.createdAt}</td>
                 <td className="p-3 font-mono text-xs">{log.actorUserId || "system"}</td>
@@ -67,6 +81,9 @@ export default function AuditLogsPage() {
                 <td className="max-w-xl truncate p-3 font-mono text-xs">{JSON.stringify(log.details || {})}</td>
               </tr>
             ))}
+            {!loading && !logs.length && (
+              <tr><td className="p-6 text-center text-slate-500" colSpan="5">Записей аудита по текущим фильтрам нет</td></tr>
+            )}
           </tbody>
         </table>
       </div>

@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/AuthContext";
 import {
   searchPatients,
   getPatientById,
+  getPatientPayments,
   createPatient,
   updatePatient,
   getPatientVisits,
@@ -23,6 +24,7 @@ import {
   getPatientAiContext,
   getPatientMedicalCard,
   getPatientTreatmentPlan,
+  getActiveAppointmentByPatient,
 } from "@/lib/api";
 import { Bot, HeartPulse, CalendarDays, FileDown, AlertTriangle, UserRound, Upload, ScanLine } from "lucide-react";
 
@@ -35,6 +37,73 @@ function fmtDate(iso) {
 
 function firstFilled(...values) {
   return values.find((value) => typeof value === "string" && value.trim()) || "";
+}
+
+function labelFromMap(value, map, fallback = "Не указано") {
+  const key = String(value || "").toLowerCase();
+  return map[key] || value || fallback;
+}
+
+function appointmentStatusLabel(status) {
+  return labelFromMap(status, {
+    scheduled: "Запланировано",
+    arrived: "Пациент прибыл",
+    completed: "Завершено",
+    cancelled: "Отменено",
+    no_show: "Не явился",
+  }, "Запланировано");
+}
+
+function paymentMethodLabel(method) {
+  return labelFromMap(method, {
+    cash: "Наличные",
+    card: "Карта",
+    kaspi: "Kaspi",
+    transfer: "Перевод",
+    insurance: "Страховка",
+    payment: "Платеж",
+  }, "Платеж");
+}
+
+function invoiceStatusLabel(status) {
+  return labelFromMap(status, {
+    draft: "Черновик",
+    issued: "Выставлен",
+    sent: "Отправлен",
+    paid: "Оплачен",
+    partial: "Частично оплачен",
+    overdue: "Просрочен",
+    cancelled: "Отменен",
+  }, "Счет");
+}
+
+function biteLabel(bite) {
+  return labelFromMap(bite, {
+    permanent: "Постоянный прикус",
+    mixed: "Смешанный прикус",
+    primary: "Молочный прикус",
+  }, "Постоянный прикус");
+}
+
+function toothValueLabel(value) {
+  if (typeof value === "string") {
+    return labelFromMap(value, {
+      healthy: "Здоров",
+      caries: "Кариес",
+      treated: "Вылечен",
+      missing: "Отсутствует",
+      planned: "Запланировано",
+      watch: "Наблюдение",
+    }, value);
+  }
+  return labelFromMap(value?.status || value?.diagnosis, {
+    healthy: "Здоров",
+    caries: "Кариес",
+    treated: "Вылечен",
+    missing: "Отсутствует",
+    planned: "Запланировано",
+    watch: "Наблюдение",
+  }, "Обновлено");
 }
 
 function readAsBase64(file) {
@@ -65,7 +134,7 @@ const FILE_KIND_LABELS = {
   ct: "КТ / 3D",
   before: "Фото до",
   after: "Фото после",
-  protocol: "AI протокол",
+  protocol: "ИИ-протокол",
   consent: "Согласие",
   invoice: "Счет",
   upload: "Файл",
@@ -105,16 +174,6 @@ function filePublicUrl(file) {
 
 function formatMoneyAmount(amount) {
   return `${Number(amount || 0).toLocaleString("ru-RU")} ₸`;
-}
-
-function invoiceStatusLabel(status) {
-  const labels = {
-    paid: "оплачен",
-    sent: "отправлен",
-    draft: "черновик",
-    overdue: "просрочен",
-  };
-  return labels[String(status || "").toLowerCase()] || status || "счет";
 }
 
 function sortedByCreatedDesc(items) {
@@ -249,12 +308,14 @@ function PatientCard({ patient }) {
   const isDoctor = user?.role === "doctor";
   const [tab, setTab] = useState("info");
   const [visits, setVisits] = useState(null);
+  const [payments, setPayments] = useState(null);
   const [files, setFiles] = useState([]);
   const [uploadKind, setUploadKind] = useState("xray");
   const [fileMessage, setFileMessage] = useState("");
 
   useEffect(() => {
     getPatientVisits(patient.id).then(setVisits);
+    getPatientPayments(patient.id).then(setPayments).catch(() => setPayments([]));
     getFiles({ patientId: patient.id }).then(setFiles).catch(() => setFiles([]));
   }, [patient.id]);
 
@@ -304,6 +365,7 @@ function PatientCard({ patient }) {
     { key: "info",      label: "Информация" },
     { key: "treatment", label: "Лечение" },
     { key: "visits",    label: "Визиты" },
+    { key: "payments",  label: "Платежи" },
     { key: "documents", label: "Документы" },
   ];
 
@@ -381,7 +443,7 @@ function PatientCard({ patient }) {
                   marginTop: 8, background: "var(--active)", borderLeft: "2px solid var(--primary)",
                   borderRadius: "var(--radius-xs)", padding: "10px 12px", fontSize: 12, color: "var(--text)",
                 }}>
-                  <div style={{ color: "var(--primary)", fontWeight: 600, marginBottom: 4, fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}><Bot size={12} /> AI Резюме</div>
+                  <div style={{ color: "var(--primary)", fontWeight: 600, marginBottom: 4, fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}><Bot size={12} /> ИИ-резюме</div>
                   {v.notes}
                 </div>
               )}
@@ -418,12 +480,30 @@ function PatientCard({ patient }) {
                     <div style={{ fontSize: 12, color: "var(--muted)" }}>{v.specialty}</div>
                   </div>
                   <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, fontWeight: 500, background: badgeBg, color: badgeClr, border: `1px solid ${badgeBdr}`, flexShrink: 0 }}>
-                    {v.status}
+                    {appointmentStatusLabel(v.statusRaw || v.status)}
                   </span>
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {tab === "payments" && (
+        <div style={{ maxHeight: 380, overflowY: "auto", display: "grid", gap: 8 }}>
+          {payments === null ? (
+            <div style={{ textAlign: "center", padding: "40px 0", color: "var(--muted)", fontSize: 13 }}>Загрузка...</div>
+          ) : payments.length === 0 ? (
+            <div style={{ color: "var(--muted)", fontSize: 13, padding: "24px 0", textAlign: "center" }}>Платежей нет</div>
+          ) : payments.map((payment) => (
+            <div key={payment.id} style={{ display: "flex", justifyContent: "space-between", gap: 12, border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 12 }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{fmtDate(payment.date)} {payment.time || ""}</div>
+                <div style={{ color: "var(--muted)", fontSize: 12 }}>{paymentMethodLabel(payment.method)}{payment.note ? ` · ${payment.note}` : ""}</div>
+              </div>
+              <div style={{ fontWeight: 700, color: "var(--primary)", whiteSpace: "nowrap" }}>{Number(payment.amount || 0).toLocaleString("ru-RU")} ₸</div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -445,7 +525,7 @@ function PatientCard({ patient }) {
               <input type="file" onChange={handleFileUpload} style={{ display: "none" }} />
             </label>
             <button type="button" onClick={handleCreateProtocolDocument} style={btnOutline}>
-              Создать AI protocol document
+              Создать документ ИИ-протокола
             </button>
           </div>
           {fileMessage && <div style={{ fontSize: 12, color: "var(--muted)" }}>{fileMessage}</div>}
@@ -497,6 +577,7 @@ function PatientCabinet() {
   const [documentModal, setDocumentModal] = useState(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [showBillingModal, setShowBillingModal] = useState(false);
+  const [activeAppointment, setActiveAppointment] = useState(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: "", nextPassword: "", repeatPassword: "" });
   const [passwordSaving, setPasswordSaving] = useState(false);
@@ -518,8 +599,9 @@ function PatientCabinet() {
       getFiles({ patientId }),
       getPatientBillingSummary(patientId).catch(() => null),
       getDoctors().catch(() => []),
+      getActiveAppointmentByPatient(patientId).catch(() => null),
     ])
-      .then(([patient, visits, card, plan, context, files, billing, doctorList]) => {
+      .then(([patient, visits, card, plan, context, files, billing, doctorList, appointment]) => {
         if (!active) return;
         setLoadError("");
         setPatientData(card?.patient || patient);
@@ -529,6 +611,7 @@ function PatientCabinet() {
         setPatientFiles(files || card?.files || []);
         setBillingSummary(billing || null);
         setDoctors(doctorList || []);
+        setActiveAppointment(appointment || null);
         setAppointmentForm((prev) => (
           prev.doctorId || !(doctorList || []).length
             ? prev
@@ -590,6 +673,8 @@ function PatientCabinet() {
       patientData?.images?.after,
     ),
   };
+  const toothChart = aiContext?.toothChart || {};
+  const toothEntries = Object.entries(toothChart.teeth || {}).slice(0, 8);
   const historyItems = completedVisits.slice(0, 3).map((visit, index) => ({
     id: visit.appointmentId || `${visit.date}-${visit.time}-${index}`,
     date: fmtDate(visit.date).toUpperCase(),
@@ -600,7 +685,7 @@ function PatientCabinet() {
   const planItems = (treatmentPlan.length ? treatmentPlan : medicalCard?.treatmentPlan || []).map((item, index) => ({
     id: item.id || `plan-${index}`,
     title: item.text || item.title || "План лечения",
-    subtitle: item.toothNumber ? `Зуб ${item.toothNumber}` : item.status || "Запланировано",
+    subtitle: item.toothNumber ? `Зуб ${item.toothNumber}` : appointmentStatusLabel(item.status),
     tone: index === 0 ? "danger" : "muted",
   }));
   if (!planItems.length) {
@@ -611,30 +696,7 @@ function PatientCabinet() {
       tone: "muted",
     });
   }
-  const timelineFallback = [
-    {
-      id: "fallback-1",
-      date: "12 МАЙ 2024",
-      title: "Профессиональная гигиена",
-      description: "Ультразвуковая чистка AirFlow, полировка эмали.",
-      isActive: true,
-    },
-    {
-      id: "fallback-2",
-      date: "28 АПР 2024",
-      title: "Лечение кариеса",
-      description: "Зуб 2.4, медиальная поверхность. Пломба Ceram.X.",
-      isActive: false,
-    },
-    {
-      id: "fallback-3",
-      date: "15 МАРТ 2024",
-      title: "КТ-диагностика",
-      description: "Полное 3D сканирование обеих челюстей.",
-      isActive: false,
-    },
-  ];
-  const displayHistory = historyItems.length ? historyItems : timelineFallback;
+  const displayHistory = historyItems;
 
   async function downloadPatientProtocol(itemId) {
     const patientId = user?.patientId || user?.id;
@@ -1009,6 +1071,23 @@ function PatientCabinet() {
           </div>
         )}
 
+        {activeAppointment && (
+          <div className="patient-home-card" style={{ padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", borderColor: "#bfdbfe", background: "#eff6ff" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <CalendarDays size={20} style={{ color: "#3167e3", flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: "#1e3a8a" }}>Ближайшая запись</div>
+                <div style={{ marginTop: 3, fontSize: 13, color: "#415a83" }}>
+                  {fmtDate(activeAppointment.date)} в {activeAppointment.time} · {activeAppointment.doctorName || "Врач NeuroDent"}
+                </div>
+              </div>
+            </div>
+            <span style={{ padding: "4px 10px", borderRadius: 999, background: "#dbeafe", color: "#1d4ed8", fontSize: 12, fontWeight: 800 }}>
+              {appointmentStatusLabel(activeAppointment.status)}
+            </span>
+          </div>
+        )}
+
         <div className="patient-home-grid">
           <div style={{ display: "grid", gap: 16 }}>
             <section className="patient-home-card" style={{ overflow: "hidden" }}>
@@ -1056,7 +1135,7 @@ function PatientCabinet() {
                     fontSize: 12,
                     boxShadow: "0 10px 18px rgba(49, 103, 227, 0.24)",
                   }}>
-                    Слои AI
+                    Слои ИИ
                   </button>
                 </div>
               </div>
@@ -1146,6 +1225,11 @@ function PatientCabinet() {
                 <div style={{ position: "relative" }}>
                   <div style={{ position: "absolute", left: 13, top: 14, bottom: 18, width: 2, background: "#e3ebf8" }} />
                   <div style={{ display: "grid", gap: 22 }}>
+                    {displayHistory.length === 0 && (
+                      <div style={{ padding: "18px 0 18px 42px", color: "#66768e", fontSize: 13 }}>
+                        История лечения пока не заполнена врачом.
+                      </div>
+                    )}
                     {displayHistory.map((item) => (
                       <div key={item.id} style={{ position: "relative", paddingLeft: 42, paddingRight: 8 }}>
                         <div style={{
@@ -1201,15 +1285,15 @@ function PatientCabinet() {
                             }}
                           >
                             <FileDown size={14} />
-                            {downloading === item.id ? "Скачивание..." : "AI протокол"}
+                            {downloading === item.id ? "Скачивание..." : "ИИ-протокол"}
                           </button>
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
-              </div>
-            </section>
+	              </div>
+	            </section>
 
             <section className="patient-home-card" style={{ overflow: "hidden" }}>
               <div style={{ padding: "18px 20px", borderBottom: "1px solid #e8eef8", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
@@ -1330,19 +1414,22 @@ function PatientCabinet() {
                   </div>
                 ))}
 
-                <button type="button" style={{
-                  height: 62,
-                  border: "none",
-                  borderRadius: 16,
-                  background: "#3167e3",
-                  color: "#fff",
-                  fontSize: 14,
-                  fontWeight: 800,
-                  boxShadow: "0 14px 26px rgba(49, 103, 227, 0.22)",
-                  letterSpacing: "0.01em",
-                }} onClick={() => setShowAppointmentForm((value) => !value)}>
-                  ЗАПИСАТЬСЯ НА ПРИЕМ
-                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAppointmentForm((value) => !value)}
+                  style={{
+                    height: 62,
+                    border: "none",
+                    borderRadius: 16,
+                    background: "#3167e3",
+                    color: "#fff",
+                    fontSize: 14,
+	                  fontWeight: 800,
+	                  boxShadow: "0 14px 26px rgba(49, 103, 227, 0.22)",
+	                  letterSpacing: "0.01em",
+	                }}>
+	                  ЗАПИСАТЬСЯ НА ПРИЕМ
+	                </button>
 
                 {appointmentMessage && (
                   <div style={{
@@ -1427,10 +1514,33 @@ function PatientCabinet() {
                 )}
               </div>
             </section>
+            <section className="patient-home-card" style={{ overflow: "hidden" }}>
+	              <div style={{ padding: "18px 20px", borderBottom: "1px solid #e8eef8", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+	                <div style={{ fontSize: 16, fontWeight: 600, color: "#1e2f49" }}>Зубная карта</div>
+	                <div style={{ fontSize: 12, color: "#6b7a8d" }}>{biteLabel(toothChart.bite)}</div>
+	              </div>
+	              <div style={{ padding: 16, display: "grid", gap: 10 }}>
+	                {toothEntries.length ? toothEntries.map(([tooth, value]) => (
+	                  <div key={tooth} style={{ display: "flex", justifyContent: "space-between", gap: 12, border: "1px solid #eef2f7", borderRadius: 10, padding: "9px 11px", background: "#f8fafc" }}>
+	                    <div style={{ fontSize: 13, fontWeight: 800, color: "#1e2f49" }}>Зуб {tooth}</div>
+	                    <div style={{ fontSize: 12, color: "#6b7a8d", textAlign: "right" }}>
+	                      {toothValueLabel(value)}
+	                    </div>
+	                  </div>
+	                )) : (
+	                  <div style={{ padding: "12px 0", color: "#6b7a8d", fontSize: 13 }}>
+	                    Зубная карта пока не заполнена врачом.
+	                  </div>
+	                )}
+	                {toothChart.updatedAt && (
+	                  <div style={{ fontSize: 11, color: "#8a98ad" }}>Обновлено: {String(toothChart.updatedAt).slice(0, 10)}</div>
+	                )}
+	              </div>
+	            </section>
 
-            <div className="patient-doc-grid">
+	            <div className="patient-doc-grid">
               {[
-                { label: `AI протокол${protocolFile ? " (PDF)" : ""}`, icon: "doc", category: "protocol" },
+                { label: `ИИ-протокол${protocolFile ? " (PDF)" : ""}`, icon: "doc", category: "protocol" },
                 { label: `Согласия${consentFiles.length ? ` (${consentFiles.length})` : ""}`, icon: "doc", category: "consent" },
                 { label: `Счета${billingInvoices.length || invoiceFiles.length ? ` (${Math.max(billingInvoices.length, invoiceFiles.length)})` : ""}`, icon: "receipt", category: "invoice" },
                 { label: `Снимки${xrayFile || ctFile ? " (есть)" : ""}`, icon: "receipt", category: xrayFile ? "xray" : "ct" },
@@ -1879,7 +1989,7 @@ function PatientListInner() {
                   <td style={{ textAlign: "right" }}>
                     <div style={{ display: "inline-flex", gap: 4 }}>
                       {canAI && (
-                        <button onClick={() => router.push(`/ai?patient=${p.id}`)} className="pat-action-btn" title="AI-Прием">
+                        <button onClick={() => router.push(`/ai?patient=${p.id}`)} className="pat-action-btn" title="ИИ-прием">
                           <Bot size={15} />
                         </button>
                       )}

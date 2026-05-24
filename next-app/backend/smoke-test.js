@@ -80,6 +80,32 @@ const doctorLogin = await request("POST", "/api/auth/login", {
 });
 assert(doctorLogin.status === 200 && doctorLogin.data.token, "doctor login failed");
 
+const adminLogin = await request("POST", "/api/auth/login", {
+  body: { phone: "87007654321", password: "admin" },
+});
+assert(adminLogin.status === 200 && adminLogin.data.token, "admin login failed");
+
+const assistantLogin = await request("POST", "/api/auth/login", {
+  body: { phone: "87009871234", password: "assistant" },
+});
+assert(assistantLogin.status === 200 && assistantLogin.data.token, "assistant login failed");
+
+const roleMatrix = [
+  { role: "owner", token, method: "GET", path: "/api/admin/system", status: 200 },
+  { role: "owner", token, method: "GET", path: "/api/users", status: 200 },
+  { role: "admin", token: adminLogin.data.token, method: "GET", path: "/api/admin/system", status: 403 },
+  { role: "admin", token: adminLogin.data.token, method: "GET", path: "/api/invoices", status: 200 },
+  { role: "doctor", token: doctorLogin.data.token, method: "GET", path: "/api/admin/system", status: 403 },
+  { role: "doctor", token: doctorLogin.data.token, method: "GET", path: "/api/payments", status: 403 },
+  { role: "assistant", token: assistantLogin.data.token, method: "GET", path: "/api/users", status: 403 },
+  { role: "assistant", token: assistantLogin.data.token, method: "GET", path: "/api/patients", status: 200 },
+];
+
+for (const check of roleMatrix) {
+  const result = await request(check.method, check.path, { token: check.token });
+  assert(result.status === check.status, `${check.role} ${check.method} ${check.path} expected ${check.status}, got ${result.status}`);
+}
+
 const doctorForbiddenPayments = await request("GET", `/api/payments/patient/${patient.data.id}`, { token: doctorLogin.data.token });
 assert(doctorForbiddenPayments.status === 403, "doctor should not access payments for unrelated patient");
 

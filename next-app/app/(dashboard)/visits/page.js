@@ -87,6 +87,7 @@ export default function VisitsPage() {
   const [visits, setVisits]     = useState([]);
   const [doctors, setDoctors]   = useState([]);
   const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState("");
   const [query, setQuery]       = useState("");
   const [doctorId, setDoctorId] = useState("");
   const [from, setFrom]         = useState(MONTH_AGO);
@@ -95,9 +96,13 @@ export default function VisitsPage() {
 
   async function load(q, dId, f, t) {
     setLoading(true);
+    setError("");
     try {
       const data = await getAllVisits({ query: q, doctorId: user?.role === "doctor" ? "" : dId, from: f, to: t });
       setVisits(data);
+    } catch (err) {
+      setVisits([]);
+      setError(err?.message || "Не удалось загрузить историю визитов");
     } finally {
       setLoading(false);
     }
@@ -246,6 +251,11 @@ export default function VisitsPage() {
           <div style={{ padding: "48px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
             Загрузка...
           </div>
+        ) : error ? (
+          <div style={{ padding: "56px 20px", textAlign: "center" }}>
+            <div style={{ color: "#dc2626", fontSize: 14, fontWeight: 700 }}>Не удалось загрузить визиты</div>
+            <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>{error}</div>
+          </div>
         ) : visits.length === 0 ? (
           <div style={{ padding: "56px 0", textAlign: "center" }}>
             <div style={{ fontSize: 36, marginBottom: 8 }}>📋</div>
@@ -329,7 +339,7 @@ export default function VisitsPage() {
 
                       <td style={{ ...tdStyle, textAlign: "center" }}>
                         <button className="vis-ai-btn" onClick={() => router.push(`/ai?patient=${v.patientId}`)}>
-                          AI →
+                          ИИ →
                         </button>
                       </td>
                     </tr>

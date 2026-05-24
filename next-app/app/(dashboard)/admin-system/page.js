@@ -8,6 +8,7 @@ import {
   exportSystemData,
   getAdminIntegrations,
   getAdminSessions,
+  getBackendCapabilities,
   getDatabaseBackupDownloadUrl,
   getDatabaseBackups,
   getSystemStatus,
@@ -21,25 +22,75 @@ function bytes(value) {
   return `${n} B`;
 }
 
+const PROVIDER_LABELS = {
+  email: "Почта",
+  resend: "Resend",
+  sms: "SMS",
+  whatsapp: "WhatsApp",
+  fileStorage: "Файловое webhook-хранилище",
+  supabaseStorage: "Supabase Storage",
+  fiscalization: "Фискализация",
+  eSignature: "ЭЦП",
+  ai: "ИИ webhook",
+};
+
+function integrationLabel(provider) {
+  return PROVIDER_LABELS[provider] || provider;
+}
+
+function integrationStatus(item) {
+  if (item.configured) {
+    return {
+      label: "Готово",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      note: item.url || item.mode || "Провайдер настроен",
+    };
+  }
+  if (item.missingRequiredEnv?.length) {
+    return {
+      label: "Нужна настройка",
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+      note: "Добавьте переменные окружения перед production",
+    };
+  }
+  return {
+    label: "Demo режим",
+    className: "border-slate-200 bg-slate-50 text-slate-500",
+    note: item.reason === "not_configured" ? "Провайдер не настроен, действие будет пропущено" : item.reason || item.mode || "Провайдер не настроен",
+  };
+}
+
 export default function AdminSystemPage() {
   const [status, setStatus] = useState(null);
   const [sessions, setSessions] = useState([]);
+  const [capabilities, setCapabilities] = useState(null);
   const [integrations, setIntegrations] = useState([]);
   const [backups, setBackups] = useState([]);
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
-    const [system, sessionList, integrationList, backupList] = await Promise.all([
-      getSystemStatus(),
-      getAdminSessions(100),
-      getAdminIntegrations(),
-      getDatabaseBackups(),
-    ]);
-    setStatus(system);
-    setSessions(sessionList);
-    setIntegrations(integrationList);
-    setBackups(backupList);
+    setLoadError("");
+    try {
+      const [system, sessionList, capabilityInfo, integrationList, backupList] = await Promise.all([
+        getSystemStatus(),
+        getAdminSessions(100),
+        getBackendCapabilities(),
+        getAdminIntegrations(),
+        getDatabaseBackups(),
+      ]);
+      setStatus(system);
+      setSessions(sessionList);
+      setCapabilities(capabilityInfo);
+      setIntegrations(integrationList);
+      setBackups(backupList);
+    } catch (error) {
+      setLoadError(error?.message || "Не удалось загрузить системные данные");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -52,9 +103,9 @@ export default function AdminSystemPage() {
     try {
       const result = await cleanupSystemMaintenance({ backupRetentionDays: 30 });
       await load();
-      setMessage(`Cleanup complete: sessions ${result.expiredSessionsDeleted || 0}, backups ${result.backupsDeleted || 0}`);
+      setMessage(`Очистка завершена: сессии ${result.expiredSessionsDeleted || 0}, резервные копии ${result.backupsDeleted || 0}`);
     } catch (error) {
-      setMessage(error?.message || "Cleanup failed");
+      setMessage(error?.message || "Не удалось выполнить очистку");
     }
   }
 
@@ -69,7 +120,7 @@ export default function AdminSystemPage() {
       link.click();
       URL.revokeObjectURL(url);
     } catch (error) {
-      setMessage(error?.message || "Export failed");
+      setMessage(error?.message || "Не удалось экспортировать JSON");
     }
   }
 
@@ -80,7 +131,7 @@ export default function AdminSystemPage() {
       await load();
       setMessage(`Backup создан: ${backup.fileName}`);
     } catch (error) {
-      setMessage(error?.message || "Backup failed");
+      setMessage(error?.message || "Не удалось создать backup");
     }
   }
 
@@ -91,7 +142,7 @@ export default function AdminSystemPage() {
       await load();
       setMessage("Backup удален");
     } catch (error) {
-      setMessage(error?.message || "Backup delete failed");
+      setMessage(error?.message || "Не удалось удалить backup");
     }
   }
 
@@ -114,18 +165,39 @@ export default function AdminSystemPage() {
           <p className="mt-1 text-sm text-slate-500">Статус backend, storage и активные сессии</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={handleExport} className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold">Export JSON</button>
-          <button onClick={handleCleanup} className="h-10 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white">Cleanup</button>
+          <button onClick={handleExport} className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold">Экспорт JSON</button>
+          <button onClick={handleCleanup} className="h-10 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white">Очистить</button>
         </div>
       </div>
 
       {message && <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">{message}</div>}
+      {loadError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</div>}
+      {loading && <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">Загрузка системных данных...</div>}
 
       <div className="grid gap-3 md:grid-cols-4">
-        <div className="rounded-lg border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Service</div><div className="mt-2 text-lg font-bold">{status?.service || "—"}</div></div>
-        <div className="rounded-lg border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Storage</div><div className="mt-2 text-lg font-bold">{status?.storage?.driver || "—"}</div></div>
-        <div className="rounded-lg border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">DB size</div><div className="mt-2 text-lg font-bold">{bytes(status?.storage?.size)}</div></div>
-        <div className="rounded-lg border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Sessions</div><div className="mt-2 text-lg font-bold">{sessions.length}</div></div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Сервис</div><div className="mt-2 text-lg font-bold">{status?.service || "—"}</div></div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Хранилище</div><div className="mt-2 text-lg font-bold">{status?.storage?.driver || "—"}</div></div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Размер базы</div><div className="mt-2 text-lg font-bold">{bytes(status?.storage?.size)}</div></div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Сессии</div><div className="mt-2 text-lg font-bold">{sessions.length}</div></div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="m-0 text-lg font-semibold text-slate-950">Возможности и документация API</h2>
+            <p className="mt-1 text-sm text-slate-500">Публичные серверные endpoint-ы подключены в системной панели</p>
+          </div>
+          <div className="flex gap-2">
+            <a href="/api/docs" target="_blank" className="rounded-md border border-slate-200 px-3 py-2 text-xs font-semibold">Документация API</a>
+            <a href="/api/openapi.json" target="_blank" className="rounded-md border border-slate-200 px-3 py-2 text-xs font-semibold">Схема API</a>
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-lg bg-slate-50 p-3"><div className="text-xs uppercase text-slate-500">Режим ИИ</div><div className="mt-1 font-semibold">{capabilities?.ai?.mode || "—"}</div></div>
+          <div className="rounded-lg bg-slate-50 p-3"><div className="text-xs uppercase text-slate-500">Драйвер хранилища</div><div className="mt-1 font-semibold">{capabilities?.storage?.activeDriver || "—"}</div></div>
+          <div className="rounded-lg bg-slate-50 p-3"><div className="text-xs uppercase text-slate-500">PostgreSQL готов</div><div className="mt-1 font-semibold">{capabilities?.storage?.postgresPrepared ? "да" : "нет"}</div></div>
+          <div className="rounded-lg bg-slate-50 p-3"><div className="text-xs uppercase text-slate-500">Модули</div><div className="mt-1 font-semibold">{capabilities?.modules?.length || 0}</div></div>
+        </div>
       </div>
 
       <div className="grid gap-3 md:grid-cols-4">
@@ -142,10 +214,10 @@ export default function AdminSystemPage() {
           <h2 className="m-0 text-lg font-semibold text-slate-950">Активные сессии</h2>
         </div>
         <table className="w-full border-collapse text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-3">Subject</th><th className="p-3">Created</th><th className="p-3">Expires</th></tr></thead>
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-3">Пользователь</th><th className="p-3">Создана</th><th className="p-3">Истекает</th></tr></thead>
           <tbody>
-            {sessions.map((session) => (
-              <tr key={session.token} className="border-t border-slate-100">
+            {sessions.map((session, index) => (
+              <tr key={session.token || `${session.subjectType}-${session.subjectId}-${session.createdAt}-${index}`} className="border-t border-slate-100">
                 <td className="p-3">{session.subjectType}:{session.subjectId}</td>
                 <td className="p-3">{session.createdAt}</td>
                 <td className="p-3">{session.expiresAt}</td>
@@ -159,7 +231,7 @@ export default function AdminSystemPage() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="m-0 text-lg font-semibold text-slate-950">Интеграции</h2>
-            <p className="mt-1 text-sm text-slate-500">Почта, SMS, WhatsApp, хранилище, фискализация, ЭЦП и AI</p>
+            <p className="mt-1 text-sm text-slate-500">Почта, SMS, WhatsApp, хранилище, фискализация, ЭЦП и ИИ</p>
           </div>
           <form onSubmit={handleEmailTest} className="flex gap-2">
             <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="h-10 rounded-lg border border-slate-200 px-3 text-sm" placeholder="test@example.com" required />
@@ -167,34 +239,44 @@ export default function AdminSystemPage() {
           </form>
         </div>
         <div className="grid gap-3 md:grid-cols-3">
-          {integrations.map((item) => (
+          {integrations.map((item) => {
+            const status = integrationStatus(item);
+            return (
             <div key={item.provider} className="rounded-lg border border-slate-200 p-4">
               <div className="flex items-center justify-between gap-3">
-                <div className="font-semibold text-slate-950">{item.provider}</div>
-                <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${item.configured ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
-                  {item.configured ? "configured" : "skipped"}
+                <div>
+                  <div className="font-semibold text-slate-950">{integrationLabel(item.provider)}</div>
+                  <div className="mt-0.5 text-xs text-slate-400">{item.provider}</div>
+                </div>
+                <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${status.className}`}>
+                  {status.label}
                 </span>
               </div>
-              <div className="mt-2 text-xs text-slate-500">{item.url || item.mode || item.reason || "No provider configured"}</div>
+              <div className="mt-2 text-xs text-slate-500">{status.note}</div>
               {item.missingRequiredEnv?.length > 0 && (
                 <div className="mt-3 rounded-md bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-700">
-                  Missing: {item.missingRequiredEnv.join(", ")}
+                  Не хватает: {item.missingRequiredEnv.join(", ")}
                 </div>
               )}
               {item.requiredEnv?.length > 0 && (
                 <div className="mt-2 text-[11px] text-slate-400">
-                  Required: {item.requiredEnv.map((env) => env.name).join(", ")}
+                  Нужно: {item.requiredEnv.map((env) => env.name).join(", ")}
                 </div>
               )}
             </div>
-          ))}
+          );})}
+          {!loading && !loadError && integrations.length === 0 && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500 md:col-span-3">
+              Интеграции не найдены
+            </div>
+          )}
         </div>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
           <div>
-            <h2 className="m-0 text-lg font-semibold text-slate-950">Backups</h2>
+            <h2 className="m-0 text-lg font-semibold text-slate-950">Резервные копии</h2>
             <p className="mt-1 text-sm text-slate-500">SQLite резервные копии внутри системного раздела</p>
           </div>
           <button onClick={handleCreateBackup} className="h-10 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white">Создать backup</button>
