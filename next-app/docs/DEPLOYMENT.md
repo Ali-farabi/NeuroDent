@@ -58,6 +58,7 @@ NODE_ENV=production
 PORT=3000
 NEURODENT_ALLOW_EPHEMERAL_STORAGE=false
 NEURODENT_EXPOSE_RESET_TOKEN=false
+NEURODENT_MAX_BODY_BYTES=4000000
 ```
 
 SQLite production storage:
@@ -82,6 +83,7 @@ RESEND_API_KEY
 EMAIL_FROM
 SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
+SUPABASE_SECRET_KEY
 SUPABASE_STORAGE_BUCKET
 NEURODENT_SMS_WEBHOOK_URL
 NEURODENT_SMS_WEBHOOK_TOKEN
@@ -96,6 +98,10 @@ NEURODENT_AI_WEBHOOK_TOKEN
 ```
 
 The admin integrations page shows missing integration env vars at runtime.
+
+For Supabase Storage file persistence, set one server-only key: `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_SECRET_KEY`. The `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` key is only for browser/SSR client setup and must not be used as the backend storage secret.
+
+For Vercel deployments, keep `NEURODENT_MAX_BODY_BYTES` at or below `4000000` because Vercel Functions reject payloads over 4.5 MB. Larger medical files should use direct-to-storage upload URLs instead of passing base64 through the Next.js function.
 
 ## Backups
 

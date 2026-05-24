@@ -16,7 +16,7 @@ const COOKIE_SECURE = process.env.NODE_ENV === "production";
 const API_RATE_LIMIT_MAX = Number(process.env.NEURODENT_RATE_LIMIT_MAX || 300);
 const API_RATE_LIMIT_WINDOW_MS = Number(process.env.NEURODENT_RATE_LIMIT_WINDOW_MS || 60_000);
 const LOGIN_RATE_LIMIT_MAX = Number(process.env.NEURODENT_LOGIN_RATE_LIMIT_MAX || 20);
-const MAX_BODY_BYTES = Number(process.env.NEURODENT_MAX_BODY_BYTES || 1_000_000);
+const MAX_BODY_BYTES = Number(process.env.NEURODENT_MAX_BODY_BYTES || 4_000_000);
 
 const api = await import("./service.js");
 const apiBuckets = new Map();

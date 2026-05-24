@@ -20,6 +20,7 @@ import {
   getFileDownloadUrl,
   signDocument,
   uploadFile,
+  deleteFile,
   getInventoryItems,
 } from "@/lib/api";
 import {
@@ -104,6 +105,7 @@ interface PatientFile {
   type?: string;
   kind?: string;
   category?: string;
+  visitId?: string;
   mimeType?: string;
   mimeGroup?: string;
   downloadUrl?: string;
@@ -763,6 +765,33 @@ function AiCorePage({ patientId }: { patientId: string }) {
   const [imageMessage, setImageMessage] = useState("");
 
   // Load data
+  const applyPatientFiles = useCallback((files: PatientFile[]) => {
+    const nextFiles = files || [];
+    const protocolFile = findPatientFile(nextFiles, "protocol");
+    const beforeFile = findPatientFile(nextFiles, "before");
+    const afterFile = findPatientFile(nextFiles, "after");
+    const galleryFiles = nextFiles.filter((file) => {
+      const kind = normalizePatientFileKind(file);
+      const isImage = file.mimeGroup === "image" || String(file.mimeType || "").startsWith("image/");
+      return isImage && !["before", "after", "protocol"].includes(kind);
+    });
+    const nextImages = galleryFiles
+      .map((file) => ({ id: file.id, url: patientFileUrl(file) }))
+      .filter((item) => item.url);
+
+    setPatientFiles(nextFiles);
+    setProtocolDocument(protocolFile);
+    setEgovSigned(protocolFile?.signatureStatus === "signed");
+    setBeforeImage(beforeFile ? patientFileUrl(beforeFile) : null);
+    setAfterImage(afterFile ? patientFileUrl(afterFile) : null);
+    setImages(nextImages);
+    setActiveImage((current) => {
+      if (nextImages.some((item) => item.url === current)) return current;
+      return nextImages[0]?.url || null;
+    });
+    return protocolFile;
+  }, []);
+
   useEffect(() => {
     if (!patientId) return;
     Promise.all([
@@ -777,24 +806,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
         setPatientData(patient);
         setActiveAppointment(appt);
         setVisits(visitList);
-        setPatientFiles(files || []);
-        const protocolFile = findPatientFile(files || [], "protocol");
-        const beforeFile = findPatientFile(files || [], "before");
-        const afterFile = findPatientFile(files || [], "after");
-        const galleryFiles = (files || []).filter((file) => {
-          const kind = normalizePatientFileKind(file);
-          const isImage = file.mimeGroup === "image" || String(file.mimeType || "").startsWith("image/");
-          return isImage && !["before", "after", "protocol"].includes(kind);
-        });
-        setProtocolDocument(protocolFile);
-        setEgovSigned(protocolFile?.signatureStatus === "signed");
-        if (beforeFile) setBeforeImage(patientFileUrl(beforeFile));
-        if (afterFile) setAfterImage(patientFileUrl(afterFile));
-        if (galleryFiles.length) {
-          const nextImages = galleryFiles.map((file) => ({ id: file.id, url: patientFileUrl(file) })).filter((item) => item.url);
-          setImages(nextImages);
-          setActiveImage(nextImages[0]?.url || null);
-        }
+        applyPatientFiles(files || []);
         setInventoryItems(inventory || []);
         if ((inventory || []).length) setMaterialSelectId((prev) => prev || inventory[0].id);
         const preferredMaterials = (inventory || []).filter((item) => {
@@ -818,7 +830,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [patientId]);
+  }, [patientId, applyPatientFiles]);
 
   useEffect(() => {
     if (!activeAppointment?.visitId) {
@@ -1096,11 +1108,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
 
   async function reloadPatientFiles() {
     const files = (await getFiles({ patientId })) as PatientFile[];
-    setPatientFiles(files || []);
-    const protocol = findPatientFile(files || [], "protocol");
-    setProtocolDocument(protocol);
-    setEgovSigned(protocol?.signatureStatus === "signed");
-    return protocol;
+    return applyPatientFiles(files || []);
   }
 
   async function handleExportProtocol() {
@@ -1156,6 +1164,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
     })) as PatientFile;
     const url = patientFileUrl(stored);
     setPatientFiles((prev) => [stored, ...prev.filter((item) => item.id !== stored.id)]);
+    await reloadPatientFiles().catch(() => null);
     return { stored, url };
   }
 
@@ -1174,7 +1183,18 @@ function AiCorePage({ patientId }: { patientId: string }) {
     e.target.value = "";
   }
 
-  function handleDeleteImage(id: string) {
+  async function handleDeleteImage(id: string) {
+    if (id !== "default") {
+      setImageMessage("");
+      try {
+        await deleteFile(id);
+        await reloadPatientFiles();
+        setImageMessage("РР·РѕР±СЂР°Р¶РµРЅРёРµ СѓРґР°Р»РµРЅРѕ РёР· С„Р°Р№Р»РѕРІ РїР°С†РёРµРЅС‚Р°");
+      } catch (err) {
+        setImageMessage(err instanceof Error ? err.message : "РќРµ СѓРґР°Р»РѕСЊ СѓРґР°Р»РёС‚СЊ РёР·РѕР±СЂР°Р¶РµРЅРёРµ");
+      }
+      return;
+    }
     setImages((p) => {
       const rm = p.find((i) => i.id === id);
       const next = p.filter((i) => i.id !== id);
@@ -1754,7 +1774,7 @@ function AiCorePage({ patientId }: { patientId: string }) {
                           <button
                             type="button"
                             className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-white bg-black/60 text-sm text-white transition hover:bg-red-600"
-                            onClick={() => handleDeleteImage(img.id)}
+                            onClick={() => { void handleDeleteImage(img.id); }}
                             aria-label="Удалить изображение"
                           >
                             &times;

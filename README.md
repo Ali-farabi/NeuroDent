@@ -10,6 +10,6 @@ npm run dev
 
 Backend code lives in `next-app/backend`, and runtime data is ignored under `next-app/backend/data`.
 
-Production decision: run the current app with Docker/VPS and a durable volume for `next-app/backend/data`. Vercel/serverless is preview-only until the PostgreSQL runtime adapter is implemented.
+Production can run with Docker/VPS and durable SQLite data, or with `NEURODENT_STORAGE_DRIVER=postgres` for PostgreSQL/Supabase. Supabase Storage is used for durable uploaded files when server-only storage env vars are configured.
 
 See [`next-app/docs/DEPLOYMENT.md`](./next-app/docs/DEPLOYMENT.md) for deployment steps and readiness checks.

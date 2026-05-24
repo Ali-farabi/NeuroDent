@@ -1,3 +1,5 @@
+import { createClient } from "@supabase/supabase-js";
+
 const PROVIDERS = {
   email: {
     name: "email",
@@ -167,9 +169,13 @@ function safeStorageFileName(name, fallback = "file.bin") {
 }
 
 function supabaseStorageConfig() {
-  const url = normalizeSupabaseUrl(process.env.SUPABASE_URL || process.env.NEURODENT_SUPABASE_URL);
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEURODENT_SUPABASE_SERVICE_ROLE_KEY || "";
-  const bucket = process.env.SUPABASE_STORAGE_BUCKET || process.env.NEURODENT_SUPABASE_STORAGE_BUCKET || "";
+  const url = normalizeSupabaseUrl(process.env.SUPABASE_URL || process.env.NEURODENT_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    || process.env.SUPABASE_SECRET_KEY
+    || process.env.NEURODENT_SUPABASE_SERVICE_ROLE_KEY
+    || process.env.NEURODENT_SUPABASE_SECRET_KEY
+    || "";
+  const bucket = process.env.SUPABASE_STORAGE_BUCKET || process.env.NEURODENT_SUPABASE_STORAGE_BUCKET || "neurodent-files";
   const prefix = String(process.env.SUPABASE_STORAGE_PREFIX || process.env.NEURODENT_SUPABASE_STORAGE_PREFIX || "neurodent").replace(/^\/+|\/+$/g, "");
   const isPublic = String(process.env.SUPABASE_STORAGE_PUBLIC || process.env.NEURODENT_SUPABASE_STORAGE_PUBLIC || "").toLowerCase() === "true";
   return {
@@ -183,12 +189,20 @@ function supabaseStorageConfig() {
   };
 }
 
-function supabaseHeaders(config, extra = {}) {
-  return {
-    apikey: config.serviceKey,
-    Authorization: `Bearer ${config.serviceKey}`,
-    ...extra,
-  };
+const supabaseClientCache = new Map();
+const supabaseBucketReady = new Map();
+
+function supabaseClient(config) {
+  const cacheKey = `${config.url}:${config.serviceKey.slice(0, 8)}`;
+  if (!supabaseClientCache.has(cacheKey)) {
+    supabaseClientCache.set(cacheKey, createClient(config.url, config.serviceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }));
+  }
+  return supabaseClientCache.get(cacheKey);
 }
 
 function buildStorageObjectPath(fileName, metadata = {}) {
@@ -202,19 +216,56 @@ function buildStorageObjectPath(fileName, metadata = {}) {
 
 function publicSupabaseObjectUrl(config, objectPath) {
   if (!config.isPublic) return "";
-  return `${config.url}/storage/v1/object/public/${storagePathSegment(config.bucket)}/${storagePathSegment(objectPath)}`;
+  const { data } = supabaseClient(config).storage.from(config.bucket).getPublicUrl(objectPath);
+  return data?.publicUrl || `${config.url}/storage/v1/object/public/${storagePathSegment(config.bucket)}/${storagePathSegment(objectPath)}`;
 }
 
-async function parseJsonResponse(response) {
-  try {
-    return await response.json();
-  } catch {
-    try {
-      return { text: await response.text() };
-    } catch {
-      return null;
+function storageErrorMessage(error) {
+  return String(error?.message || error?.error || error?.statusCode || "storage_request_failed");
+}
+
+async function ensureSupabaseBucket(config) {
+  const cacheKey = `${config.url}:${config.bucket}:${config.isPublic}`;
+  if (supabaseBucketReady.get(cacheKey)) {
+    return { ok: true, status: "ready", bucket: config.bucket };
+  }
+
+  const client = supabaseClient(config);
+  const existing = await client.storage.getBucket(config.bucket);
+  if (!existing.error) {
+    supabaseBucketReady.set(cacheKey, true);
+    return { ok: true, status: "ready", bucket: config.bucket };
+  }
+
+  const statusCode = String(existing.error?.statusCode || existing.error?.status || "");
+  const message = storageErrorMessage(existing.error).toLowerCase();
+  const missing = statusCode === "404" || message.includes("not found") || message.includes("does not exist");
+  if (!missing) {
+    return {
+      ok: false,
+      status: "failed",
+      bucket: config.bucket,
+      error: storageErrorMessage(existing.error),
+    };
+  }
+
+  const created = await client.storage.createBucket(config.bucket, {
+    public: config.isPublic,
+  });
+  if (created.error) {
+    const createMessage = storageErrorMessage(created.error);
+    if (!createMessage.toLowerCase().includes("already exists")) {
+      return {
+        ok: false,
+        status: "failed",
+        bucket: config.bucket,
+        error: createMessage,
+      };
     }
   }
+
+  supabaseBucketReady.set(cacheKey, true);
+  return { ok: true, status: "created", bucket: config.bucket };
 }
 
 async function uploadSupabaseFile({ fileName, mimeType, base64, metadata = {} }) {
@@ -224,20 +275,51 @@ async function uploadSupabaseFile({ fileName, mimeType, base64, metadata = {} })
   const cleanBase64 = String(base64 || "").includes(",") ? String(base64).split(",").pop() : String(base64 || "");
   const bytes = Buffer.from(cleanBase64, "base64");
   const objectPath = [config.prefix, buildStorageObjectPath(fileName, metadata)].filter(Boolean).join("/");
-  const endpoint = `${config.url}/storage/v1/object/${storagePathSegment(config.bucket)}/${storagePathSegment(objectPath)}`;
+  const bucket = await ensureSupabaseBucket(config);
+  if (!bucket.ok) {
+    return {
+      ok: false,
+      provider: "supabaseStorage",
+      status: "failed",
+      error: bucket.error,
+      bucket: config.bucket,
+      path: objectPath,
+    };
+  }
 
-  let response;
   try {
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers: supabaseHeaders(config, {
-        "Content-Type": mimeType || "application/octet-stream",
-        "cache-control": "3600",
-        "x-upsert": "false",
-      }),
-      body: bytes,
-      signal: AbortSignal.timeout(20_000),
+    const { data, error } = await supabaseClient(config).storage.from(config.bucket).upload(objectPath, bytes, {
+      cacheControl: "3600",
+      contentType: mimeType || "application/octet-stream",
+      upsert: false,
+      metadata: Object.fromEntries(
+        Object.entries(metadata || {})
+          .filter(([, value]) => ["string", "number", "boolean"].includes(typeof value))
+          .map(([key, value]) => [key, String(value)]),
+      ),
     });
+    if (error) {
+      return {
+        ok: false,
+        provider: "supabaseStorage",
+        status: "failed",
+        error: storageErrorMessage(error),
+        bucket: config.bucket,
+        path: objectPath,
+      };
+    }
+    return {
+      ok: true,
+      provider: "supabaseStorage",
+      status: "uploaded",
+      statusCode: 200,
+      bucket: config.bucket,
+      path: objectPath,
+      publicUrl: publicSupabaseObjectUrl(config, objectPath),
+      id: data?.id || "",
+      key: data?.path || data?.fullPath || "",
+      error: "",
+    };
   } catch (err) {
     return {
       ok: false,
@@ -248,20 +330,6 @@ async function uploadSupabaseFile({ fileName, mimeType, base64, metadata = {} })
       path: objectPath,
     };
   }
-
-  const data = await parseJsonResponse(response);
-  return {
-    ok: response.ok,
-    provider: "supabaseStorage",
-    status: response.ok ? "uploaded" : "failed",
-    statusCode: response.status,
-    bucket: config.bucket,
-    path: objectPath,
-    publicUrl: publicSupabaseObjectUrl(config, objectPath),
-    id: data?.Id || data?.id || "",
-    key: data?.Key || data?.key || "",
-    error: data?.message || data?.error || data?.text || "",
-  };
 }
 
 export async function downloadExternalFile(cloudStorage = {}) {
@@ -273,41 +341,37 @@ export async function downloadExternalFile(cloudStorage = {}) {
   if (!config.configured) {
     return { ok: false, provider, status: "skipped", reason: "not_configured" };
   }
-  const endpoint = `${config.url}/storage/v1/object/${storagePathSegment(cloudStorage.bucket)}/${storagePathSegment(cloudStorage.path)}`;
-  let response;
   try {
-    response = await fetch(endpoint, {
-      method: "GET",
-      headers: supabaseHeaders(config),
-      signal: AbortSignal.timeout(20_000),
-    });
+    const { data, error } = await supabaseClient(config).storage.from(cloudStorage.bucket).download(cloudStorage.path);
+    if (error) {
+      return { ok: false, provider, status: "failed", error: storageErrorMessage(error) };
+    }
+    return {
+      ok: true,
+      provider,
+      status: "downloaded",
+      bytes: Buffer.from(await data.arrayBuffer()),
+      mimeType: data.type || "",
+    };
   } catch (err) {
     return { ok: false, provider, status: "failed", error: err?.message || "request_failed" };
   }
-  if (!response.ok) {
-    const data = await parseJsonResponse(response);
-    return { ok: false, provider, status: "failed", statusCode: response.status, error: data?.message || data?.error || data?.text || "" };
-  }
-  return {
-    ok: true,
-    provider,
-    status: "downloaded",
-    bytes: Buffer.from(await response.arrayBuffer()),
-    mimeType: response.headers.get("content-type") || "",
-  };
 }
 
 async function deleteSupabaseFile(cloudStorage = {}) {
   const config = supabaseStorageConfig();
   if (!config.configured || !cloudStorage?.bucket || !cloudStorage?.path) return null;
-  let response;
   try {
-    response = await fetch(`${config.url}/storage/v1/object/${storagePathSegment(cloudStorage.bucket)}`, {
-      method: "DELETE",
-      headers: supabaseHeaders(config, { "Content-Type": "application/json" }),
-      body: JSON.stringify({ prefixes: [cloudStorage.path] }),
-      signal: AbortSignal.timeout(20_000),
-    });
+    const { error } = await supabaseClient(config).storage.from(cloudStorage.bucket).remove([cloudStorage.path]);
+    return {
+      ok: !error,
+      provider: "supabaseStorage",
+      status: error ? "failed" : "deleted",
+      statusCode: error ? 500 : 200,
+      bucket: cloudStorage.bucket,
+      path: cloudStorage.path,
+      error: error ? storageErrorMessage(error) : "",
+    };
   } catch (err) {
     return {
       ok: false,
@@ -318,15 +382,51 @@ async function deleteSupabaseFile(cloudStorage = {}) {
       path: cloudStorage.path,
     };
   }
-  const data = await parseJsonResponse(response);
-  return {
-    ok: response.ok,
+}
+
+export async function checkSupabaseStorage() {
+  const config = supabaseStorageConfig();
+  const status = {
+    configured: config.configured,
+    source: {
+      url: config.url ? "configured" : "",
+      serviceKey: config.serviceKey ? "configured" : "",
+      bucket: config.bucket,
+      prefix: config.prefix,
+      public: config.isPublic,
+    },
+    reachable: false,
+    bucketReady: false,
     provider: "supabaseStorage",
-    status: response.ok ? "deleted" : "failed",
-    statusCode: response.status,
-    bucket: cloudStorage.bucket,
-    path: cloudStorage.path,
-    error: data?.message || data?.error || data?.text || "",
+    error: null,
+  };
+
+  if (!config.configured) {
+    return {
+      ...status,
+      missingRequiredEnv: [
+        ...(!config.url ? ["SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL"] : []),
+        ...(!config.serviceKey ? ["SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY"] : []),
+        ...(!config.bucket ? ["SUPABASE_STORAGE_BUCKET"] : []),
+      ],
+    };
+  }
+
+  const bucket = await ensureSupabaseBucket(config);
+  if (!bucket.ok) {
+    return {
+      ...status,
+      reachable: true,
+      error: bucket.error,
+    };
+  }
+
+  return {
+    ...status,
+    reachable: true,
+    bucketReady: true,
+    bucketStatus: bucket.status,
+    missingRequiredEnv: [],
   };
 }
 
@@ -359,7 +459,11 @@ export function getIntegrationStatus() {
     missingRequiredEnv: missingEnv(resendRequired),
   });
   const storageConfig = supabaseStorageConfig();
-  const storageRequired = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_STORAGE_BUCKET"];
+  const storageRequired = [
+    { name: "SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL", configured: !!storageConfig.url },
+    { name: "SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY", configured: !!storageConfig.serviceKey },
+    { name: "SUPABASE_STORAGE_BUCKET", configured: !!storageConfig.bucket },
+  ];
   const storageOptional = ["SUPABASE_STORAGE_PREFIX", "SUPABASE_STORAGE_PUBLIC"];
   statuses.push({
     provider: "supabaseStorage",
@@ -368,9 +472,9 @@ export function getIntegrationStatus() {
     urlEnv: "SUPABASE_URL",
     tokenEnv: "SUPABASE_SERVICE_ROLE_KEY",
     bucketEnv: "SUPABASE_STORAGE_BUCKET",
-    requiredEnv: envPresence(storageRequired),
+    requiredEnv: storageRequired,
     optionalEnv: envPresence(storageOptional),
-    missingRequiredEnv: missingEnv(storageRequired),
+    missingRequiredEnv: storageRequired.filter((item) => !item.configured).map((item) => item.name),
   });
   return statuses;
 }

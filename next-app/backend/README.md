@@ -1,6 +1,6 @@
 # NeuroDent Backend
 
-NeuroDent backend is a Node.js 22+ server-side API with SQLite storage. It lives inside `next-app/backend` so the Next.js app and backend logic are shipped from one project root.
+NeuroDent backend is a Node.js 22+ server-side API with SQLite or PostgreSQL runtime storage. It lives inside `next-app/backend` so the Next.js app and backend logic are shipped from one project root.
 
 ## Architecture
 
@@ -8,7 +8,7 @@ The backend is split into three layers:
 
 - `backend/server.js` runs the standalone HTTP server and exposes REST routes.
 - `backend/service.js` contains business logic for auth, patients, doctors, appointments, visits, payments, invoices, inventory, CRM conversations, AI clinical assistant logic, reports and audit logs.
-- `backend/storage.js` owns SQLite schema creation, migrations and database read/write helpers.
+- `backend/storage.js` routes storage operations to SQLite by default or PostgreSQL when `NEURODENT_STORAGE_DRIVER=postgres`.
 - `app/api/[[...path]]/route.js` connects the Next.js app to the same backend service layer through `/api`.
 
 ## Run
@@ -66,7 +66,7 @@ Security features:
 - Role restrictions return `403 Forbidden` when the user has no permission.
 - Patient users are scoped to their own `patientId`.
 - Login and API requests have in-memory rate limiting.
-- Request body size is limited by `NEURODENT_MAX_BODY_BYTES`.
+- Request body size is limited by `NEURODENT_MAX_BODY_BYTES` (default: `4000000`). Keep this at or below Vercel's function payload limits for deployed environments; larger file uploads should move to direct-to-storage upload URLs.
 - Password reset endpoints use time-limited reset tokens.
 
 ## Storage
@@ -83,7 +83,7 @@ Runtime data is ignored by Git. Database backups are created under:
 next-app/backend/data/backups/
 ```
 
-`GET /api/ready` reports whether the active SQLite path is durable. On serverless platforms that place SQLite under `/tmp`, readiness is marked not durable unless `NEURODENT_ALLOW_EPHEMERAL_STORAGE=true` is set for demo-only deployments.
+`GET /api/ready` reports whether the active storage driver is production-ready. For PostgreSQL it checks connection and schema readiness. On serverless platforms that place SQLite under `/tmp`, readiness is marked not durable unless `NEURODENT_ALLOW_EPHEMERAL_STORAGE=true` is set for demo-only deployments.
 
 Main tables include:
 
@@ -154,6 +154,7 @@ NEURODENT_FILE_STORAGE_WEBHOOK_URL=
 NEURODENT_FILE_STORAGE_WEBHOOK_TOKEN=
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_SECRET_KEY=
 SUPABASE_STORAGE_BUCKET=neurodent-files
 SUPABASE_STORAGE_PREFIX=neurodent
 SUPABASE_STORAGE_PUBLIC=false
@@ -165,7 +166,15 @@ NEURODENT_AI_WEBHOOK_URL=
 NEURODENT_AI_WEBHOOK_TOKEN=
 ```
 
-These adapters are used by password reset, patient reminders, invoice email delivery, file upload mirroring, payment fiscalization, document signing and AI clinical assistant logic. `SUPABASE_SERVICE_ROLE_KEY` must stay on the server only and must never be exposed as a `NEXT_PUBLIC_` variable.
+These adapters are used by password reset, patient reminders, invoice email delivery, file upload mirroring, payment fiscalization, document signing and AI clinical assistant logic. `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_SECRET_KEY` must stay on the server only and must never be exposed as a `NEXT_PUBLIC_` variable.
+
+Supabase Storage preflight:
+
+```bash
+npm run storage:supabase:check
+```
+
+The check loads `.env.local`, verifies the server key, and creates the configured bucket if it does not exist.
 
 Cloud file storage behavior:
 
@@ -173,7 +182,7 @@ Cloud file storage behavior:
 POST /api/files
 ```
 
-The backend always stores an uploaded file locally as a fallback. If Supabase Storage is configured, the same file is mirrored to the configured bucket and the cloud storage metadata is saved in the `files.extra_json` field. Download uses the local file first and falls back to cloud storage if the local copy is missing. Delete removes the local file and also attempts to remove the cloud object.
+The backend always stores an uploaded file locally as a fallback. If Supabase Storage is configured, the same file is mirrored to the configured bucket and the cloud storage metadata is saved in the `files.extra_json` field. Download uses the local file first and falls back to cloud storage if the local copy is missing. Delete removes the local file and also attempts to remove the cloud object. Core AI visit images and before/after images upload through the same `/api/files` path with `kind=xray`, `kind=ct`, `kind=before`, or `kind=after`.
 
 Business delivery routes:
 
@@ -200,7 +209,7 @@ docker compose up --build
 
 The container runs the Next.js application with the Node.js backend runtime. SQLite data is stored in the `neurodent-data` Docker volume and is not lost when the container restarts.
 
-This is the current production path. Vercel/serverless deployments are preview-only until the PostgreSQL runtime adapter is implemented. Full deployment notes are in:
+For Vercel/serverless production, use `NEURODENT_STORAGE_DRIVER=postgres` with Supabase/PostgreSQL. Full deployment notes are in:
 
 ```text
 next-app/docs/DEPLOYMENT.md
@@ -235,7 +244,7 @@ npm run db:postgres:local:migrate
 npm run db:postgres:local:check
 ```
 
-These commands apply the prepared schema and verify connection/schema readiness. The main runtime remains SQLite until the PostgreSQL storage adapter is implemented.
+These commands apply the prepared schema and verify connection/schema readiness. Set `NEURODENT_STORAGE_DRIVER=postgres` to use PostgreSQL/Supabase as runtime storage.
 
 ## CI
 
